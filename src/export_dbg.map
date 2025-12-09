@@ -1,0 +1,51 @@
+{
+global:
+	otelc_ext_thread_id;
+	otelc_dbg_indent;
+	otelc_dbg_level;
+	otelc_dbg_tid_width;
+	otelc_dbg_trigger_throw;
+
+	otelc_ext_init;
+	otelc_nsleep;
+	otelc_runtime;
+	otelc_sprintf;
+	otelc_strlcpy;
+	otelc_strtoi;
+	otelc_strctrl;
+	otelc_strhex;
+	otelc_version;
+	otelc_init;
+	otelc_deinit;
+
+	otelc_value_strtonum;
+	otelc_value_add;
+	otelc_value_destroy;
+	otelc_value_dump;
+	otelc_value_new;
+	otelc_kv_destroy;
+	otelc_kv_new;
+	otelc_kv_add;
+	otelc_kv_dump;
+	otelc_statistics;
+	otelc_statistics_check;
+	otelc_text_map_add;
+	otelc_text_map_destroy;
+	otelc_text_map_new;
+	otelc_text_map_dump;
+	otelc_span_context_create;
+	otelc_tracer_create;
+
+	otelc_dbg_calloc;
+	otelc_dbg_free;
+	otelc_dbg_malloc;
+	otelc_dbg_mem_disable;
+	otelc_dbg_mem_info;
+	otelc_dbg_mem_init;
+	otelc_dbg_memdup;
+	otelc_dbg_realloc;
+	otelc_dbg_strdup;
+	otelc_dbg_strndup;
+
+local:	*;
+};

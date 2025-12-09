@@ -1,0 +1,1 @@
+pkgconfig/am-with-libfyaml.m4

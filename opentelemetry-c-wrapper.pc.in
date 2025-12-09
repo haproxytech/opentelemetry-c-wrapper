@@ -1,0 +1,12 @@
+prefix=@prefix@
+exec_prefix=@exec_prefix@
+libdir=@libdir@
+includedir=@includedir@
+
+Name: opentelemetry-c-wrapper
+Description: The OpenTelemetry C wrapper library.
+Version: @VERSION@
+
+Requires:
+Libs: -L${libdir} -Wl,--rpath,${libdir} -lopentelemetry-c-wrapper
+Cflags: -I${includedir}

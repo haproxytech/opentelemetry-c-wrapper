@@ -1,0 +1,37 @@
+#ifndef OPENTELEMETRY_C_WRAPPER_VERSION_H
+#define OPENTELEMETRY_C_WRAPPER_VERSION_H
+
+__CPLUSPLUS_DECL_BEGIN
+
+#define OTELC_PACKAGE_AUTHOR              "Miroslav Zagorac <mzagorac@haproxy.com>"
+#define OTELC_PACKAGE_BUGREPORT           "@PACKAGE_BUGREPORT@"
+#define OTELC_PACKAGE_URL                 "@PACKAGE_URL@"
+#define OTELC_PACKAGE_DATE                "@DATE@"
+#define OTELC_PACKAGE_DEFS                "@DEFS@"
+#define OTELC_PACKAGE_CPPFLAGS            "@CPPFLAGS@"
+#define OTELC_PACKAGE_CFLAGS              "@CFLAGS@"
+#define OTELC_PACKAGE_CXXFLAGS            "@CXXFLAGS@"
+#define OTELC_PACKAGE_CONFIGURE_OPTIONS   "@CONFIGURE_OPTIONS@"
+#define OTELC_PACKAGE_VERSION             "@PACKAGE_VERSION@"
+#ifndef OTELC_PACKAGE_BUILD
+#  define OTELC_PACKAGE_BUILD             @PACKAGE_BUILD@
+#endif
+
+#define OTELCPP_VERSION                   "@OTELCPP_VERSION@"
+#define OTELC_VERSION                     OTELC_PACKAGE_VERSION "-" OTELC_STRINGIFY(OTELC_PACKAGE_BUILD)
+#define OTELC_IS_VALID_VERSION()          (strcmp(otelc_version(), OTELC_VERSION) == 0)
+
+
+const char *otelc_version(void);
+
+__CPLUSPLUS_DECL_END
+#endif /* OPENTELEMETRY_C_WRAPPER_VERSION_H */
+
+/*
+ * Local variables:
+ *  c-indent-level: 8
+ *  c-basic-offset: 8
+ * End:
+ *
+ * vi: noexpandtab shiftwidth=8 tabstop=8
+ */

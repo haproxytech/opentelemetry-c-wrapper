@@ -1,0 +1,9 @@
+#!/bin/sh -x
+#
+# configure by Miroslav Zagorac <mzagorac@haproxy.com>
+#
+# Wrapper for the project's ./configure script that sets default optimization
+# flags (CFLAGS and CXXFLAGS to -O2) and installation prefix (/opt).  Any
+# additional arguments are passed through.
+#
+CFLAGS="-O2" CXXFLAGS="-O2" ./configure --prefix=/opt "${@}"

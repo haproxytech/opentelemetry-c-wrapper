@@ -1,0 +1,15 @@
+#!/bin/sh -x
+#
+# bootstrap by Miroslav Zagorac <mzagorac@haproxy.com>
+#
+# Generate autotools build system configuration files by running libtoolize,
+# aclocal, autoheader, automake, and autoconf.
+#
+mkdir -p config
+libtoolize
+aclocal -I m4
+autoheader
+automake --add-missing --copy
+autoconf
+
+rm -rf autom4te.cache

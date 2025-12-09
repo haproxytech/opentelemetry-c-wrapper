@@ -1,0 +1,19 @@
+#!/bin/sh
+#
+# distclean by Miroslav Zagorac <mzagorac@haproxy.com>
+#
+# Remove all generated build system files, build artifacts, and temporary files
+# to restore a pristine source tree.  This runs 'make maintainer-clean' if a
+# Makefile exists, then deletes autotools output, cached data, and intermediate
+# files.
+#
+SH_DIR="$(dirname "${0}")"
+
+
+cd "${SH_DIR}/.." || exit
+
+test -f Makefile && make maintainer-clean
+
+rm -rf autom4te.cache build config package snippet/build _* */_* */.deps *~
+rm -f autoscan.log configure.scan aclocal.m4 config.* configure Makefile.in */Makefile.in m4/l*
+rm -f include/opentelemetry-c-wrapper/*.tmp include/opentelemetry-c-wrapper/otel_cpp.h src/.build-md5sums

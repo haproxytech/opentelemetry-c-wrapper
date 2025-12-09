@@ -1,0 +1,56 @@
+#!/bin/sh
+#
+# build-counter by Miroslav Zagorac <mzagorac@haproxy.com>
+#
+# Track source file changes via MD5 checksums and increment the build counter
+# when modifications are detected.  The updated counter value is written into
+# the OTELC_PACKAGE_BUILD definition in version.h, triggering a rebuild of
+# version.cpp.
+#
+ SH_WORKDIR="$(realpath "$(dirname "${0}")/..")/"
+ SH_TMPFILE="/tmp/build-version-$(date +%N)"
+ SH_SUMFILE="${SH_WORKDIR}src/.build-md5sums"
+SH_BUILDCNT="${SH_WORKDIR}src/.build-counter"
+
+
+md5_sum ()
+{
+	test ${#} -eq 1    || return 1
+	cd "${SH_WORKDIR}" || return 2
+
+	find src     -type f -name "*.cpp" -exec md5sum {} + | sort -k2 > "${1}"
+	find include -type f -name "*.h.in" -exec md5sum {} + | sort -k2 >> "${1}"
+	find include -type f ! -name version.h ! -name otel_cpp.h -a -name "*.h" -exec md5sum {} + | sort -k2 >> "${1}"
+	cd - >/dev/null
+}
+
+inc_build_number ()
+{
+	if test -f "${SH_SUMFILE}"; then
+		test -f "${SH_BUILDCNT}" \
+			&& expr 0$(cat "${SH_BUILDCNT}") + 1 > "${SH_BUILDCNT}" \
+			|| echo 1 > "${SH_BUILDCNT}"
+	else
+		test -f "${SH_BUILDCNT}" || echo 1 > "${SH_BUILDCNT}"
+	fi
+
+	md5_sum "${SH_SUMFILE}"
+
+	# Updating definition OTELC_PACKAGE_BUILD will trigger a rebuild of
+	# version.cpp.
+	#
+	if test -e "${SH_WORKDIR}include/opentelemetry-c-wrapper/version.h"; then
+		sed -i "s/\(define OTELC_PACKAGE_BUILD[ ]*\).*/\1$(cat "${SH_BUILDCNT}")/" "${SH_WORKDIR}include/opentelemetry-c-wrapper/version.h"
+	fi
+}
+
+
+if test -f "${SH_SUMFILE}"; then
+	md5_sum "${SH_TMPFILE}"
+	cmp -s "${SH_SUMFILE}" "${SH_TMPFILE}" || inc_build_number
+	rm -f "${SH_TMPFILE}"
+else
+	inc_build_number
+fi
+
+exit 0
