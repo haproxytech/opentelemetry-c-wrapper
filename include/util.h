@@ -44,33 +44,40 @@ constexpr size_t OTEL_HANDLE_RESERVE_COUNT = 8192;
 #  define THREAD_LOCAL               thread_local
 #endif
 
-#define OTEL_VALUE_ADD(arg_type, arg_map, arg_operation, arg_key, arg_value, arg_err, arg_fmt)                                    \
-	do {                                                                                                                      \
-		char **err = (arg_err);                                                                                           \
-		                                                                                                                  \
-		try {                                                                                                             \
-			if (OTEL_NULL(arg_value) || ((arg_value)->u_type == OTELC_VALUE_NULL))                                    \
-				arg_map.arg_operation((arg_key), "");                                                             \
-			else if ((arg_value)->u_type == OTELC_VALUE_BOOL)                                                         \
-				arg_map.arg_operation((arg_key), (arg_value)->u.value_bool);                                      \
-			else if ((arg_value)->u_type == OTELC_VALUE_INT32)                                                        \
-				arg_map.arg_operation((arg_key), (arg_value)->u.value_int32);                                     \
-			else if ((arg_value)->u_type == OTELC_VALUE_INT64)                                                        \
-				arg_map.arg_operation((arg_key), (arg_value)->u.value_int64);                                     \
-			else if ((arg_value)->u_type == OTELC_VALUE_UINT32)                                                       \
-				arg_map.arg_operation((arg_key), (arg_value)->u.value_uint32);                                    \
-			else if ((arg_value)->u_type == OTELC_VALUE_UINT64)                                                       \
-				arg_map.arg_operation((arg_key), (arg_value)->u.value_uint64);                                    \
-			else if ((arg_value)->u_type == OTELC_VALUE_DOUBLE)                                                       \
-				arg_map.arg_operation((arg_key), (arg_value)->u.value_double);                                    \
-			else if ((arg_value)->u_type == OTELC_VALUE_STRING)                                                       \
-				arg_map.arg_operation((arg_key), (arg_value)->u.value_string);                                    \
-			else if ((arg_value)->u_type == OTELC_VALUE_DATA)                                                         \
-				arg_map.arg_operation((arg_key), OTEL_CAST_REINTERPRET(const char *, (arg_value)->u.value_data)); \
-			else                                                                                                      \
-				OTEL_ERETURN##arg_type("%s", arg_fmt);                                                            \
-		}                                                                                                                 \
-		OTEL_CATCH_ERETURN( , OTEL_ERETURN##arg_type, arg_fmt)                                                            \
+/***
+ * Visits an otelc_value by dispatching on u_type and calling the supplied
+ * callable with the active union member.  For OTELC_VALUE_NULL and unknown
+ * types, as well as NULL string/data pointers, an empty string is passed.
+ */
+template<typename F>
+decltype(auto) otelc_value_visit(const struct otelc_value *v, F &&f)
+{
+	switch (v->u_type) {
+		case OTELC_VALUE_BOOL:   return f(v->u.value_bool);
+		case OTELC_VALUE_INT32:  return f(v->u.value_int32);
+		case OTELC_VALUE_INT64:  return f(v->u.value_int64);
+		case OTELC_VALUE_UINT32: return f(v->u.value_uint32);
+		case OTELC_VALUE_UINT64: return f(v->u.value_uint64);
+		case OTELC_VALUE_DOUBLE: return f(v->u.value_double);
+		case OTELC_VALUE_STRING: return f((v->u.value_string != nullptr) ? v->u.value_string : "");
+		case OTELC_VALUE_DATA:   return f((v->u.value_data != nullptr) ? OTEL_CAST_REINTERPRET(const char *, v->u.value_data) : "");
+		default:                 return f("");
+	}
+}
+
+#define OTEL_VALUE_ADD(arg_type, arg_map, arg_operation, arg_key, arg_value, arg_err, arg_fmt)                              \
+	do {                                                                                                                \
+		char **err = (arg_err);                                                                                     \
+		                                                                                                            \
+		try {                                                                                                       \
+			if (OTEL_NULL(arg_value) || ((arg_value)->u_type == OTELC_VALUE_NULL))                              \
+				arg_map.arg_operation((arg_key), "");                                                       \
+			else if (OTELC_IN_RANGE((arg_value)->u_type, OTELC_VALUE_BOOL, OTELC_VALUE_DATA))                   \
+				otelc_value_visit((arg_value), [&](auto val_) { arg_map.arg_operation((arg_key), val_); }); \
+			else                                                                                                \
+				OTEL_ERETURN##arg_type("%s", (arg_fmt));                                                    \
+		}                                                                                                           \
+		OTEL_CATCH_ERETURN( , OTEL_ERETURN##arg_type, arg_fmt)                                                      \
 	} while (0)
 
 /***

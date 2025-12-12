@@ -668,22 +668,26 @@ const char *otelc_value_dump(const struct otelc_value *value, const char *desc)
 		(void)snprintf(retbuf, sizeof(retbuf), "%s%p:{ }", s, value);
 	else if (value->u_type == OTELC_VALUE_NULL)
 		(void)snprintf(retbuf, sizeof(retbuf), "%s%p:{ %d null '%s' }", s, value, value->u_type, OTELC_STR_ARG(value->u.value_string));
-	else if (value->u_type == OTELC_VALUE_BOOL)
-		(void)snprintf(retbuf, sizeof(retbuf), "%s%p:{ %d bool %hhu }", s, value, value->u_type, value->u.value_bool);
-	else if (value->u_type == OTELC_VALUE_INT32)
-		(void)snprintf(retbuf, sizeof(retbuf), "%s%p:{ %d int32_t %" PRId32 " }", s, value, value->u_type, value->u.value_int32);
-	else if (value->u_type == OTELC_VALUE_INT64)
-		(void)snprintf(retbuf, sizeof(retbuf), "%s%p:{ %d int64_t %" PRId64 " }", s, value, value->u_type, value->u.value_int64);
-	else if (value->u_type == OTELC_VALUE_UINT32)
-		(void)snprintf(retbuf, sizeof(retbuf), "%s%p:{ %d uint32_t %" PRIu32 " }", s, value, value->u_type, value->u.value_uint32);
-	else if (value->u_type == OTELC_VALUE_UINT64)
-		(void)snprintf(retbuf, sizeof(retbuf), "%s%p:{ %d uint64_t %" PRIu64 " }", s, value, value->u_type, value->u.value_uint64);
-	else if (value->u_type == OTELC_VALUE_DOUBLE)
-		(void)snprintf(retbuf, sizeof(retbuf), "%s%p:{ %d double %f }", s, value, value->u_type, value->u.value_double);
-	else if (value->u_type == OTELC_VALUE_STRING)
-		(void)snprintf(retbuf, sizeof(retbuf), "%s%p:{ %d string '%s' }", s, value, value->u_type, OTELC_STR_ARG(value->u.value_string));
-	else if (value->u_type == OTELC_VALUE_DATA)
-		(void)snprintf(retbuf, sizeof(retbuf), "%s%p:{ %d data '%s' }", s, value, value->u_type, OTELC_STR_ARG(OTEL_CAST_REINTERPRET(const char *, value->u.value_data)));
+	else if (OTELC_IN_RANGE(value->u_type, OTELC_VALUE_BOOL, OTELC_VALUE_DATA))
+		otelc_value_visit(value, [&](auto val) {
+			using T = std::decay_t<decltype(val)>;
+
+			if constexpr (std::is_same_v<T, bool>)
+				(void)snprintf(retbuf, sizeof(retbuf), "%s%p:{ %d bool %hhu }", s, value, value->u_type, val);
+			else if constexpr (std::is_same_v<T, int32_t>)
+				(void)snprintf(retbuf, sizeof(retbuf), "%s%p:{ %d int32_t %" PRId32 " }", s, value, value->u_type, val);
+			else if constexpr (std::is_same_v<T, int64_t>)
+				(void)snprintf(retbuf, sizeof(retbuf), "%s%p:{ %d int64_t %" PRId64 " }", s, value, value->u_type, val);
+			else if constexpr (std::is_same_v<T, uint32_t>)
+				(void)snprintf(retbuf, sizeof(retbuf), "%s%p:{ %d uint32_t %" PRIu32 " }", s, value, value->u_type, val);
+			else if constexpr (std::is_same_v<T, uint64_t>)
+				(void)snprintf(retbuf, sizeof(retbuf), "%s%p:{ %d uint64_t %" PRIu64 " }", s, value, value->u_type, val);
+			else if constexpr (std::is_same_v<T, double>)
+				(void)snprintf(retbuf, sizeof(retbuf), "%s%p:{ %d double %f }", s, value, value->u_type, val);
+			else if constexpr (std::is_same_v<T, const char *>)
+				(void)snprintf(retbuf, sizeof(retbuf), "%s%p:{ %d %s '%s' }", s, value, value->u_type,
+				               (value->u_type == OTELC_VALUE_STRING) ? "string" : "data", OTELC_STR_ARG(val));
+		});
 	else
 		(void)snprintf(retbuf, sizeof(retbuf), "%s%p:{ %d %p }", s, value, value->u_type, &(value->u));
 
@@ -723,22 +727,26 @@ const char *otelc_kv_dump(const struct otelc_kv *kv, const char *desc)
 		(void)snprintf(retbuf, sizeof(retbuf), "%s%p:{ }", d, kv);
 	else if (kv->value.u_type == OTELC_VALUE_NULL)
 		(void)snprintf(retbuf, sizeof(retbuf), "%s%p:{ '%s' { null '%s' } }", d, kv, key, OTELC_STR_ARG(kv->value.u.value_string));
-	else if (kv->value.u_type == OTELC_VALUE_BOOL)
-		(void)snprintf(retbuf, sizeof(retbuf), "%s%p:{ '%s' { bool %hhu } }", d, kv, key, kv->value.u.value_bool);
-	else if (kv->value.u_type == OTELC_VALUE_INT32)
-		(void)snprintf(retbuf, sizeof(retbuf), "%s%p:{ '%s' { int32_t %" PRId32 " } }", d, kv, key, kv->value.u.value_int32);
-	else if (kv->value.u_type == OTELC_VALUE_INT64)
-		(void)snprintf(retbuf, sizeof(retbuf), "%s%p:{ '%s' { int64_t %" PRId64 " } }", d, kv, key, kv->value.u.value_int64);
-	else if (kv->value.u_type == OTELC_VALUE_UINT32)
-		(void)snprintf(retbuf, sizeof(retbuf), "%s%p:{ '%s' { uint32_t %" PRIu32 " } }", d, kv, key, kv->value.u.value_uint32);
-	else if (kv->value.u_type == OTELC_VALUE_UINT64)
-		(void)snprintf(retbuf, sizeof(retbuf), "%s%p:{ '%s' { uint64_t %" PRIu64 " } }", d, kv, key, kv->value.u.value_uint64);
-	else if (kv->value.u_type == OTELC_VALUE_DOUBLE)
-		(void)snprintf(retbuf, sizeof(retbuf), "%s%p:{ '%s' { double %f } }", d, kv, key, kv->value.u.value_double);
-	else if (kv->value.u_type == OTELC_VALUE_STRING)
-		(void)snprintf(retbuf, sizeof(retbuf), "%s%p:{ '%s' { string '%s' } }", d, kv, key, OTELC_STR_ARG(kv->value.u.value_string));
-	else if (kv->value.u_type == OTELC_VALUE_DATA)
-		(void)snprintf(retbuf, sizeof(retbuf), "%s%p:{ '%s' { data '%s' } }", d, kv, key, OTELC_STR_ARG(OTEL_CAST_REINTERPRET(const char *, kv->value.u.value_data)));
+	else if (OTELC_IN_RANGE(kv->value.u_type, OTELC_VALUE_BOOL, OTELC_VALUE_DATA))
+		otelc_value_visit(&kv->value, [&](auto val) {
+			using T = std::decay_t<decltype(val)>;
+
+			if constexpr (std::is_same_v<T, bool>)
+				(void)snprintf(retbuf, sizeof(retbuf), "%s%p:{ '%s' { bool %hhu } }", d, kv, key, val);
+			else if constexpr (std::is_same_v<T, int32_t>)
+				(void)snprintf(retbuf, sizeof(retbuf), "%s%p:{ '%s' { int32_t %" PRId32 " } }", d, kv, key, val);
+			else if constexpr (std::is_same_v<T, int64_t>)
+				(void)snprintf(retbuf, sizeof(retbuf), "%s%p:{ '%s' { int64_t %" PRId64 " } }", d, kv, key, val);
+			else if constexpr (std::is_same_v<T, uint32_t>)
+				(void)snprintf(retbuf, sizeof(retbuf), "%s%p:{ '%s' { uint32_t %" PRIu32 " } }", d, kv, key, val);
+			else if constexpr (std::is_same_v<T, uint64_t>)
+				(void)snprintf(retbuf, sizeof(retbuf), "%s%p:{ '%s' { uint64_t %" PRIu64 " } }", d, kv, key, val);
+			else if constexpr (std::is_same_v<T, double>)
+				(void)snprintf(retbuf, sizeof(retbuf), "%s%p:{ '%s' { double %f } }", d, kv, key, val);
+			else if constexpr (std::is_same_v<T, const char *>)
+				(void)snprintf(retbuf, sizeof(retbuf), "%s%p:{ '%s' { %s '%s' } }", d, kv, key,
+				               (kv->value.u_type == OTELC_VALUE_STRING) ? "string" : "data", OTELC_STR_ARG(val));
+		});
 	else
 		(void)snprintf(retbuf, sizeof(retbuf), "%s%p:{ '%s' { %d %p } }", d, kv, key, kv->value.u_type, &(kv->value.u));
 

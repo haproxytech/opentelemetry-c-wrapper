@@ -776,22 +776,8 @@ static int otel_span_set_one_attribute(otel_nostd::shared_ptr<otel_trace::Span> 
 
 	if (value->u_type == OTELC_VALUE_NULL)
 		span->SetAttribute(key, "");
-	else if (value->u_type == OTELC_VALUE_BOOL)
-		span->SetAttribute(key, value->u.value_bool);
-	else if (value->u_type == OTELC_VALUE_INT32)
-		span->SetAttribute(key, value->u.value_int32);
-	else if (value->u_type == OTELC_VALUE_INT64)
-		span->SetAttribute(key, value->u.value_int64);
-	else if (value->u_type == OTELC_VALUE_UINT32)
-		span->SetAttribute(key, value->u.value_uint32);
-	else if (value->u_type == OTELC_VALUE_UINT64)
-		span->SetAttribute(key, value->u.value_uint64);
-	else if (value->u_type == OTELC_VALUE_DOUBLE)
-		span->SetAttribute(key, value->u.value_double);
-	else if (value->u_type == OTELC_VALUE_STRING)
-		span->SetAttribute(key, value->u.value_string);
-	else if (value->u_type == OTELC_VALUE_DATA)
-		span->SetAttribute(key, OTEL_CAST_REINTERPRET(const char *, value->u.value_data));
+	else if (OTELC_IN_RANGE(value->u_type, OTELC_VALUE_BOOL, OTELC_VALUE_DATA))
+		otelc_value_visit(value, [&](auto val) { span->SetAttribute(key, val); });
 	else
 		return OTELC_RET_ERROR;
 
