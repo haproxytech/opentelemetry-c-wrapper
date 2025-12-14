@@ -45,13 +45,13 @@ static otel_nostd::shared_ptr<otel_trace::Tracer> otel_tracer{};
 static int otel_tracer_handle_init(void)
 {
 	if (OTEL_NULL(otel_span)) {
-		otel_span = new(std::nothrow) struct otel_handle<struct otel_span_handle *>();
+		otel_span = new(std::nothrow) struct otel_handle<struct otel_span_handle *, OTEL_HANDLE_SHARED>();
 		if (OTEL_NULL(otel_span))
 			return OTELC_RET_ERROR;
 	}
 
 	if (OTEL_NULL(otel_span_context)) {
-		otel_span_context = new(std::nothrow) struct otel_handle<struct otel_span_context_handle *>();
+		otel_span_context = new(std::nothrow) struct otel_handle<struct otel_span_context_handle *, OTEL_HANDLE_SHARED>();
 		if (OTEL_NULL(otel_span_context))
 			return OTELC_RET_ERROR;
 	}

@@ -28,6 +28,16 @@ static_assert((OTELC_SPAN_KIND_PRODUCER - 1) == OTEL_CAST_STATIC(int, otel_trace
 static_assert((OTELC_SPAN_KIND_CONSUMER - 1) == OTEL_CAST_STATIC(int, otel_trace::SpanKind::kConsumer), "CONSUMER mismatch");
 #endif
 
+/***
+ * Verify that otelc_metric_aggregation_type_t values match the C++
+ * AggregationType enum.
+ */
+#ifdef OTELC_STATIC_ASSERT_METER
+#  define OTELC_METRIC_AGGREGATION_DEF(a,b,c)   static_assert(OTELC_METRIC_AGGREGATION_##a == OTEL_CAST_STATIC(int, otel_sdk_metrics::AggregationType::b), #a " mismatch");
+OTELC_METRIC_AGGREGATION_DEFINES
+#  undef OTELC_METRIC_AGGREGATION_DEF
+#endif
+
 #endif /* _OPENTELEMETRY_C_WRAPPER_STATIC_ASSERT_H_ */
 
 /*

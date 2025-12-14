@@ -31,6 +31,7 @@ namespace otel_exporter_memory        = otel_exporter::memory;
 #endif
 #ifdef HAVE_OTEL_EXPORTER_OSTREAM
 namespace otel_exporter_trace         = otel_exporter::trace;
+namespace otel_exporter_metrics       = otel_exporter::metrics;
 #endif
 #if defined(HAVE_OTEL_EXPORTER_OTLP_FILE) || defined(HAVE_OTEL_EXPORTER_OTLP_GRPC) || defined(HAVE_OTEL_EXPORTER_OTLP_HTTP)
 namespace otel_exporter_otlp          = otel_exporter::otlp;
@@ -38,6 +39,9 @@ namespace otel_exporter_otlp          = otel_exporter::otlp;
 #ifdef HAVE_OTEL_EXPORTER_ZIPKIN
 namespace otel_exporter_zipkin        = otel_exporter::zipkin;
 #endif
+
+namespace otel_metrics                = OPENTELEMETRY_NAMESPACE::metrics;
+namespace otel_sdk_metrics            = OPENTELEMETRY_NAMESPACE::sdk::metrics;
 
 using otel_system_timestamp           = otel_common::SystemTimestamp;
 using otel_steady_timestamp           = otel_common::SteadyTimestamp;

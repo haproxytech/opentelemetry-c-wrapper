@@ -48,6 +48,13 @@
 /* This is not configurable. */
 #define OTELC_USE_INTERNAL_INCLUDES
 
+/***
+ * Disabled by default because InstrumentMetaDataValidator compiles two
+ * std::regex objects on every call to otel_meter_create_instrument(),
+ * causing a severe performance penalty.
+ */
+#undef OTELC_USE_INSTRUMENT_VALIDATOR
+
 #ifdef OTELC_USE_THREAD_SHARED_HANDLE
 #  define OTELC_USE_THREAD_SHARED_HANDLE_IFDEF(a,b)   a
 #else

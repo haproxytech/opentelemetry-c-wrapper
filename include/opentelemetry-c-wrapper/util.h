@@ -109,6 +109,7 @@ struct otelc_text_map {
 };
 
 struct otelc_tracer;
+struct otelc_meter;
 
 
 #ifdef OTELC_DBG_MEM
@@ -155,7 +156,7 @@ int                    otelc_kv_add(struct otelc_kv **kv, size_t *kv_len, const 
 void                   otelc_kv_destroy(struct otelc_kv **kv, size_t n);
 
 int                    otelc_init(const char *cfgfile, char **err);
-void                   otelc_deinit(struct otelc_tracer **tracer);
+void                   otelc_deinit(struct otelc_tracer **tracer, struct otelc_meter **meter);
 
 __CPLUSPLUS_DECL_END
 #endif /* OPENTELEMETRY_C_WRAPPER_UTIL_H */

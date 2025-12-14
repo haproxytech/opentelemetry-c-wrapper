@@ -1475,8 +1475,8 @@ const char *otel_strerror(int errnum)
  * DESCRIPTION
  *   Populates the provided buffer with a formatted string containing internal
  *   statistics about the OpenTelemetry C wrapper library.  This may include
- *   counts of active handles for spans and contexts, which is useful for
- *   debugging and monitoring the library's resource usage.
+ *   counts of active handles for spans, contexts, instruments, and views,
+ *   which is useful for debugging and monitoring the library's resource usage.
  *
  * RETURN VALUE
  *   This function does not return a value.
@@ -1489,16 +1489,20 @@ void otelc_statistics(char *buffer, size_t bufsiz)
 		OTELC_RETURN();
 
 #ifdef OTELC_USE_STATIC_HANDLE
-	(void)snprintf(buffer, bufsiz, OTEL_HANDLE_FMT("span:") OTEL_HANDLE_FMT(", context:"), OTEL_HANDLE_ARGS(otel_span), OTEL_HANDLE_ARGS(otel_span_context));
+	(void)snprintf(buffer, bufsiz, OTEL_HANDLE_FMT("span:") OTEL_HANDLE_FMT(", context:") OTEL_HANDLE_FMT(", instrument:") OTEL_HANDLE_FMT(", view:"), OTEL_HANDLE_ARGS(otel_span), OTEL_HANDLE_ARGS(otel_span_context), OTEL_HANDLE_ARGS(otel_instrument), OTEL_HANDLE_ARGS(otel_view));
 #else
-	char buffer_span[BUFSIZ] = "{ }", buffer_context[BUFSIZ] = "{ }";
+	char buffer_span[BUFSIZ] = "{ }", buffer_context[BUFSIZ] = "{ }", buffer_instrument[BUFSIZ] = "{ }", buffer_view[BUFSIZ] = "{ }";
 
 	if (!OTEL_NULL(otel_span))
 		(void)snprintf(buffer_span, sizeof(buffer_span), OTEL_HANDLE_FMT(""), OTEL_HANDLE_ARGS(otel_span));
 	if (!OTEL_NULL(otel_span_context))
 		(void)snprintf(buffer_context, sizeof(buffer_context), OTEL_HANDLE_FMT(""), OTEL_HANDLE_ARGS(otel_span_context));
+	if (!OTEL_NULL(otel_instrument))
+		(void)snprintf(buffer_instrument, sizeof(buffer_instrument), OTEL_HANDLE_FMT(""), OTEL_HANDLE_ARGS(otel_instrument));
+	if (!OTEL_NULL(otel_view))
+		(void)snprintf(buffer_view, sizeof(buffer_view), OTEL_HANDLE_FMT(""), OTEL_HANDLE_ARGS(otel_view));
 
-	(void)snprintf(buffer, bufsiz, "span:%s, context:%s", buffer_span, buffer_context);
+	(void)snprintf(buffer, bufsiz, "span:%s, context:%s, instrument:%s, view:%s", buffer_span, buffer_context, buffer_instrument, buffer_view);
 #endif /* OTELC_USE_STATIC_HANDLE */
 
 	OTELC_RETURN();
@@ -1513,7 +1517,7 @@ void otelc_statistics(char *buffer, size_t bufsiz)
  *   int otelc_statistics_check(int type, size_t size, int64_t id, int64_t alloc_fail, int64_t erase, int64_t destroy)
  *
  * ARGUMENTS
- *   type       - handle type: 0 = span, 1 = span context
+ *   type       - handle type: 0 = span, 1 = span context, 2 = instrument, 3 = view
  *   size       - expected number of entries in the handle map
  *   id         - expected value of the id counter
  *   alloc_fail - expected value of the allocation failure counter
@@ -1541,6 +1545,10 @@ int otelc_statistics_check(int type, size_t size, int64_t id, int64_t alloc_fail
 		retval = OTEL_STAT_CHECK(otel_span, size, id, alloc_fail, erase, destroy) << type;
 	else if (OTELC_USE_STATIC_HANDLE_IFDEF( , !OTEL_NULL(otel_span_context) &&) (type == 1))
 		retval = OTEL_STAT_CHECK(otel_span_context, size, id, alloc_fail, erase, destroy) << type;
+	else if (OTELC_USE_STATIC_HANDLE_IFDEF( , !OTEL_NULL(otel_instrument) &&) (type == 2))
+		retval = OTEL_STAT_CHECK(otel_instrument, size, id, alloc_fail, erase, destroy) << type;
+	else if (OTELC_USE_STATIC_HANDLE_IFDEF( , !OTEL_NULL(otel_view) &&) (type == 3))
+		retval = OTEL_STAT_CHECK(otel_view, size, id, alloc_fail, erase, destroy) << type;
 
 	OTELC_RETURN_INT(retval);
 }
@@ -1585,32 +1593,36 @@ int otelc_init(const char *cfgfile, char **err)
  *   otelc_deinit - deinitializes the OpenTelemetry C wrapper library
  *
  * SYNOPSIS
- *   void otelc_deinit(struct otelc_tracer **tracer)
+ *   void otelc_deinit(struct otelc_tracer **tracer, struct otelc_meter **meter)
  *
  * ARGUMENTS
  *   tracer - address of the tracer pointer to destroy, or NULL
+ *   meter  - address of the meter pointer to destroy, or NULL
  *
  * DESCRIPTION
- *   Destroys the registered tracer if it is non-NULL, closes the YAML
- *   configuration document, and shuts down the OpenTelemetry C wrapper library.
- *   Each provider pointer is set to NULL after destruction.  The the external
- *   callback pointers registered via otelc_ext_init() are reset so that no
- *   references to the caller's code remain after this call.  This function
- *   should be called when the library is no longer needed, typically at
- *   application exit.
+ *   Destroys the registered tracer and meter if they are non-NULL, closes the
+ *   YAML configuration document, and shuts down the OpenTelemetry C wrapper
+ *   library.  Each provider pointer is set to NULL after destruction.  The
+ *   external callback pointers registered via otelc_ext_init() are reset so
+ *   that no references to the caller's code remain after this call.  This
+ *   function should be called when the library is no longer needed, typically
+ *   at application exit.
  *
  * RETURN VALUE
  *   This function does not return a value.
  */
-void otelc_deinit(struct otelc_tracer **tracer)
+void otelc_deinit(struct otelc_tracer **tracer, struct otelc_meter **meter)
 {
-	OTELC_FUNC("%p:%p", OTELC_DPTR_ARGS(tracer));
+	OTELC_FUNC("%p:%p, %p:%p", OTELC_DPTR_ARGS(tracer), OTELC_DPTR_ARGS(meter));
 
 	if (!OTEL_NULL(otelc_fyd)) {
 		yaml_close(&otelc_fyd);
 
 		otelc_fyd = nullptr;
 	}
+
+	if (!OTEL_NULL(meter) && !OTEL_NULL(*meter))
+		(*meter)->destroy(meter);
 
 	if (!OTEL_NULL(tracer) && !OTEL_NULL(*tracer))
 		(*tracer)->destroy(tracer);

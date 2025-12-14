@@ -34,15 +34,25 @@ constexpr size_t OTEL_HANDLE_RESERVE_COUNT = 8192;
 /* NOTE: The offset from the demangled name was determined empirically. */
 #define OTEL_HANDLE_DEMANGLED_NAME   (typeid(T).name() + 3)
 
+#define OTEL_LOCK_METER(a, ...)      const std::lock_guard<std::mutex> guard_##a(OTEL_HANDLE(otel_##a, mutex), ##__VA_ARGS__)
 #ifdef OTELC_USE_THREAD_SHARED_HANDLE
 #  define OTEL_LOCK_TRACER(a, ...)   const std::lock_guard<std::mutex> guard_##a(OTEL_HANDLE(otel_##a, mutex), ##__VA_ARGS__)
 #  define OTEL_LOCK(a,b)             std::lock(OTEL_HANDLE(otel_##a, mutex), OTEL_HANDLE(otel_##b, mutex)); OTEL_LOCK_TRACER(a, std::adopt_lock); OTEL_LOCK_TRACER(b, std::adopt_lock)
 #  define THREAD_LOCAL
+constexpr bool OTEL_HANDLE_SHARED = true;
 #else
 #  define OTEL_LOCK_TRACER(...)      while (0)
 #  define OTEL_LOCK(...)             while (0)
 #  define THREAD_LOCAL               thread_local
+constexpr bool OTEL_HANDLE_SHARED = false;
 #endif
+
+/***
+ * Returns the value as uint64_t.  If the value type is OTELC_VALUE_INT64, the
+ * signed value is cast to uint64_t.  The caller must ensure that the int64
+ * value is non-negative before calling this function.
+ */
+#define OTELC_VALUE_TO_UINT64(v)     (((v)->u_type == OTELC_VALUE_INT64) ? OTEL_CAST_STATIC(uint64_t, (v)->u.value_int64) : (v)->u.value_uint64)
 
 /***
  * Visits an otelc_value by dispatching on u_type and calling the supplied
@@ -111,7 +121,7 @@ class otel_key_eq {
  * DESCRIPTION
  *   A generic handle manager for OpenTelemetry C wrapper objects.
  */
-template<typename T>
+template<typename T, bool shared = true>
 struct otel_handle {
 	std::unordered_map<
 		int64_t,            /* Key type used to identify entries.   (class Key) */
@@ -125,9 +135,7 @@ struct otel_handle {
 	int64_t    alloc_fail_cnt;  /* Number of allocation failures. */
 	int64_t    erase_cnt;       /* Number of entries erased from the map. */
 	int64_t    destroy_cnt;     /* Number of entries destroyed during cleanup. */
-#ifdef OTELC_USE_THREAD_SHARED_HANDLE
 	std::mutex mutex;           /* Mutex protecting concurrent access to the handle map. */
-#endif
 
 	otel_handle() noexcept
 	{
@@ -176,12 +184,17 @@ struct otel_handle {
 	template<typename F>
 	void for_each_locked(F f) noexcept
 	{
-#ifdef OTELC_USE_THREAD_SHARED_HANDLE
-		const std::lock_guard<std::mutex> guard(mutex);
-#endif
-		for (auto &it : map)
-			f(it.first, it.second);
-		map.clear();
+		if constexpr (shared) {
+			const std::lock_guard<std::mutex> guard(mutex);
+
+			for (auto &it : map)
+				f(it.first, it.second);
+			map.clear();
+		} else {
+			for (auto &it : map)
+				f(it.first, it.second);
+			map.clear();
+		}
 	}
 
 	/***

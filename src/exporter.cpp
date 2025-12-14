@@ -16,7 +16,7 @@
 #include "include.h"
 
 
-static std::ofstream otel_tracer_logfile{};
+static std::ofstream otel_tracer_logfile{}, otel_meter_logfile{};
 
 
 /***
@@ -623,6 +623,164 @@ void otel_tracer_exporter_destroy(void)
 	OTELC_FUNC("");
 
 	otel_exporter_logfile_close(otel_tracer_logfile);
+
+	OTELC_RETURN();
+}
+
+
+/***
+ * NAME
+ *   otel_meter_exporter_create - creates a new metric exporter
+ *
+ * SYNOPSIS
+ *   int otel_meter_exporter_create(struct otelc_meter *meter, std::unique_ptr<otel_sdk_metrics::PushMetricExporter> &exporter)
+ *
+ * ARGUMENTS
+ *   meter    - meter instance
+ *   exporter - unique pointer to store the created metric exporter
+ *
+ * DESCRIPTION
+ *   Creates a new metric exporter based on the configuration provided in the
+ *   YAML file.  The exporter is responsible for sending metric data to a
+ *   backend, such as an OTLP-compatible collector.
+ *
+ * RETURN VALUE
+ *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR in case of an error.
+ */
+int otel_meter_exporter_create(struct otelc_meter *meter, std::unique_ptr<otel_sdk_metrics::PushMetricExporter> &exporter)
+{
+	std::unique_ptr<otel_sdk_metrics::PushMetricExporter> exporter_maybe{};
+	char                                                  type[OTEL_YAML_BUFSIZ] = "";
+	int                                                   rc;
+
+	OTELC_FUNC("%p, <exporter>", meter);
+
+	if (OTEL_NULL(meter))
+		OTELC_RETURN_INT(OTELC_RET_ERROR);
+
+	rc = yaml_get_node(otelc_fyd, &(meter->err), 1, OTEL_METER_EXPORTER_DESC, OTEL_YAML_METER_PREFIX OTEL_YAML_EXPORTERS,
+	                   OTEL_YAML_ARG_STR(1, EXPORTERS, type),
+	                   OTEL_YAML_END);
+	if (rc == OTELC_RET_ERROR)
+		OTELC_RETURN_INT(OTELC_RET_ERROR);
+
+	if (strcasecmp(type, OTEL_EXPORTER_ELASTICSEARCH) == 0) {
+		OTEL_METER_ERROR(OTEL_METER_EXPORTER_NOT_SUPPORTED("Elasticsearch"));
+	}
+	else if (strcasecmp(type, OTEL_EXPORTER_IN_MEMORY) == 0) {
+#ifdef HAVE_OTEL_EXPORTER_IN_MEMORY
+		/* <opentelemetry/exporters/memory/in_memory_metric_data.h> */
+		int64_t buffer_size = otel_exporter_memory::MAX_BUFFER_SIZE;
+
+		rc = yaml_get_node(otelc_fyd, &(meter->err), 1, OTEL_METER_EXPORTER_DESC, OTEL_YAML_METER_PREFIX OTEL_YAML_EXPORTERS,
+		                   OTEL_YAML_ARG_INT64(0, EXPORTERS, buffer_size, 16, 65536),
+		                   OTEL_YAML_END);
+		if (rc == OTELC_RET_ERROR)
+			OTELC_RETURN_INT(OTELC_RET_ERROR);
+
+//		const auto data = std::shared_ptr<otel_exporter_memory::InMemoryMetricData>{new(std::nothrow) otel_exporter_memory::SimpleAggregateInMemoryMetricData()};
+		const auto data = otel::make_shared_nothrow<otel_exporter_memory::CircularBufferInMemoryMetricData>(buffer_size);
+		if (!OTEL_NULL(data))
+			exporter_maybe = otel_exporter_memory::InMemoryMetricExporterFactory::Create(data);
+		if (OTEL_NULL(exporter_maybe))
+			OTEL_METER_ERROR(OTEL_METER_EXPORTER_FAILED("In-Memory"));
+#else
+		OTEL_METER_ERROR(OTEL_METER_EXPORTER_NOT_SUPPORTED("In-Memory"));
+#endif /* HAVE_OTEL_EXPORTER_IN_MEMORY */
+	}
+	else if (strcasecmp(type, OTEL_EXPORTER_OSTREAM) == 0) {
+#ifdef HAVE_OTEL_EXPORTER_OSTREAM
+		if (otel_exporter_set_ostream_options<otel_exporter_metrics::OStreamMetricExporter>(OTEL_METER_EXPORTER_DESC, OTEL_YAML_METER_PREFIX OTEL_YAML_EXPORTERS, otel_meter_logfile, exporter_maybe, &(meter->err)) == OTELC_RET_ERROR)
+			OTELC_RETURN_INT(OTELC_RET_ERROR);
+#else
+		OTEL_METER_ERROR(OTEL_METER_EXPORTER_NOT_SUPPORTED("ostream"));
+#endif /* HAVE_OTEL_EXPORTER_OSTREAM */
+	}
+	else if (strcasecmp(type, OTEL_EXPORTER_OTLP_FILE) == 0) {
+#ifdef HAVE_OTEL_EXPORTER_OTLP_FILE
+		otel_exporter_otlp::OtlpFileMetricExporterOptions        options{};
+		otel_exporter_otlp::OtlpFileMetricExporterRuntimeOptions rt_options{};
+
+		if (otel_exporter_set_otlp_file_options(OTEL_METER_EXPORTER_DESC, OTEL_YAML_METER_PREFIX OTEL_YAML_EXPORTERS, options, rt_options, &(meter->err)) == OTELC_RET_ERROR)
+			OTELC_RETURN_INT(OTELC_RET_ERROR);
+
+		exporter_maybe = otel::make_unique_nothrow<otel_exporter_otlp::OtlpFileMetricExporter>(options, rt_options);
+		if (OTEL_NULL(exporter_maybe))
+			OTEL_METER_ERROR(OTEL_METER_EXPORTER_FAILED("OTLP File"));
+#else
+		OTEL_METER_ERROR(OTEL_METER_EXPORTER_NOT_SUPPORTED("OTLP File"));
+#endif /* HAVE_OTEL_EXPORTER_OTLP_FILE */
+	}
+	else if (strcasecmp(type, OTEL_EXPORTER_OTLP_GRPC) == 0) {
+#ifdef HAVE_OTEL_EXPORTER_OTLP_GRPC
+		otel_exporter_otlp::OtlpGrpcMetricExporterOptions options{};
+		char                                              endpoint[OTEL_YAML_BUFSIZ] = OTEL_METER_EXPORTER_OTLP_GRPC_ENDPOINT;
+
+		if (otel_exporter_set_otlp_grpc_options(OTEL_METER_EXPORTER_DESC, OTEL_YAML_METER_PREFIX OTEL_YAML_EXPORTERS, endpoint, options, &(meter->err)) == OTELC_RET_ERROR)
+			OTELC_RETURN_INT(OTELC_RET_ERROR);
+
+		exporter_maybe = otel::make_unique_nothrow<otel_exporter_otlp::OtlpGrpcMetricExporter>(options);
+		if (OTEL_NULL(exporter_maybe))
+			OTEL_METER_ERROR(OTEL_METER_EXPORTER_FAILED("OTLP gRPC"));
+#else
+		OTEL_METER_ERROR(OTEL_METER_EXPORTER_NOT_SUPPORTED("OTLP gRPC"));
+#endif /* HAVE_OTEL_EXPORTER_OTLP_GRPC */
+	}
+	else if (strcasecmp(type, OTEL_EXPORTER_OTLP_HTTP) == 0) {
+#ifdef HAVE_OTEL_EXPORTER_OTLP_HTTP
+		otel_exporter_otlp::OtlpHttpMetricExporterOptions        options{};
+		otel_exporter_otlp::OtlpHttpMetricExporterRuntimeOptions rt_options{};
+		char                                                     endpoint[OTEL_YAML_BUFSIZ] = OTEL_METER_EXPORTER_OTLP_HTTP_ENDPOINT;
+
+		if (otel_exporter_set_otlp_http_options(OTEL_METER_EXPORTER_DESC, OTEL_YAML_METER_PREFIX OTEL_YAML_EXPORTERS, endpoint, options, rt_options, &(meter->err)) == OTELC_RET_ERROR)
+			OTELC_RETURN_INT(OTELC_RET_ERROR);
+
+		exporter_maybe = otel::make_unique_nothrow<otel_exporter_otlp::OtlpHttpMetricExporter>(options, rt_options);
+		if (OTEL_NULL(exporter_maybe))
+			OTEL_METER_ERROR(OTEL_METER_EXPORTER_FAILED("OTLP HTTP"));
+#else
+		OTEL_METER_ERROR(OTEL_METER_EXPORTER_NOT_SUPPORTED("OTLP HTTP"));
+#endif /* HAVE_OTEL_EXPORTER_OTLP_HTTP */
+	}
+	else if (strcasecmp(type, OTEL_EXPORTER_ZIPKIN) == 0) {
+		OTEL_METER_ERROR(OTEL_METER_EXPORTER_NOT_SUPPORTED("Zipkin"));
+	}
+	else {
+		OTEL_METER_ERROR("Invalid exporter type: '%s'", type);
+	}
+
+	if (OTEL_NULL(exporter_maybe))
+		OTELC_RETURN_INT(OTELC_RET_ERROR);
+
+	exporter = std::move(exporter_maybe);
+
+	OTELC_RETURN_INT(OTELC_RET_OK);
+}
+
+
+/***
+ * NAME
+ *   otel_meter_exporter_destroy - destroys the meter exporter
+ *
+ * SYNOPSIS
+ *   void otel_meter_exporter_destroy(void)
+ *
+ * ARGUMENTS
+ *   This function takes no arguments.
+ *
+ * DESCRIPTION
+ *   Cleans up resources associated with the meter exporter, such as closing
+ *   any open file streams.  This should be called during shutdown to ensure a
+ *   clean exit.
+ *
+ * RETURN VALUE
+ *   This function does not return a value.
+ */
+void otel_meter_exporter_destroy(void)
+{
+	OTELC_FUNC("");
+
+	otel_exporter_logfile_close(otel_meter_logfile);
 
 	OTELC_RETURN();
 }

@@ -125,11 +125,11 @@ struct T {
 
 
 #ifdef OTELC_USE_STATIC_HANDLE
-extern THREAD_LOCAL struct otel_handle<struct otel_span_handle *>          otel_span;
-extern THREAD_LOCAL struct otel_handle<struct otel_span_context_handle *>  otel_span_context;
+extern THREAD_LOCAL struct otel_handle<struct otel_span_handle *, OTEL_HANDLE_SHARED>          otel_span;
+extern THREAD_LOCAL struct otel_handle<struct otel_span_context_handle *, OTEL_HANDLE_SHARED>  otel_span_context;
 #else
-extern THREAD_LOCAL struct otel_handle<struct otel_span_handle *>         *otel_span;
-extern THREAD_LOCAL struct otel_handle<struct otel_span_context_handle *> *otel_span_context;
+extern THREAD_LOCAL struct otel_handle<struct otel_span_handle *, OTEL_HANDLE_SHARED>         *otel_span;
+extern THREAD_LOCAL struct otel_handle<struct otel_span_context_handle *, OTEL_HANDLE_SHARED> *otel_span_context;
 #endif
 
 

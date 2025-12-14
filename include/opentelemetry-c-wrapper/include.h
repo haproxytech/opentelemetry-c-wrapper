@@ -26,6 +26,7 @@
 #  include "opentelemetry-c-wrapper/util.h"
 #  include "opentelemetry-c-wrapper/propagation.h"
 #  include "opentelemetry-c-wrapper/span.h"
+#  include "opentelemetry-c-wrapper/meter.h"
 #  include "opentelemetry-c-wrapper/tracer.h"
 #else
 #  include <opentelemetry-c-wrapper/define.h>
@@ -35,6 +36,7 @@
 #  include <opentelemetry-c-wrapper/util.h>
 #  include <opentelemetry-c-wrapper/propagation.h>
 #  include <opentelemetry-c-wrapper/span.h>
+#  include <opentelemetry-c-wrapper/meter.h>
 #  include <opentelemetry-c-wrapper/tracer.h>
 #  include <opentelemetry-c-wrapper/version.h>
 #endif /* OTELC_USE_INTERNAL_INCLUDES */

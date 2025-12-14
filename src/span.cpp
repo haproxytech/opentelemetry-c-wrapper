@@ -17,11 +17,11 @@
 
 
 #ifdef OTELC_USE_STATIC_HANDLE
-THREAD_LOCAL struct otel_handle<struct otel_span_handle *>          otel_span{};
-THREAD_LOCAL struct otel_handle<struct otel_span_context_handle *>  otel_span_context{};
+THREAD_LOCAL struct otel_handle<struct otel_span_handle *, OTEL_HANDLE_SHARED>          otel_span{};
+THREAD_LOCAL struct otel_handle<struct otel_span_context_handle *, OTEL_HANDLE_SHARED>  otel_span_context{};
 #else
-THREAD_LOCAL struct otel_handle<struct otel_span_handle *>         *otel_span = nullptr;
-THREAD_LOCAL struct otel_handle<struct otel_span_context_handle *> *otel_span_context = nullptr;
+THREAD_LOCAL struct otel_handle<struct otel_span_handle *, OTEL_HANDLE_SHARED>         *otel_span = nullptr;
+THREAD_LOCAL struct otel_handle<struct otel_span_context_handle *, OTEL_HANDLE_SHARED> *otel_span_context = nullptr;
 #endif
 
 

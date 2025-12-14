@@ -19,6 +19,7 @@ libopentelemetry_c_wrapper_dbg_la_LIBADD   = $(AM_LIBS)
 libopentelemetry_c_wrapper_dbg_la_SOURCES  = \
 	dbg_malloc.cpp \
 	exporter.cpp \
+	meter.cpp \
 	processor.cpp \
 	provider.cpp \
 	resource.cpp \
@@ -42,6 +43,7 @@ libopentelemetry_c_wrapper_la_LDFLAGS  = $(AM_LDFLAGS) -version-info @LIB_VERSIO
 libopentelemetry_c_wrapper_la_LIBADD   = $(AM_LIBS)
 libopentelemetry_c_wrapper_la_SOURCES  = \
 	exporter.cpp \
+	meter.cpp \
 	processor.cpp \
 	provider.cpp \
 	resource.cpp \
@@ -59,6 +61,7 @@ pkginclude_HEADERS = \
 	../include/opentelemetry-c-wrapper/debug.h \
 	../include/opentelemetry-c-wrapper/define.h \
 	../include/opentelemetry-c-wrapper/include.h \
+	../include/opentelemetry-c-wrapper/meter.h \
 	../include/opentelemetry-c-wrapper/otel_cpp.h \
 	../include/opentelemetry-c-wrapper/propagation.h \
 	../include/opentelemetry-c-wrapper/span.h \
