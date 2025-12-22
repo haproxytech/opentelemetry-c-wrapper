@@ -41,11 +41,19 @@
 #define OTEL_METER_EXPORTER_OTLP_GRPC_ENDPOINT    "http://localhost:4317/v1/metrics"
 #define OTEL_METER_EXPORTER_OTLP_HTTP_ENDPOINT    "http://localhost:4318/v1/metrics"
 
+#define OTEL_LOGGER_EXPORTER_DESC                 "OpenTelemetry logs exporter"
+#define OTEL_LOGGER_EXPORTER_NOT_SUPPORTED(s)     "OpenTelemetry " s " logs exporter is not supported"
+#define OTEL_LOGGER_EXPORTER_FAILED(s)            "Unable to init OpenTelemetry " s " logs exporter"
+#define OTEL_LOGGER_EXPORTER_OTLP_GRPC_ENDPOINT   "http://localhost:4317/v1/logs"
+#define OTEL_LOGGER_EXPORTER_OTLP_HTTP_ENDPOINT   "http://localhost:4318/v1/logs"
+
 
 int  otel_tracer_exporter_create(struct otelc_tracer *tracer, std::unique_ptr<otel_sdk_trace::SpanExporter> &exporter);
 void otel_tracer_exporter_destroy(void);
 int  otel_meter_exporter_create(struct otelc_meter *meter, std::unique_ptr<otel_sdk_metrics::PushMetricExporter> &exporter);
 void otel_meter_exporter_destroy(void);
+int  otel_logger_exporter_create(struct otelc_logger *logger, std::unique_ptr<otel_sdk_logs::LogRecordExporter> &exporter);
+void otel_logger_exporter_destroy(void);
 
 #endif /* _OPENTELEMETRY_C_WRAPPER_EXPORTER_H_ */
 

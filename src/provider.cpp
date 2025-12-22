@@ -301,6 +301,101 @@ void otel_meter_provider_destroy(void)
 	OTELC_RETURN();
 }
 
+
+/***
+ * NAME
+ *   otel_logger_provider_create - creates a new logger provider
+ *
+ * SYNOPSIS
+ *   int otel_logger_provider_create(struct otelc_logger *logger, std::unique_ptr<otel_sdk_logs::LogRecordProcessor> &processor, std::shared_ptr<otel_logs::LoggerProvider> &provider)
+ *
+ * ARGUMENTS
+ *   logger    - logger instance
+ *   processor - the log record processor to be used by the provider
+ *   provider  - shared pointer to store the created logger provider
+ *
+ * DESCRIPTION
+ *   Creates a new logger provider with the specified log record processor.  The
+ *   provider is responsible for creating and managing logger instances, and it
+ *   is configured with resource attributes from the YAML file.
+ *
+ * RETURN VALUE
+ *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR in case of an error.
+ */
+int otel_logger_provider_create(struct otelc_logger *logger, std::unique_ptr<otel_sdk_logs::LogRecordProcessor> &processor, std::shared_ptr<otel_logs::LoggerProvider> &provider)
+{
+	otel_sdk_resource::Resource resource{};
+
+	OTELC_FUNC("%p, <processor>, <provider>", logger);
+
+	if (OTEL_NULL(logger))
+		OTELC_RETURN_INT(OTELC_RET_ERROR);
+
+	if (otel_resource_create("OpenTelemetry logger provider", OTEL_YAML_LOGGER_PREFIX OTEL_YAML_PROVIDERS, resource, &(logger->err)) == OTELC_RET_ERROR)
+		OTELC_RETURN_INT(OTELC_RET_ERROR);
+
+#ifdef OTELC_USE_MULTIPLE_PROCESSORS
+	std::vector<std::unique_ptr<otel_sdk_logs::LogRecordProcessor>> processors;
+	try {
+		OTEL_DBG_THROW();
+		processors.push_back(std::move(processor));
+	}
+	OTEL_CATCH_ERETURN( , OTEL_LOGGER_ERETURN_INT, "Unable to add processor")
+
+#  if 0
+	auto context_maybe = otel::make_unique_nothrow<otel_sdk_logs::LoggerContext>(std::move(processors), std::move(resource));
+	if (OTEL_NULL(context_maybe))
+		OTEL_LOGGER_ERETURN_INT("Unable to create OpenTelemetry logger context");
+	auto provider_maybe = otel::make_shared_nothrow<otel_sdk_logs::LoggerProvider>(std::move(context_maybe));
+#  else
+	auto provider_maybe = otel::make_shared_nothrow<otel_sdk_logs::LoggerProvider>(std::move(processors), std::move(resource));
+#  endif
+#else
+	auto provider_maybe = otel::make_shared_nothrow<otel_sdk_logs::LoggerProvider>(std::move(processor), std::move(resource));
+#endif /* OTELC_USE_MULTIPLE_PROCESSORS */
+
+	if (OTEL_NULL(provider_maybe))
+		OTEL_LOGGER_ERETURN_INT("Unable to create OpenTelemetry logger provider");
+
+	provider = std::move(provider_maybe);
+
+	OTELC_RETURN_INT(OTELC_RET_OK);
+}
+
+
+/***
+ * NAME
+ *   otel_logger_provider_destroy - destroys the global logger provider
+ *
+ * SYNOPSIS
+ *   void otel_logger_provider_destroy(void)
+ *
+ * ARGUMENTS
+ *   This function takes no arguments.
+ *
+ * DESCRIPTION
+ *   Resets the global logger provider, effectively disabling logging.  This
+ *   should be called during application shutdown to ensure that all logging
+ *   resources are properly released.
+ *
+ * RETURN VALUE
+ *   This function does not return a value.
+ */
+void otel_logger_provider_destroy(void)
+{
+	const std::shared_ptr<otel_logs::LoggerProvider> none;
+
+	OTELC_FUNC("");
+
+	const auto provider_sdk = OTEL_LOGGER_PROVIDER();
+	if (!OTEL_NULL(provider_sdk))
+		(void)provider_sdk->ForceFlush(std::chrono::microseconds{5000000});
+
+	otel_logs::Provider::SetLoggerProvider(none);
+
+	OTELC_RETURN();
+}
+
 /*
  * Local variables:
  *  c-indent-level: 8

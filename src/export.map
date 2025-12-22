@@ -30,6 +30,8 @@ global:
 	otelc_tracer_create;
 	otelc_meter_create;
 	otelc_meter_aggr_parse;
+	otelc_logger_create;
+	otelc_logger_severity_parse;
 
 local:	*;
 };

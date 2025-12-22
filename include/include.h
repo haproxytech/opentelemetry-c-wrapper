@@ -64,6 +64,18 @@
 #include <opentelemetry/sdk/metrics/instrument_metadata_validator.h>
 #include <opentelemetry/sdk/metrics/export/periodic_exporting_metric_reader.h>
 
+/* Logs */
+#include <opentelemetry/sdk/common/global_log_handler.h>
+#include <opentelemetry/logs/provider.h>
+#include <opentelemetry/logs/logger_provider.h>
+#include <opentelemetry/sdk/logs/provider.h>
+#include <opentelemetry/sdk/logs/logger_provider.h>
+#include <opentelemetry/sdk/logs/simple_log_record_processor.h>
+#include <opentelemetry/sdk/logs/batch_log_record_processor.h>
+
+#ifdef HAVE_OTEL_EXPORTER_ELASTICSEARCH
+#  include <opentelemetry/exporters/elasticsearch/es_log_record_exporter.h>
+#endif
 #ifdef HAVE_OTEL_EXPORTER_IN_MEMORY
 #  include <opentelemetry/exporters/memory/in_memory_span_exporter.h>
 #  include <opentelemetry/exporters/memory/in_memory_metric_exporter_factory.h>
@@ -71,19 +83,23 @@
 #ifdef HAVE_OTEL_EXPORTER_OSTREAM
 #  include <opentelemetry/exporters/ostream/span_exporter.h>
 #  include <opentelemetry/exporters/ostream/metric_exporter.h>
+#  include <opentelemetry/exporters/ostream/log_record_exporter.h>
 #endif
 #ifdef HAVE_OTEL_EXPORTER_OTLP_FILE
 #  include <opentelemetry/exporters/otlp/otlp_file_client_options.h>
 #  include <opentelemetry/exporters/otlp/otlp_file_exporter.h>
 #  include <opentelemetry/exporters/otlp/otlp_file_metric_exporter.h>
+#  include <opentelemetry/exporters/otlp/otlp_file_log_record_exporter.h>
 #endif
 #ifdef HAVE_OTEL_EXPORTER_OTLP_GRPC
 #  include <opentelemetry/exporters/otlp/otlp_grpc_exporter.h>
 #  include <opentelemetry/exporters/otlp/otlp_grpc_metric_exporter.h>
+#  include <opentelemetry/exporters/otlp/otlp_grpc_log_record_exporter.h>
 #endif
 #ifdef HAVE_OTEL_EXPORTER_OTLP_HTTP
 #  include <opentelemetry/exporters/otlp/otlp_http_exporter.h>
 #  include <opentelemetry/exporters/otlp/otlp_http_metric_exporter.h>
+#  include "opentelemetry/exporters/otlp/otlp_http_log_record_exporter.h"
 #endif
 #ifdef HAVE_OTEL_EXPORTER_ZIPKIN
 #  include <opentelemetry/exporters/zipkin/zipkin_exporter.h>
@@ -104,6 +120,7 @@
 #include "provider.h"
 #include "resource.h"
 #include "sampler.h"
+#include "logger.h"
 #include "span.h"
 #include "meter.h"
 #include "threads.h"

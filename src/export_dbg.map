@@ -37,6 +37,8 @@ global:
 	otelc_tracer_create;
 	otelc_meter_create;
 	otelc_meter_aggr_parse;
+	otelc_logger_create;
+	otelc_logger_severity_parse;
 
 	otelc_dbg_calloc;
 	otelc_dbg_free;

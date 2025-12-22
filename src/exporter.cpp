@@ -16,7 +16,7 @@
 #include "include.h"
 
 
-static std::ofstream otel_tracer_logfile{}, otel_meter_logfile{};
+static std::ofstream otel_tracer_logfile{}, otel_meter_logfile{}, otel_logger_logfile{};
 
 
 /***
@@ -781,6 +781,191 @@ void otel_meter_exporter_destroy(void)
 	OTELC_FUNC("");
 
 	otel_exporter_logfile_close(otel_meter_logfile);
+
+	OTELC_RETURN();
+}
+
+
+/***
+ * NAME
+ *   otel_logger_exporter_create - creates a new log record exporter
+ *
+ * SYNOPSIS
+ *   int otel_logger_exporter_create(struct otelc_logger *logger, std::unique_ptr<otel_sdk_logs::LogRecordExporter> &exporter)
+ *
+ * ARGUMENTS
+ *   logger   - logger instance
+ *   exporter - unique pointer to store the created log record exporter
+ *
+ * DESCRIPTION
+ *   Creates a new log record exporter based on the configuration provided in
+ *   the YAML file.  The exporter is responsible for sending log data to a
+ *   backend, such as an OTLP-compatible collector.
+ *
+ * RETURN VALUE
+ *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR in case of an error.
+ */
+int otel_logger_exporter_create(struct otelc_logger *logger, std::unique_ptr<otel_sdk_logs::LogRecordExporter> &exporter)
+{
+	std::unique_ptr<otel_sdk_logs::LogRecordExporter> exporter_maybe{};
+	char                                              type[OTEL_YAML_BUFSIZ] = "";
+	int                                               rc;
+
+	OTELC_FUNC("%p, <exporter>", logger);
+
+	if (OTEL_NULL(logger))
+		OTELC_RETURN_INT(OTELC_RET_ERROR);
+
+	rc = yaml_get_node(otelc_fyd, &(logger->err), 1, OTEL_LOGGER_EXPORTER_DESC, OTEL_YAML_LOGGER_PREFIX OTEL_YAML_EXPORTERS,
+	                   OTEL_YAML_ARG_STR(1, EXPORTERS, type),
+	                   OTEL_YAML_END);
+	if (rc == OTELC_RET_ERROR)
+		OTELC_RETURN_INT(OTELC_RET_ERROR);
+
+	if (strcasecmp(type, OTEL_EXPORTER_ELASTICSEARCH) == 0) {
+#ifdef HAVE_OTEL_EXPORTER_ELASTICSEARCH
+		/***
+		 * The default values are defined in the include file
+		 * <opentelemetry/exporters/elasticsearch/es_log_record_exporter.h>.
+		 */
+		otel_exporter_logs::ElasticsearchExporterOptions  options{};
+		std::multimap<std::string, std::string>           es_http_headers{};
+		struct otelc_text_map                            *http_headers = nullptr;
+		char                                              host[OTEL_YAML_BUFSIZ] = "localhost", index[OTEL_YAML_BUFSIZ] = "logs";
+		int64_t                                           port = 9200, response_timeout = 30;
+		int                                               debug = false;
+
+		rc = yaml_get_node(otelc_fyd, &(logger->err), 1, OTEL_LOGGER_EXPORTER_DESC, OTEL_YAML_LOGGER_PREFIX OTEL_YAML_EXPORTERS,
+		                   OTEL_YAML_ARG_STR(0, EXPORTERS, host),
+		                   OTEL_YAML_ARG_INT64(0, EXPORTERS, port, 1, 65535),
+		                   OTEL_YAML_ARG_STR(0, EXPORTERS, index),
+		                   OTEL_YAML_ARG_INT64(0, EXPORTERS, response_timeout, 1, 3600),
+		                   OTEL_YAML_ARG_BOOL(0, EXPORTERS, debug),
+				   OTEL_YAML_ARG_MAP(0, EXPORTERS, http_headers),
+		                   OTEL_YAML_END);
+		OTEL_DEFER_DPTR_FREE(struct otelc_text_map, http_headers, otelc_text_map_destroy);
+		if (rc == OTELC_RET_ERROR)
+			OTELC_RETURN_INT(OTELC_RET_ERROR);
+
+		if (!OTEL_NULL(http_headers))
+			for (size_t i = 0; i < http_headers->count; i++) {
+				try {
+					OTEL_DBG_THROW();
+					es_http_headers.emplace(std::string{http_headers->key[i]}, std::string{http_headers->value[i]});
+				}
+				OTEL_CATCH_ERETURN( , OTEL_LOGGER_ERETURN_INT, "Unable to add HTTP header")
+			}
+
+		options.host_             = host;
+		options.port_             = port;
+		options.index_            = index;
+		options.response_timeout_ = response_timeout;
+		options.console_debug_    = debug;
+		options.http_headers_     = std::move(es_http_headers);
+
+		exporter_maybe = otel::make_unique_nothrow<otel_exporter_logs::ElasticsearchLogRecordExporter>(options);
+		if (OTEL_NULL(exporter_maybe))
+			OTEL_LOGGER_ERROR(OTEL_LOGGER_EXPORTER_FAILED("Elasticsearch"));
+#else
+		OTEL_LOGGER_ERROR(OTEL_LOGGER_EXPORTER_NOT_SUPPORTED("Elasticsearch"));
+#endif /* HAVE_OTEL_EXPORTER_ELASTICSEARCH */
+	}
+	else if (strcasecmp(type, OTEL_EXPORTER_IN_MEMORY) == 0) {
+		OTEL_LOGGER_ERROR(OTEL_LOGGER_EXPORTER_NOT_SUPPORTED("In-Memory"));
+	}
+	else if (strcasecmp(type, OTEL_EXPORTER_OSTREAM) == 0) {
+#ifdef HAVE_OTEL_EXPORTER_OSTREAM
+		if (otel_exporter_set_ostream_options<otel_exporter_logs::OStreamLogRecordExporter>(OTEL_LOGGER_EXPORTER_DESC, OTEL_YAML_LOGGER_PREFIX OTEL_YAML_EXPORTERS, otel_logger_logfile, exporter_maybe, &(logger->err)) == OTELC_RET_ERROR)
+			OTELC_RETURN_INT(OTELC_RET_ERROR);
+#else
+		OTEL_LOGGER_ERROR(OTEL_LOGGER_EXPORTER_NOT_SUPPORTED("ostream"));
+#endif /* HAVE_OTEL_EXPORTER_OSTREAM */
+	}
+	else if (strcasecmp(type, OTEL_EXPORTER_OTLP_FILE) == 0) {
+#ifdef HAVE_OTEL_EXPORTER_OTLP_FILE
+		otel_exporter_otlp::OtlpFileLogRecordExporterOptions        options{};
+		otel_exporter_otlp::OtlpFileLogRecordExporterRuntimeOptions rt_options{};
+
+		if (otel_exporter_set_otlp_file_options(OTEL_LOGGER_EXPORTER_DESC, OTEL_YAML_LOGGER_PREFIX OTEL_YAML_EXPORTERS, options, rt_options, &(logger->err)) == OTELC_RET_ERROR)
+			OTELC_RETURN_INT(OTELC_RET_ERROR);
+
+		exporter_maybe = otel::make_unique_nothrow<otel_exporter_otlp::OtlpFileLogRecordExporter>(options, rt_options);
+		if (OTEL_NULL(exporter_maybe))
+			OTEL_LOGGER_ERROR(OTEL_LOGGER_EXPORTER_FAILED("OTLP File"));
+#else
+		OTEL_LOGGER_ERROR(OTEL_LOGGER_EXPORTER_NOT_SUPPORTED("OTLP File"));
+#endif /* HAVE_OTEL_EXPORTER_OTLP_FILE */
+	}
+	else if (strcasecmp(type, OTEL_EXPORTER_OTLP_GRPC) == 0) {
+#ifdef HAVE_OTEL_EXPORTER_OTLP_GRPC
+		otel_exporter_otlp::OtlpGrpcLogRecordExporterOptions options{};
+		char                                                 endpoint[OTEL_YAML_BUFSIZ] = OTEL_LOGGER_EXPORTER_OTLP_GRPC_ENDPOINT;
+
+		if (otel_exporter_set_otlp_grpc_options(OTEL_LOGGER_EXPORTER_DESC, OTEL_YAML_LOGGER_PREFIX OTEL_YAML_EXPORTERS, endpoint, options, &(logger->err)) == OTELC_RET_ERROR)
+			OTELC_RETURN_INT(OTELC_RET_ERROR);
+
+		exporter_maybe = otel::make_unique_nothrow<otel_exporter_otlp::OtlpGrpcLogRecordExporter>(options);
+		if (OTEL_NULL(exporter_maybe))
+			OTEL_LOGGER_ERROR(OTEL_LOGGER_EXPORTER_FAILED("OTLP gRPC"));
+#else
+		OTEL_LOGGER_ERROR(OTEL_LOGGER_EXPORTER_NOT_SUPPORTED("OTLP gRPC"));
+#endif /* HAVE_OTEL_EXPORTER_OTLP_GRPC */
+	}
+	else if (strcasecmp(type, OTEL_EXPORTER_OTLP_HTTP) == 0) {
+#ifdef HAVE_OTEL_EXPORTER_OTLP_HTTP
+		otel_exporter_otlp::OtlpHttpLogRecordExporterOptions        options{};
+		otel_exporter_otlp::OtlpHttpLogRecordExporterRuntimeOptions rt_options{};
+		char                                                        endpoint[OTEL_YAML_BUFSIZ] = OTEL_LOGGER_EXPORTER_OTLP_HTTP_ENDPOINT;
+
+		if (otel_exporter_set_otlp_http_options(OTEL_LOGGER_EXPORTER_DESC, OTEL_YAML_LOGGER_PREFIX OTEL_YAML_EXPORTERS, endpoint, options, rt_options, &(logger->err)) == OTELC_RET_ERROR)
+			OTELC_RETURN_INT(OTELC_RET_ERROR);
+
+		exporter_maybe = otel::make_unique_nothrow<otel_exporter_otlp::OtlpHttpLogRecordExporter>(options, rt_options);
+		if (OTEL_NULL(exporter_maybe))
+			OTEL_LOGGER_ERROR(OTEL_LOGGER_EXPORTER_FAILED("OTLP HTTP"));
+#else
+		OTEL_LOGGER_ERROR(OTEL_LOGGER_EXPORTER_NOT_SUPPORTED("OTLP HTTP"));
+#endif /* HAVE_OTEL_EXPORTER_OTLP_HTTP */
+	}
+	else if (strcasecmp(type, OTEL_EXPORTER_ZIPKIN) == 0) {
+		OTEL_LOGGER_ERROR(OTEL_LOGGER_EXPORTER_NOT_SUPPORTED("Zipkin"));
+	}
+	else {
+		OTEL_LOGGER_ERROR("Invalid exporter type: '%s'", type);
+	}
+
+	if (OTEL_NULL(exporter_maybe))
+		OTELC_RETURN_INT(OTELC_RET_ERROR);
+
+	exporter = std::move(exporter_maybe);
+
+	OTELC_RETURN_INT(OTELC_RET_OK);
+}
+
+
+/***
+ * NAME
+ *   otel_logger_exporter_destroy - destroys the logger exporter
+ *
+ * SYNOPSIS
+ *   void otel_logger_exporter_destroy(void)
+ *
+ * ARGUMENTS
+ *   This function takes no arguments.
+ *
+ * DESCRIPTION
+ *   Cleans up resources associated with the logger exporter, such as closing
+ *   any open file streams.  This should be called during shutdown to ensure a
+ *   clean exit.
+ *
+ * RETURN VALUE
+ *   This function does not return a value.
+ */
+void otel_logger_exporter_destroy(void)
+{
+	OTELC_FUNC("");
+
+	otel_exporter_logfile_close(otel_logger_logfile);
 
 	OTELC_RETURN();
 }

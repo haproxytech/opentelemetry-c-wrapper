@@ -55,7 +55,7 @@ static const otel_sdk_metrics::InstrumentMetaDataValidator  otel_instrument_vali
  */
 static void otel_meter_observable_int64_cb(otel_metrics::ObserverResult observer, void *state)
 {
-	OTEL_METER_OBSERVABLE_CB(int64_t, state, OTELC_VALUE_INT64, value_int64, 0, "value_int64 = %" PRId64);
+	OTEL_METER_OBSERVABLE_CB(int64_t, state, OTELC_VALUE_INT64, value_int64, 0, "value_int64 ");
 }
 
 
@@ -83,7 +83,7 @@ static void otel_meter_observable_int64_cb(otel_metrics::ObserverResult observer
  */
 static void otel_meter_observable_double_cb(otel_metrics::ObserverResult observer, void *state)
 {
-	OTEL_METER_OBSERVABLE_CB(double, state, OTELC_VALUE_DOUBLE, value_double, 0.0, "value_double = %f");
+	OTEL_METER_OBSERVABLE_CB(double, state, OTELC_VALUE_DOUBLE, value_double, 0.0, "value_double ");
 }
 
 

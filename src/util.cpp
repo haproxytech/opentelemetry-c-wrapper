@@ -1593,33 +1593,37 @@ int otelc_init(const char *cfgfile, char **err)
  *   otelc_deinit - deinitializes the OpenTelemetry C wrapper library
  *
  * SYNOPSIS
- *   void otelc_deinit(struct otelc_tracer **tracer, struct otelc_meter **meter)
+ *   void otelc_deinit(struct otelc_tracer **tracer, struct otelc_meter **meter, struct otelc_logger **logger)
  *
  * ARGUMENTS
  *   tracer - address of the tracer pointer to destroy, or NULL
  *   meter  - address of the meter pointer to destroy, or NULL
+ *   logger - address of the logger pointer to destroy, or NULL
  *
  * DESCRIPTION
- *   Destroys the registered tracer and meter if they are non-NULL, closes the
- *   YAML configuration document, and shuts down the OpenTelemetry C wrapper
- *   library.  Each provider pointer is set to NULL after destruction.  The
- *   external callback pointers registered via otelc_ext_init() are reset so
- *   that no references to the caller's code remain after this call.  This
+ *   Destroys the registered tracer, meter, and logger if they are non-NULL,
+ *   closes the YAML configuration document, and shuts down the OpenTelemetry
+ *   C wrapper library.  Each provider pointer is set to NULL after destruction.
+ *   The external callback pointers registered via otelc_ext_init() are reset
+ *   so that no references to the caller's code remain after this call.  This
  *   function should be called when the library is no longer needed, typically
  *   at application exit.
  *
  * RETURN VALUE
  *   This function does not return a value.
  */
-void otelc_deinit(struct otelc_tracer **tracer, struct otelc_meter **meter)
+void otelc_deinit(struct otelc_tracer **tracer, struct otelc_meter **meter, struct otelc_logger **logger)
 {
-	OTELC_FUNC("%p:%p, %p:%p", OTELC_DPTR_ARGS(tracer), OTELC_DPTR_ARGS(meter));
+	OTELC_FUNC("%p:%p, %p:%p, %p:%p", OTELC_DPTR_ARGS(tracer), OTELC_DPTR_ARGS(meter), OTELC_DPTR_ARGS(logger));
 
 	if (!OTEL_NULL(otelc_fyd)) {
 		yaml_close(&otelc_fyd);
 
 		otelc_fyd = nullptr;
 	}
+
+	if (!OTEL_NULL(logger) && !OTEL_NULL(*logger))
+		(*logger)->destroy(logger);
 
 	if (!OTEL_NULL(meter) && !OTEL_NULL(*meter))
 		(*meter)->destroy(meter);
