@@ -84,7 +84,7 @@ AC_FUNC_REALLOC
 AC_FUNC_STRERROR_R
 AC_FUNC_STRNLEN
 AC_FUNC_STRTOD
-AC_CHECK_FUNCS([clock_gettime gettimeofday mallinfo mallinfo2 memset strcasecmp strndup strrchr strtol])
+AC_CHECK_FUNCS([clock_gettime gettimeofday mallinfo mallinfo2 memset strcasecmp strdup strndup strrchr strstr strtol])
 
 dnl Set the compiler flags
 dnl
@@ -115,7 +115,7 @@ AC_SUBST([PACKAGE_BUILD])
 AC_SUBST([LIB_VERSION])
 AC_SUBST([CONFIGURE_OPTIONS])
 
-dnl src/Makefile
+dnl src/Makefile test/Makefile
 dnl
 COMMON_CPPFLAGS='-I$(top_builddir)/include -I$(top_srcdir)/include'
 AC_SUBST([COMMON_CPPFLAGS])
@@ -125,7 +125,7 @@ dnl
 AX_OTEL_CPP_HDR_SEMANTIC_CONVENTIONS
 AX_OTEL_CPP_HDR_SPAN_KIND
 
-AC_CONFIG_FILES([Makefile src/Makefile])
+AC_CONFIG_FILES([Makefile src/Makefile test/Makefile])
 AC_CONFIG_FILES([include/opentelemetry-c-wrapper/version.h include/opentelemetry-c-wrapper/otel_cpp.h])
 AC_CONFIG_FILES([opentelemetry-c-wrapper.pc opentelemetry-c-wrapper_dbg.pc])
 AC_OUTPUT

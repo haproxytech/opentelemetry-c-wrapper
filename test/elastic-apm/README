@@ -1,0 +1,88 @@
+      ---------------------------------------------------------
+       Elastic APM integration testing with Docker Compose
+      ---------------------------------------------------------
+
+
+1. Overview
+------------------------------------------------------------------------------
+
+This directory contains a Docker Compose setup for integration testing of the
+OTel C wrapper library against an Elastic APM backend.  The stack consists of
+Elasticsearch, Kibana, and APM Server.
+
+OTLP Endpoints (APM Server):
+  http://localhost:8200/v1/traces
+  http://localhost:8200/v1/metrics
+  http://localhost:8200/v1/logs
+
+Web interfaces:
+  Kibana:        http://localhost:5601
+  Elasticsearch: http://localhost:9200
+
+
+2. Prerequisites
+------------------------------------------------------------------------------
+
+Docker Engine and Docker Compose (V2) must be installed.  All container images
+are pulled from the official Elastic Docker registry.
+
+The Elastic Stack version and passwords are configured in the .env file.
+Edit the file before starting the stack if you need to change the defaults.
+
+The es-init.sh script is not part of the Docker Compose workflow.  It is a
+standalone reference script that can be run on the host to manually reset the
+kibana_system and apm_system passwords in Elasticsearch via the REST API,
+should the built-in password setup fail.
+
+
+3. Starting the stack
+------------------------------------------------------------------------------
+
+  % cd test/elastic-apm
+  % docker compose up -d
+
+Elasticsearch starts first.  Once its healthcheck passes, Kibana and APM Server
+start in parallel.  The kibana-startup.sh script waits until the kibana_system
+credentials are valid before launching Kibana.
+
+To follow the startup progress:
+
+  % docker compose logs -f
+
+Wait until all three containers report healthy status:
+
+  % docker compose ps
+
+
+4. Running the test program
+------------------------------------------------------------------------------
+
+Ensure that the otel-cfg.yml configuration file points to the APM Server
+endpoint (http://localhost:8200) and then run the test program:
+
+  % ./otel-c-wrapper-test --runcount=10 --threads=8
+
+Traces, metrics, and logs should appear in Kibana under the APM section.
+
+
+5. Stopping the stack
+------------------------------------------------------------------------------
+
+To stop all containers without removing volumes:
+
+  % docker compose stop
+
+To stop and remove containers, networks, and the named volume:
+
+  % docker compose down -v
+
+
+6. Uninstalling
+------------------------------------------------------------------------------
+
+After stopping and removing the containers, remove the pulled images:
+
+  % docker compose down -v --rmi all
+
+This removes the containers, the named volume, and all images pulled by the
+compose file.

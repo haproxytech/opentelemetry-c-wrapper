@@ -1,0 +1,83 @@
+volumes:
+  esdata:
+
+services:
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:${ELASTIC_VERSION}
+    container_name: elasticsearch
+    environment:
+      ELASTIC_PASSWORD: ${ELASTIC_PASSWORD}
+      KIBANA_PASSWORD: ${KIBANA_PASSWORD}
+      APM_PASSWORD: ${APM_PASSWORD}
+      node.name: elasticsearch
+      discovery.type: single-node
+      xpack.security.enabled: "true"
+      xpack.security.http.ssl.enabled: "false"
+    ports:
+      - "9200:9200"
+    volumes:
+      - esdata:/usr/share/elasticsearch/data
+    healthcheck:
+      test: >
+        curl -u elastic:${ELASTIC_PASSWORD} -s http://localhost:9200/_cluster/health | grep -E '"status":"(green|yellow)"'
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 60s
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:${ELASTIC_VERSION}
+    container_name: kibana
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    environment:
+      ELASTICSEARCH_HOSTS:    "http://elasticsearch:9200"
+      ELASTICSEARCH_USERNAME: "kibana_system"
+      ELASTICSEARCH_PASSWORD: "${KIBANA_PASSWORD}"
+    ports:
+      - "5601:5601"
+    volumes:
+      - ./kibana-startup.sh:/usr/local/bin/kibana-startup.sh
+    command: /usr/local/bin/kibana-startup.sh
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:5601/api/status >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+
+  apm-server:
+    image: docker.elastic.co/apm/apm-server:${ELASTIC_VERSION}
+    container_name: apm-server
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    environment:
+      ELASTICSEARCH_HOSTS:    "http://elasticsearch:9200"
+      ELASTICSEARCH_USERNAME: "apm_system"           # Used for internal authentication (health checks)
+      ELASTICSEARCH_PASSWORD: "${APM_PASSWORD}"      # Used for internal authentication
+    command:
+      - -e
+      - -E apm-server.host="0.0.0.0:8200"
+      - -E apm-server.kibana.enabled=true
+      - -E apm-server.kibana.host="kibana:5601"
+      - -E apm-server.kibana.protocol=http
+      - -E apm-server.kibana.username="kibana_system"
+      - -E apm-server.kibana.password="${KIBANA_PASSWORD}"
+      - -E apm-server.rum.enabled=true
+      - -E output.elasticsearch.hosts=["http://elasticsearch:9200"]
+      - -E output.elasticsearch.username="apm_system"
+      - -E output.elasticsearch.password="${APM_PASSWORD}"
+      - -E setup.kibana.host="kibana:5601"
+      - -E setup.kibana.username="kibana_system"
+      - -E setup.kibana.password="${KIBANA_PASSWORD}"
+      - -E setup.template.settings.index.number_of_replicas=0
+    ports:
+      - "8200:8200"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8200/ | grep OK"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 60s

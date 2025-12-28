@@ -1,0 +1,69 @@
+      ------------------------------------------------
+       OpenTelemetry Collector configuration example
+      ------------------------------------------------
+
+
+1. Overview
+------------------------------------------------------------------------------
+
+This directory contains a reference configuration file for running an
+OpenTelemetry Collector alongside the OTel C wrapper test programs.  The
+Collector receives telemetry data over multiple protocols and forwards it
+to configured backends.
+
+
+2. Configuration summary (config.yaml)
+------------------------------------------------------------------------------
+
+Extensions:
+
+  health_check   Exposes the Collector health status endpoint.
+  pprof          Go profiling endpoint on 127.0.0.1:1777.
+  zpages         Debugging pages on 127.0.0.1:55679.
+
+Receivers:
+
+  otlp           Accepts OTLP data over gRPC (127.0.0.1:4317) and HTTP
+                 (127.0.0.1:4318).  These are the primary endpoints used by the
+                 OTel C wrapper library.
+  prometheus     Scrapes the Collector's own metrics from 127.0.0.1:8888 every
+                 10 seconds.
+  jaeger         Accepts Jaeger traces over gRPC (14250), Thrift binary (6832),
+                 Thrift compact (6831), and Thrift HTTP (14268).
+  zipkin         Accepts Zipkin traces on 127.0.0.1:9411.
+
+Processors:
+
+  batch          Batches telemetry data before export using default settings.
+
+Exporters:
+
+  debug          Prints telemetry to the Collector's standard output with
+                 detailed verbosity.
+  otlphttp       Forwards data over OTLP/HTTP to a remote endpoint.  The
+                 destination address in the file is an example and should be
+                 changed to match your environment.
+
+Pipelines:
+
+  traces         Receives from otlp, jaeger, and zipkin; exports to debug and
+                 otlphttp.
+  metrics        Receives from otlp and prometheus; exports to debug.
+  logs           Receives from otlp; exports to debug.
+
+All receiver endpoints are bound to 127.0.0.1 to limit network exposure.
+Change them to 0.0.0.0 if the Collector needs to accept remote connections.
+
+
+3. Running the Collector
+------------------------------------------------------------------------------
+
+Download or install the OpenTelemetry Collector from:
+  https://opentelemetry.io/docs/collector/installation/
+
+Start the Collector with this configuration:
+
+  % otelcol --config config.yaml
+
+Then run the test program with its YAML configuration pointing to the OTLP
+receiver endpoint (gRPC on port 4317 or HTTP on port 4318).

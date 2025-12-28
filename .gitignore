@@ -17,6 +17,7 @@ m4/lt~obsolete.m4
 otel_cpp.h
 package
 stamp-h1
+test/otel-c-wrapper-test*
 version.h
 .build-md5sums
 .deps/
