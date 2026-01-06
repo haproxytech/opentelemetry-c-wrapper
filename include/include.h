@@ -32,6 +32,9 @@
 
 #ifdef HAVE_LIBFYAML_H
 #  include <libfyaml.h>
+#else
+#  include <ryml_std.hpp>
+#  include <ryml.hpp>
 #endif
 
 #include <cinttypes>

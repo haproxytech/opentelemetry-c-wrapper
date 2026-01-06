@@ -36,17 +36,23 @@ typedef enum {
 	OTEL_YAML_END = -1, /* Marks the end of a variable-length argument list. */
 } otel_yaml_data_t;
 
+#ifdef HAVE_LIBFYAML_H
+#  define OTEL_YAML_DOC                   struct fy_document
+#else
+#  define OTEL_YAML_DOC                   ryml::Tree
+#endif
 
-extern struct fy_document *otelc_fyd;
+
+extern OTEL_YAML_DOC *otelc_fyd;
 
 
-struct fy_document *yaml_open(const char *file, char **err);
-void                yaml_close(struct fy_document **fyd);
-char               *yaml_read(const char *file, char **err);
-int                 yaml_find(struct fy_document *fyd, char **err, bool is_mandatory, const char *desc, const char *path, char *data, size_t data_size);
-int                 yaml_get_sequence(struct fy_document *fyd, char **err, const char *path, struct otelc_text_map **map);
-int                 yaml_find_sequence(struct fy_document *fyd, char **err, bool is_mandatory, const char *path, const char *sequence, struct otelc_text_map **map);
-int                 yaml_get_node(struct fy_document *fyd, char **err, bool is_mandatory, const char *desc, const char *path, int type, ...);
+OTEL_YAML_DOC *yaml_open(const char *file, char **err);
+void           yaml_close(OTEL_YAML_DOC **fyd);
+char          *yaml_read(const char *file, char **err);
+int            yaml_find(OTEL_YAML_DOC *fyd, char **err, bool is_mandatory, const char *desc, const char *path, char *data, size_t data_size);
+int            yaml_get_sequence(OTEL_YAML_DOC *fyd, char **err, const char *path, struct otelc_text_map **map);
+int            yaml_find_sequence(OTEL_YAML_DOC *fyd, char **err, bool is_mandatory, const char *path, const char *sequence, struct otelc_text_map **map);
+int            yaml_get_node(OTEL_YAML_DOC *fyd, char **err, bool is_mandatory, const char *desc, const char *path, int type, ...);
 
 #endif /* _OPENTELEMETRY_C_WRAPPER_YAML_H_ */
 

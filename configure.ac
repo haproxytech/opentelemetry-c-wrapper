@@ -39,6 +39,34 @@ AX_ENABLE_THREADS
 dnl
 dnl Misc
 dnl
+AC_ARG_WITH([libfyaml],
+	[AS_HELP_STRING([--with-libfyaml@<:@=DIR@:>@], [use libfyaml library @<:@default=no@:>@])],
+	[],
+	[with_libfyaml=no]
+)
+
+AC_ARG_WITH([rapidyaml],
+	[AS_HELP_STRING([--with-rapidyaml@<:@=DIR@:>@], [use rapidyaml library @<:@default=check@:>@])],
+	[],
+	[with_rapidyaml=check]
+)
+
+AS_IF(
+	[test "${with_libfyaml}" != "no" && test "${with_rapidyaml}" != "check" && test "${with_rapidyaml}" != "no"],
+	[AC_MSG_ERROR([options --with-libfyaml and --with-rapidyaml cannot be used at the same time])],
+	[]
+)
+AS_IF(
+	[test "${with_libfyaml}" != "no"],
+	[with_rapidyaml="no"],
+	[
+		AS_IF(
+			[test "${with_rapidyaml}" = "check"],
+			[with_rapidyaml="yes"],
+			[]
+		)
+	]
+)
 
 dnl Checks for programs.
 dnl
@@ -75,6 +103,7 @@ AC_TYPE_INT64_T
 dnl Checks for libraries.
 dnl
 AX_WITH_LIBFYAML
+AX_WITH_RAPIDYAML
 AX_WITH_OPENTELEMETRY
 
 dnl Checks for library functions.
@@ -96,10 +125,10 @@ AM_CONDITIONAL([WANT_DEBUG], [test "${enable_debug}" = "yes"])
 
 AX_VARIABLES_SET
 
-AX_VARIABLE_SET([OPENTELEMETRY_C_WRAPPER_CPPFLAGS], [ ${THREADS_CPPFLAGS} ${LIBFYAML_CPPFLAGS} ])
-AX_VARIABLE_SET([OPENTELEMETRY_C_WRAPPER_CFLAGS],   [ ${THREADS_CFLAGS}   ${LIBFYAML_CFLAGS}   ])
-AX_VARIABLE_SET([OPENTELEMETRY_C_WRAPPER_LDFLAGS],  [ ${THREADS_LDFLAGS}  ${LIBFYAML_LDFLAGS}  ])
-AX_VARIABLE_SET([OPENTELEMETRY_C_WRAPPER_LIBS],     [ ${THREADS_LIBS}     ${LIBFYAML_LIBS}     ])
+AX_VARIABLE_SET([OPENTELEMETRY_C_WRAPPER_CPPFLAGS], [ ${THREADS_CPPFLAGS} ${LIBFYAML_CPPFLAGS} ${RAPIDYAML_CPPFLAGS} ])
+AX_VARIABLE_SET([OPENTELEMETRY_C_WRAPPER_CFLAGS],   [ ${THREADS_CFLAGS}   ${LIBFYAML_CFLAGS}   ${RAPIDYAML_CFLAGS}   ])
+AX_VARIABLE_SET([OPENTELEMETRY_C_WRAPPER_LDFLAGS],  [ ${THREADS_LDFLAGS}  ${LIBFYAML_LDFLAGS}  ${RAPIDYAML_LDFLAGS}  ])
+AX_VARIABLE_SET([OPENTELEMETRY_C_WRAPPER_LIBS],     [ ${THREADS_LIBS}     ${LIBFYAML_LIBS}     ${RAPIDYAML_LIBS}     ])
 
 AC_SUBST([OPENTELEMETRY_C_WRAPPER_CPPFLAGS])
 AC_SUBST([OPENTELEMETRY_C_WRAPPER_CFLAGS])

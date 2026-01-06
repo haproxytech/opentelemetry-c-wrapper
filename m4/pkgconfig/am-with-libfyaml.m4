@@ -1,12 +1,6 @@
 dnl am-with-libfyaml.m4 by Miroslav Zagorac <mzagorac@haproxy.com>
 dnl
 AC_DEFUN([AX_WITH_LIBFYAML], [
-	AC_ARG_WITH([libfyaml],
-		[AS_HELP_STRING([--with-libfyaml@<:@=DIR@:>@], [use libfyaml library @<:@default=yes@:>@])],
-		[],
-		[with_libfyaml=check]
-	)
-
 	AX_CHECK_NOEXCEPT([])
 
 	AS_IF(
