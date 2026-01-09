@@ -51,6 +51,9 @@ void           yaml_close(OTEL_YAML_DOC **fyd);
 char          *yaml_read(const char *file, char **err);
 int            yaml_find(OTEL_YAML_DOC *fyd, char **err, bool is_mandatory, const char *desc, const char *path, char *data, size_t data_size);
 int            yaml_get_sequence(OTEL_YAML_DOC *fyd, char **err, const char *path, struct otelc_text_map **map);
+int            yaml_get_sequence_len(OTEL_YAML_DOC *fyd, char **err, const char *path);
+bool           yaml_is_sequence(OTEL_YAML_DOC *fyd, const char *path);
+int            yaml_get_sequence_value(OTEL_YAML_DOC *fyd, char **err, const char *path, int index, char *data, size_t data_size);
 int            yaml_find_sequence(OTEL_YAML_DOC *fyd, char **err, bool is_mandatory, const char *path, const char *sequence, struct otelc_text_map **map);
 int            yaml_get_node(OTEL_YAML_DOC *fyd, char **err, bool is_mandatory, const char *desc, const char *path, int type, ...);
 

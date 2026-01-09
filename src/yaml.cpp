@@ -102,7 +102,7 @@ static ryml::NodeRef ryml_get_node_by_path(ryml::Tree *tree, const char *path)
  *   std::runtime_error containing the error message.
  *
  * RETURN VALUE
- *   This function does not return a value.
+ *   This function does not return normally; it always throws an exception.
  */
 static void ryml_throw_error(const char *msg, size_t len, ryml::Location loc __maybe_unused, void *user_data __maybe_unused)
 {
@@ -454,6 +454,176 @@ int yaml_get_sequence(OTEL_YAML_DOC *fyd, char **err, const char *path, struct o
 
 /***
  * NAME
+ *   yaml_get_sequence_len - returns the number of items in a sequence
+ *
+ * SYNOPSIS
+ *   int yaml_get_sequence_len(OTEL_YAML_DOC *fyd, char **err, const char *path)
+ *
+ * ARGUMENTS
+ *   fyd  - pointer to the YAML document
+ *   err  - address of a pointer to store an error message on failure
+ *   path - the path to the YAML sequence node
+ *
+ * DESCRIPTION
+ *   Returns the number of items in the sequence at the specified path.
+ *
+ * RETURN VALUE
+ *   Returns the number of items in the sequence on success, or OTELC_RET_ERROR
+ *   on failure.
+ */
+int yaml_get_sequence_len(OTEL_YAML_DOC *fyd, char **err, const char *path)
+{
+#ifdef HAVE_LIBFYAML_H
+	struct fy_node *node_seq;
+#endif
+
+	OTELC_FUNC("%p, %p:%p, \"%s\"", fyd, OTELC_DPTR_ARGS(err), OTELC_STR_ARG(path));
+
+	if (OTEL_NULL(fyd))
+		OTEL_ERETURN_INT("YAML document name not specified");
+	else if (OTEL_NULL(path) || (*path == '\0'))
+		OTEL_ERETURN_INT("YAML node path not specified");
+
+#ifdef HAVE_LIBFYAML_H
+	node_seq = fy_node_by_path(fy_document_root(fyd), path, -1, FYNWF_DONT_FOLLOW);
+	if (OTEL_NULL(node_seq))
+		OTEL_ERETURN_INT("'%s': path does not exist", path);
+	else if (!fy_node_is_sequence(node_seq))
+		OTEL_ERETURN_INT("'%s': not a YAML sequence", path);
+
+	OTELC_RETURN_INT(fy_node_sequence_item_count(node_seq));
+
+#else
+
+	const auto node = ryml_get_node_by_path(fyd, path);
+	if (node.invalid())
+		OTEL_ERETURN_INT("'%s': path does not exist", path);
+	else if (!node.is_seq())
+		OTEL_ERETURN_INT("'%s': not a YAML sequence", path);
+
+	OTELC_RETURN_INT(node.num_children());
+#endif /* HAVE_LIBFYAML_H */
+}
+
+
+/***
+ * NAME
+ *   yaml_is_sequence - checks if a YAML node is a sequence
+ *
+ * SYNOPSIS
+ *   bool yaml_is_sequence(OTEL_YAML_DOC *fyd, const char *path)
+ *
+ * ARGUMENTS
+ *   fyd  - pointer to the YAML document
+ *   path - the path to the node to check
+ *
+ * DESCRIPTION
+ *   Checks if the node at the specified path exists and is a sequence.
+ *
+ * RETURN VALUE
+ *   Returns true if the node is a sequence, false otherwise.
+ */
+bool yaml_is_sequence(OTEL_YAML_DOC *fyd, const char *path)
+{
+#ifdef HAVE_LIBFYAML_H
+	struct fy_node *node;
+
+	if (OTEL_NULL(fyd) || OTEL_NULL(path))
+		return false;
+
+	node = fy_node_by_path(fy_document_root(fyd), path, -1, FYNWF_DONT_FOLLOW);
+	return !OTEL_NULL(node) && fy_node_is_sequence(node);
+
+#else
+
+	const auto node = ryml_get_node_by_path(fyd, path);
+	return !node.invalid() && node.is_seq();
+#endif /* HAVE_LIBFYAML_H */
+}
+
+
+/***
+ * NAME
+ *   yaml_get_sequence_value - returns the value of a sequence item at a specific index
+ *
+ * SYNOPSIS
+ *   int yaml_get_sequence_value(OTEL_YAML_DOC *fyd, char **err, const char *path, int index, char *data, size_t data_size)
+ *
+ * ARGUMENTS
+ *   fyd       - pointer to the YAML document
+ *   err       - address of a pointer to store an error message on failure
+ *   path      - the path to the YAML sequence node
+ *   index     - the index of the item to retrieve
+ *   data      - buffer to store the found string value
+ *   data_size - size of the data buffer
+ *
+ * DESCRIPTION
+ *   Retrieves the value of a sequence item at the specified index.
+ *
+ * RETURN VALUE
+ *   Returns 1 on success, or OTELC_RET_ERROR on failure.
+ */
+int yaml_get_sequence_value(OTEL_YAML_DOC *fyd, char **err, const char *path, int index, char *data, size_t data_size)
+{
+#ifdef HAVE_LIBFYAML_H
+	struct fy_node *node_seq, *node_val;
+	void           *iter_seq = nullptr;
+	size_t          len;
+	const char     *value;
+	int             i;
+#endif
+
+	OTELC_FUNC("%p, %p:%p, \"%s\", %d, %p, %zu", fyd, OTELC_DPTR_ARGS(err), OTELC_STR_ARG(path), index, data, data_size);
+
+	if (OTEL_NULL(fyd))
+		OTEL_ERETURN_INT("YAML document name not specified");
+	else if (OTEL_NULL(path) || (*path == '\0'))
+		OTEL_ERETURN_INT("YAML node path not specified");
+	else if (index < 0)
+		OTEL_ERETURN_INT("'%s[%d]': index out of bounds", path, index);
+	else if (OTEL_NULL(data) || (data_size == 0))
+		OTEL_ERETURN_INT("Data buffer not specified or has zero size");
+
+#ifdef HAVE_LIBFYAML_H
+	node_seq = fy_node_by_path(fy_document_root(fyd), path, -1, FYNWF_DONT_FOLLOW);
+	if (OTEL_NULL(node_seq))
+		OTEL_ERETURN_INT("'%s': path does not exist", path);
+	else if (!fy_node_is_sequence(node_seq))
+		OTEL_ERETURN_INT("'%s': not a YAML sequence", path);
+
+	for (i = 0; i <= index; i++)
+		if (OTEL_NULL(node_val = fy_node_sequence_iterate(node_seq, &iter_seq)))
+			OTEL_ERETURN_INT("'%s[%d]': index out of bounds", path, index);
+
+	value = fy_node_get_scalar(node_val, &len);
+	if (OTEL_NULL(value))
+		OTEL_ERETURN_INT("'%s[%d]': invalid value", path, index);
+	else if (otelc_strlcpy(data, data_size, value, len) == OTELC_RET_ERROR)
+		OTEL_ERETURN_INT("'%s[%d]': invalid value", path, index);
+
+#else
+
+	const auto node = ryml_get_node_by_path(fyd, path);
+	if (node.invalid())
+		OTEL_ERETURN_INT("'%s': path does not exist", path);
+	else if (!node.is_seq())
+		OTEL_ERETURN_INT("'%s': not a YAML sequence", path);
+	else if (OTEL_CAST_STATIC(size_t, index) >= node.num_children())
+		OTEL_ERETURN_INT("'%s[%d]': index out of bounds", path, index);
+	else if (!node[index].has_val())
+		OTEL_ERETURN_INT("'%s[%d]': not a scalar value", path, index);
+	else if (otelc_strlcpy(data, data_size, node[index].val().str, node[index].val().len) == OTELC_RET_ERROR)
+		OTEL_ERETURN_INT("'%s[%d]': invalid value", path, index);
+#endif /* HAVE_LIBFYAML_H */
+
+	OTELC_DBG(DEBUG, "\"%s\"", data);
+
+	OTELC_RETURN_INT(1);
+}
+
+
+/***
+ * NAME
  *   yaml_find_sequence - finds and extracts a named sequence from a YAML document
  *
  * SYNOPSIS
@@ -500,53 +670,44 @@ int yaml_find_sequence(OTEL_YAML_DOC *fyd, char **err, bool is_mandatory, const 
 
 /***
  * NAME
- *   yaml_get_node - retrieves a YAML node and its properties
+ *   yaml_get_node_v - retrieves properties for a named YAML node (internal helper)
  *
  * SYNOPSIS
- *   int yaml_get_node(OTEL_YAML_DOC *fyd, char **err, bool is_mandatory, const char *desc, const char *path, int type, ...)
+ *   static int yaml_get_node_v(OTEL_YAML_DOC *fyd, char **err, const char *desc, const char *name, int type, va_list ap)
  *
  * ARGUMENTS
- *   fyd          - pointer to the YAML document
- *   err          - address of a pointer to store an error message on failure
- *   is_mandatory - if true, an error is returned if the node is not found
- *   desc         - description of the node, used in error messages
- *   path         - the path to the node in the YAML document
- *   type         - the expected type of the node value
- *   ...          - repeating groups of type, mandatory flag, path and storage pointer, terminated by OTEL_YAML_END
+ *   fyd  - pointer to the YAML document
+ *   err  - address of a pointer to store an error message on failure
+ *   desc - description of the node, used in error messages
+ *   name - the name of the node (used to fill %s in paths)
+ *   type - the expected type of the first property
+ *   ap   - va_list of subsequent property definitions
  *
  * DESCRIPTION
- *   Retrieves a node from a YAML document and parses its value according to
- *   the specified type.  This function supports various data types, such as
- *   strings, booleans, integers, and doubles, and performs validation and
- *   range checking.
+ *   Internal helper function to parse properties of a YAML node given its name.
+ *   Iterates through the variable arguments list to extract specified properties.
  *
  * RETURN VALUE
  *   Returns the number of successfully parsed properties on success,
  *   or OTELC_RET_ERROR on failure.
  */
-int yaml_get_node(OTEL_YAML_DOC *fyd, char **err, bool is_mandatory, const char *desc, const char *path, int type, ...)
+static int yaml_get_node_v(OTEL_YAML_DOC *fyd, char **err, const char *desc, const char *name, int type, va_list ap)
 {
-	va_list ap;
-	char    fmt[OTEL_YAML_BUFSIZ << 1], subarg[OTEL_YAML_BUFSIZ], arg[OTEL_YAML_BUFSIZ];
+	char fmt[OTEL_YAML_BUFSIZ << 1], subarg[OTEL_YAML_BUFSIZ];
 #ifdef HAVE_LIBFYAML_H
-	char    subfmt[OTEL_YAML_BUFSIZ << 1];
+	char subfmt[OTEL_YAML_BUFSIZ << 1];
 #endif
-	int     retval = 0;
+	int  rc, retval = 0;
 
-	OTELC_FUNC("%p, %p:%p, %hhu, \"%s\", \"%s\", %d, ...", fyd, OTELC_DPTR_ARGS(err), is_mandatory, OTELC_STR_ARG(desc), OTELC_STR_ARG(path), type);
+	OTELC_FUNC("%p, %p:%p, \"%s\", \"%s\", %d, %p", fyd, OTELC_DPTR_ARGS(err), OTELC_STR_ARG(desc), OTELC_STR_ARG(name), type, ap);
 
 	if (OTEL_NULL(fyd))
 		OTEL_ERETURN_INT("YAML document not specified");
 	else if (OTEL_NULL(desc))
 		OTEL_ERETURN_INT("YAML node description not specified");
-	else if (OTEL_NULL(path) || (*path == '\0'))
-		OTEL_ERETURN_INT("YAML node path not specified");
+	else if (OTEL_NULL(name) || (*name == '\0'))
+		OTEL_ERETURN_INT("YAML node name not specified");
 
-	auto rc = yaml_find(fyd, err, is_mandatory, desc, path, arg, sizeof(arg));
-	if (rc < 1)
-		OTELC_RETURN_INT(rc);
-
-	OTEL_VA_AUTO(ap, type);
 	for ( ; type != OTEL_YAML_END; type = va_arg(ap, typeof(type))) {
 		int         arg_is_mandatory = va_arg(ap, typeof(arg_is_mandatory));
 		const char *arg_path         = va_arg(ap, typeof(arg_path));
@@ -556,7 +717,9 @@ int yaml_get_node(OTEL_YAML_DOC *fyd, char **err, bool is_mandatory, const char 
 
 		OTELC_DBG(DEBUG, "args: %d %d '%s' '%s'", type, arg_is_mandatory, OTELC_STR_ARG(arg_path), OTELC_STR_ARG(path_desc));
 
-		if (OTEL_NULL(path_desc))
+		if (OTEL_NULL(arg_path))
+			OTEL_ERETURN_INT("'%s': YAML argument path not specified", desc);
+		else if (OTEL_NULL(path_desc))
 			OTEL_ERETURN_INT("'%s': invalid %s path", arg_path, desc);
 		else
 			path_desc++;
@@ -565,7 +728,7 @@ int yaml_get_node(OTEL_YAML_DOC *fyd, char **err, bool is_mandatory, const char 
 			struct otelc_text_map **arg_map = va_arg(ap, typeof(arg_map));
 
 PRAGMA_DIAG_IGNORE("-Wformat-nonliteral")
-			(void)snprintf(fmt, sizeof(fmt), arg_path, arg);
+			(void)snprintf(fmt, sizeof(fmt), arg_path, name);
 PRAGMA_DIAG_RESTORE
 			rc = yaml_get_sequence(fyd, err, fmt, arg_map);
 			if (rc == OTELC_RET_ERROR)
@@ -581,14 +744,14 @@ PRAGMA_DIAG_RESTORE
 #ifdef HAVE_LIBFYAML_H
 		(void)snprintf(subfmt, sizeof(subfmt), "%s %%" OTEL_YAML_BUFLEN "[^\n]s", arg_path);
 PRAGMA_DIAG_IGNORE("-Wformat-nonliteral")
-		(void)snprintf(fmt, sizeof(fmt), subfmt, arg);
+		(void)snprintf(fmt, sizeof(fmt), subfmt, name);
 		rc = fy_document_scanf(fyd, fmt, subarg);
 PRAGMA_DIAG_RESTORE
 
 #else
 
 PRAGMA_DIAG_IGNORE("-Wformat-nonliteral")
-		(void)snprintf(fmt, sizeof(fmt), arg_path, arg);
+		(void)snprintf(fmt, sizeof(fmt), arg_path, name);
 PRAGMA_DIAG_RESTORE
 		const auto node = ryml_get_node_by_path(fyd, fmt);
 		if (!node.invalid() && node.has_val())
@@ -667,6 +830,59 @@ PRAGMA_DIAG_RESTORE
 	}
 
 	OTELC_RETURN_INT(retval);
+}
+
+
+/***
+ * NAME
+ *   yaml_get_node - retrieves a YAML node and its properties
+ *
+ * SYNOPSIS
+ *   int yaml_get_node(OTEL_YAML_DOC *fyd, char **err, bool is_mandatory, const char *desc, const char *path, int type, ...)
+ *
+ * ARGUMENTS
+ *   fyd          - pointer to the YAML document
+ *   err          - address of a pointer to store an error message on failure
+ *   is_mandatory - if true, an error is returned if the node is not found
+ *   desc         - description of the node, used in error messages
+ *   path         - the path to the node in the YAML document
+ *   type         - the expected type of the node value
+ *   ...          - additional property definitions, terminated by OTEL_YAML_END
+ *
+ * DESCRIPTION
+ *   Retrieves a node from a YAML document and parses its value according to
+ *   the specified type.  This function supports various data types, such as
+ *   strings, booleans, integers, and doubles, and performs validation and
+ *   range checking.
+ *
+ * RETURN VALUE
+ *   Returns the number of successfully parsed properties on success, or
+ *   OTELC_RET_ERROR on failure.
+ */
+int yaml_get_node(OTEL_YAML_DOC *fyd, char **err, bool is_mandatory, const char *desc, const char *path, int type, ...)
+{
+	va_list ap;
+	char    arg[OTEL_YAML_BUFSIZ];
+	int     rc;
+
+	OTELC_FUNC("%p, %p:%p, %hhu, \"%s\", \"%s\", %d, ...", fyd, OTELC_DPTR_ARGS(err), is_mandatory, OTELC_STR_ARG(desc), OTELC_STR_ARG(path), type);
+
+	if (OTEL_NULL(fyd))
+		OTEL_ERETURN_INT("YAML document not specified");
+	else if (OTEL_NULL(desc))
+		OTEL_ERETURN_INT("YAML node description not specified");
+	else if (OTEL_NULL(path) || (*path == '\0'))
+		OTEL_ERETURN_INT("YAML node path not specified");
+
+	rc = yaml_find(fyd, err, is_mandatory, desc, path, arg, sizeof(arg));
+	if (rc < 1)
+		OTELC_RETURN_INT(rc);
+
+	va_start(ap, type);
+	rc = yaml_get_node_v(fyd, err, desc, arg, type, ap);
+	va_end(ap);
+
+	OTELC_RETURN_INT(rc);
 }
 
 /*
