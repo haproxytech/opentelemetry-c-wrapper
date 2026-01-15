@@ -37,6 +37,7 @@
 #  include <ryml.hpp>
 #endif
 
+#include <atomic>
 #include <cinttypes>
 #include <fstream>
 #include <utility>

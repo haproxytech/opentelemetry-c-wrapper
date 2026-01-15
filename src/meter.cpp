@@ -17,7 +17,8 @@
 #include "include.h"
 
 
-static otel_nostd::shared_ptr<otel_metrics::Meter>          otel_meter{};
+static otel_nostd::shared_ptr<otel_metrics::Meter>          otel_meter_owner{};
+static std::atomic<otel_metrics::Meter *>                   otel_meter{nullptr};
 #ifdef OTELC_USE_STATIC_HANDLE
 struct otel_handle<struct otel_view_handle *>               otel_view{};
 struct otel_handle<struct otel_instrument_handle *>         otel_instrument{};
@@ -487,7 +488,7 @@ static int64_t otel_meter_create_instrument(struct otelc_meter *meter, const cha
 		OTEL_METER_ERETURN_INT("Invalid instrument description: \"%s\"", desc);
 #endif
 
-	auto meter_ptr = otel_meter;
+	auto *meter_ptr = otel_meter.load();
 	if (OTEL_NULL(meter_ptr))
 		OTEL_METER_ERETURN_INT("Invalid meter");
 
@@ -946,7 +947,8 @@ static int otel_meter_start(struct otelc_meter *meter)
 		if (OTEL_NULL(meter_maybe))
 			OTEL_METER_ERETURN_INT("Unable to get meter from provider");
 
-		otel_meter = std::move(meter_maybe);
+		otel_meter_owner = std::move(meter_maybe);
+		otel_meter.store(otel_meter_owner.get());
 		otel_metrics::Provider::SetMeterProvider(provider);
 	}
 
@@ -984,7 +986,7 @@ static int otel_meter_enabled(struct otelc_meter *meter)
 	if (OTEL_NULL(meter))
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
 
-	auto meter_ptr = otel_meter;
+	auto *meter_ptr = otel_meter.load();
 	if (OTEL_NULL(meter_ptr))
 		OTEL_METER_ERETURN_INT("Invalid meter");
 
@@ -1022,8 +1024,10 @@ static void otel_meter_destroy(struct otelc_meter **meter)
 	 * Clear otel_meter before provider teardown to prevent concurrent
 	 * callers from accessing a meter that is being destroyed.
 	 */
-	if (!OTEL_NULL(otel_meter))
-		otel_meter = nullptr;
+	if (!OTEL_NULL(otel_meter)) {
+		otel_meter.store(nullptr);
+		otel_meter_owner = {};
+	}
 
 	otel_meter_provider_destroy();
 	otel_meter_exporter_destroy();

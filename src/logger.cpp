@@ -16,7 +16,8 @@
 #include "include.h"
 
 
-static otel_nostd::shared_ptr<otel_logs::Logger> otel_logger{};
+static otel_nostd::shared_ptr<otel_logs::Logger> otel_logger_owner{};
+static std::atomic<otel_logs::Logger *>          otel_logger{nullptr};
 
 
 /***
@@ -100,7 +101,7 @@ static int otel_logger_enabled(struct otelc_logger *logger, otelc_log_severity_t
 	if (OTEL_NULL(logger))
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
 
-	auto logger_ptr = otel_logger;
+	auto *logger_ptr = otel_logger.load();
 	if (OTEL_NULL(logger_ptr))
 		OTEL_LOGGER_ERETURN_INT("Invalid logger");
 
@@ -139,7 +140,7 @@ static int otel_logger_set_min_severity(struct otelc_logger *logger, otelc_log_s
 	if (OTEL_NULL(logger))
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
 
-	auto logger_ptr = otel_logger;
+	auto *logger_ptr = otel_logger.load();
 	if (OTEL_NULL(logger_ptr))
 		OTEL_LOGGER_ERETURN_INT("Invalid logger");
 
@@ -147,7 +148,7 @@ static int otel_logger_set_min_severity(struct otelc_logger *logger, otelc_log_s
 	if (log_severity == otel_logs::Severity::kInvalid)
 		OTEL_LOGGER_ERETURN_INT("Invalid log severity level: %d", severity);
 
-	OTEL_CAST_STATIC(otel_logs_logger *, logger_ptr.get())->SetMinimumSeverity(OTEL_CAST_STATIC(uint8_t, log_severity));
+	OTEL_CAST_STATIC(otel_logs_logger *, logger_ptr)->SetMinimumSeverity(OTEL_CAST_STATIC(uint8_t, log_severity));
 
 	logger->min_severity = severity;
 
@@ -203,7 +204,7 @@ static int otel_logger_log_v(struct otelc_logger *logger, otelc_log_severity_t s
 	else if (OTEL_NULL(format))
 		OTEL_LOGGER_ERETURN_INT("Invalid format string");
 
-	auto logger_ptr = otel_logger;
+	auto *logger_ptr = otel_logger.load();
 	if (OTEL_NULL(logger_ptr))
 		OTEL_LOGGER_ERETURN_INT("Invalid logger");
 
@@ -475,7 +476,8 @@ static int otel_logger_start(struct otelc_logger *logger)
 		const auto severity = otel_logger_severity(logger, logger->min_severity);
 		OTEL_CAST_STATIC(otel_logs_logger *, logger_maybe.get())->SetMinimumSeverity(OTEL_CAST_STATIC(uint8_t, severity));
 
-		otel_logger = std::move(logger_maybe);
+		otel_logger_owner = std::move(logger_maybe);
+		otel_logger.store(otel_logger_owner.get());
 		otel_logs::Provider::SetLoggerProvider(provider);
 	}
 
@@ -515,8 +517,10 @@ static void otel_logger_destroy(struct otelc_logger **logger)
 	 * Clear otel_logger before provider teardown to prevent concurrent
 	 * callers from accessing a logger that is being destroyed.
 	 */
-	if (!OTEL_NULL(otel_logger))
-		otel_logger = nullptr;
+	if (!OTEL_NULL(otel_logger)) {
+		otel_logger.store(nullptr);
+		otel_logger_owner = {};
+	}
 
 	otel_logger_provider_destroy();
 	otel_logger_exporter_destroy();

@@ -17,7 +17,8 @@
 #include "include.h"
 
 
-static otel_nostd::shared_ptr<otel_trace::Tracer> otel_tracer{};
+static otel_nostd::shared_ptr<otel_trace::Tracer> otel_tracer_owner{};
+static std::atomic<otel_trace::Tracer *>          otel_tracer{nullptr};
 
 
 #ifndef OTELC_USE_STATIC_HANDLE
@@ -114,7 +115,7 @@ static struct otelc_span *otel_tracer_start_span_with_options(struct otelc_trace
 	else if (!OTEL_NULL(parent_span) && !OTEL_NULL(parent_context))
 		OTEL_TRACER_ERETURN_PTR("Parameters parent_span and parent_context are mutually exclusive");
 
-	auto tracer_ptr = otel_tracer;
+	auto *tracer_ptr = otel_tracer.load();
 	if (OTEL_NULL(tracer_ptr))
 		OTEL_TRACER_ERETURN_PTR("Invalid tracer");
 
@@ -627,7 +628,7 @@ static int otel_tracer_enabled(struct otelc_tracer *tracer)
 	if (OTEL_NULL(tracer))
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
 
-	auto tracer_ptr = otel_tracer;
+	auto *tracer_ptr = otel_tracer.load();
 	if (OTEL_NULL(tracer_ptr))
 		OTEL_TRACER_ERETURN_INT("Invalid tracer");
 
@@ -773,7 +774,8 @@ static int otel_tracer_start(struct otelc_tracer *tracer)
 		if (OTEL_NULL(propagator))
 			OTEL_TRACER_ERETURN_INT(OTEL_ERROR_MSG_ENOMEM("composite propagator"));
 
-		otel_tracer = std::move(tracer_maybe);
+		otel_tracer_owner = std::move(tracer_maybe);
+		otel_tracer.store(otel_tracer_owner.get());
 		otel_trace::Provider::SetTracerProvider(std::move(provider));
 		otel_context::propagation::GlobalTextMapPropagator::SetGlobalPropagator(otel_nostd::shared_ptr<otel_context::propagation::TextMapPropagator>(propagator));
 
@@ -783,7 +785,8 @@ static int otel_tracer_start(struct otelc_tracer *tracer)
 		if (OTEL_NULL(propagator))
 			OTEL_TRACER_ERETURN_INT(OTEL_ERROR_MSG_ENOMEM("http trace propagator"));
 
-		otel_tracer = std::move(tracer_maybe);
+		otel_tracer_owner = std::move(tracer_maybe);
+		otel_tracer.store(otel_tracer_owner.get());
 		otel_trace::Provider::SetTracerProvider(std::move(provider));
 		otel_context::propagation::GlobalTextMapPropagator::SetGlobalPropagator(otel_nostd::shared_ptr<otel_context::propagation::TextMapPropagator>(propagator));
 #endif /* OTELC_USE_COMPOSITE_PROPAGATOR */
@@ -830,7 +833,8 @@ static void otel_tracer_destroy(struct otelc_tracer **tracer)
 	 * callers from accessing a tracer that is being destroyed.
 	 */
 	if (!OTEL_NULL(otel_tracer)) {
-		otel_tracer = nullptr;
+		otel_tracer.store(nullptr);
+		otel_tracer_owner = {};
 
 		flag_clear_propagator = true;
 	}
