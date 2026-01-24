@@ -1536,7 +1536,7 @@ void otelc_statistics(char *buffer, size_t bufsiz)
  */
 int otelc_statistics_check(int type, size_t size, int64_t id, int64_t alloc_fail, int64_t erase, int64_t destroy)
 {
-#define OTEL_STAT_CHECK(p,a,b,c,d,e)   (((OTEL_HANDLE((p), map).size() == (a)) && (OTEL_HANDLE((p), id) == (b)) && (OTEL_HANDLE((p), alloc_fail_cnt) == (c)) && (OTEL_HANDLE((p), erase_cnt) == (d)) && (OTEL_HANDLE((p), destroy_cnt) == (e))) ? 0 : 1)
+#define OTEL_STAT_CHECK(p,a,b,c,d,e)   (((OTEL_HANDLE((p), total_map_size()) == (a)) && (OTEL_HANDLE((p), id) == (b)) && (OTEL_HANDLE((p), alloc_fail_cnt) == (c)) && (OTEL_HANDLE((p), erase_cnt) == (d)) && (OTEL_HANDLE((p), destroy_cnt) == (e))) ? 0 : 1)
 	int retval = 0;
 
 	OTELC_FUNC("%d, %zu, %" PRId64 ", %" PRId64 ", %" PRId64 ", %" PRId64, type, size, id, alloc_fail, erase, destroy);

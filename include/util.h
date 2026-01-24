@@ -21,28 +21,62 @@
  * elements without exceeding maximum load factor and rehashes the container.
  */
 constexpr size_t OTEL_HANDLE_RESERVE_COUNT = 8192;
+constexpr size_t OTEL_HANDLE_MAP_SHARDS    = 64;
 
 #ifdef OTELC_USE_STATIC_HANDLE
 #  define OTEL_HANDLE(h,m)           ((h).m)
 #else
 #  define OTEL_HANDLE(h,m)           ((h)->m)
 #endif
-#define OTEL_HANDLE_FMT(h)           h "{ < %zu/%zu > %" PRId64 " %zu %" PRId64 " %" PRId64 " %" PRId64 " }"
-#define OTEL_HANDLE_ARGS(p)          OTEL_HANDLE((p), map).size(), OTEL_HANDLE((p), map).bucket_count(), OTEL_HANDLE((p), id), OTEL_HANDLE((p), peak_size), OTEL_HANDLE((p), alloc_fail_cnt), OTEL_HANDLE((p), erase_cnt), OTEL_HANDLE((p), destroy_cnt)
+#define OTEL_HANDLE_FMT(h)           h "{ < %zu/%zu/%zu > %" PRId64 " %zu %" PRId64 " %" PRId64 " %" PRId64 " }"
+#define OTEL_HANDLE_ARGS(p)          OTEL_HANDLE((p), total_map_size()), OTEL_HANDLE((p), max_bucket_count()), OTEL_HANDLE((p), shards.size()), OTEL_HANDLE((p), id).load(), OTEL_HANDLE((p), peak_size).load(), OTEL_HANDLE((p), alloc_fail_cnt).load(), OTEL_HANDLE((p), erase_cnt).load(), OTEL_HANDLE((p), destroy_cnt).load()
 #define OTEL_DBG_HANDLE(l,h,p)       OTELC_DBG(_##l, OTEL_HANDLE_FMT(h), OTEL_HANDLE_ARGS(p))
+#define OTEL_HANDLE_PEAK_SIZE(h,s)                                                                                                      \
+	do {                                                                                                                            \
+		size_t peak_size = OTEL_HANDLE(h, peak_size).load();                                                                    \
+		while (!OTEL_HANDLE(h, peak_size).compare_exchange_weak(peak_size, std::max(peak_size, OTEL_HANDLE(h, s.map).size()))); \
+	} while (0)
+
+/***
+ * Encapsulates the try/emplace/catch/peak-size pattern for inserting a handle
+ * into a sharded map.  Uses 'bool emplace_ok' to track whether the emplace
+ * succeeded, avoiding the verbose std::pair<iterator,bool>.
+ */
+#define OTEL_HANDLE_EMPLACE(map_name, idx, handle_var, cleanup, err_macro, dup_msg, exc_msg) \
+	do {                                                                                 \
+		bool emplace_ok = false;                                                     \
+		try {                                                                        \
+			OTEL_DBG_THROW();                                                    \
+			emplace_ok = OTEL_HANDLE(map_name, get_shard(idx).map).emplace(      \
+				(idx), (handle_var)).second;                                 \
+			                                                                     \
+			if (!emplace_ok) {                                                   \
+				cleanup;                                                     \
+				                                                             \
+				err_macro(dup_msg);                                          \
+			}                                                                    \
+		}                                                                            \
+		OTEL_CATCH_ERETURN({                                                         \
+			if (emplace_ok)                                                      \
+				OTEL_HANDLE(map_name, get_shard(idx).map).erase(idx);        \
+			                                                                     \
+			cleanup;                                                             \
+			}, err_macro, exc_msg                                                \
+		)                                                                            \
+		                                                                             \
+		OTEL_HANDLE_PEAK_SIZE(map_name, get_shard(idx));                             \
+	} while (0)
 
 /* NOTE: The offset from the demangled name was determined empirically. */
 #define OTEL_HANDLE_DEMANGLED_NAME   (typeid(T).name() + 3)
 
-#define OTEL_LOCK_METER(a, ...)      const std::lock_guard<std::mutex> guard_##a(OTEL_HANDLE(otel_##a, mutex), ##__VA_ARGS__)
+#define OTEL_LOCK_METER(a)           const std::lock_guard<std::mutex> guard_##a(OTEL_HANDLE(otel_##a, get_shard(0).mutex))
 #ifdef OTELC_USE_THREAD_SHARED_HANDLE
-#  define OTEL_LOCK_TRACER(a, ...)   const std::lock_guard<std::mutex> guard_##a(OTEL_HANDLE(otel_##a, mutex), ##__VA_ARGS__)
-#  define OTEL_LOCK(a,b)             std::lock(OTEL_HANDLE(otel_##a, mutex), OTEL_HANDLE(otel_##b, mutex)); OTEL_LOCK_TRACER(a, std::adopt_lock); OTEL_LOCK_TRACER(b, std::adopt_lock)
+#  define OTEL_LOCK_TRACER(a,n)      const std::lock_guard<std::mutex> guard_##a(OTEL_HANDLE(otel_##a, get_shard(n).mutex))
 #  define THREAD_LOCAL
 constexpr bool OTEL_HANDLE_SHARED = true;
 #else
 #  define OTEL_LOCK_TRACER(...)      while (0)
-#  define OTEL_LOCK(...)             while (0)
 #  define THREAD_LOCAL               thread_local
 constexpr bool OTEL_HANDLE_SHARED = false;
 #endif
@@ -91,6 +125,18 @@ decltype(auto) otelc_value_visit(const struct otelc_value *v, F &&f)
 	} while (0)
 
 /***
+ * Safe map lookup that returns a default-constructed value (nullptr for
+ * pointers) when the key is not found, instead of throwing std::out_of_range.
+ */
+template <typename T>
+typename T::mapped_type otel_map_find(T &map, const typename T::key_type &key) noexcept
+{
+	auto it = map.find(key);
+
+	return (it != map.end()) ? it->second : typename T::mapped_type{};
+}
+
+/***
  * NAME
  *   otel_hash_function - custom hash function for int64_t keys
  *
@@ -123,26 +169,31 @@ class otel_key_eq {
  */
 template<typename T, bool shared = true>
 struct otel_handle {
-	std::unordered_map<
-		int64_t,            /* Key type used to identify entries.   (class Key) */
-		T,                  /* Value type stored in the handle map. (class T) */
-		otel_hash_function, /* Custom hash function for keys.       (class Hash = std::hash<Key>) */
-		otel_key_eq         /* Custom key equality comparator.      (class KeyEqual = std::equal_to<Key>) */
-	> map;                      /* Map storing active handles indexed by ID. */
+	struct shard {
+		std::unordered_map<
+			int64_t,            /* Key type used to identify entries.   (class Key) */
+			T,                  /* Value type stored in the handle map. (class T) */
+			otel_hash_function, /* Custom hash function for keys.       (class Hash = std::hash<Key>) */
+			otel_key_eq         /* Custom key equality comparator.      (class KeyEqual = std::equal_to<Key>) */
+		> map;                      /* Map storing active handles indexed by ID. */
+		std::mutex mutex;           /* Mutex protecting concurrent access to the handle map. */
+	};
 
-	int64_t    id;              /* Unique identifier generator (current handle ID). */
-	size_t     peak_size;       /* Peak number of elements. */
-	int64_t    alloc_fail_cnt;  /* Number of allocation failures. */
-	int64_t    erase_cnt;       /* Number of entries erased from the map. */
-	int64_t    destroy_cnt;     /* Number of entries destroyed during cleanup. */
-	std::mutex mutex;           /* Mutex protecting concurrent access to the handle map. */
+	std::atomic<int64_t>      id;             /* Unique identifier generator (current handle ID). */
+	std::atomic<size_t>       peak_size;      /* Peak number of elements in a single shard. */
+	std::atomic<int64_t>      alloc_fail_cnt; /* Number of allocation failures. */
+	std::atomic<int64_t>      erase_cnt;      /* Number of entries erased from the map. */
+	std::atomic<int64_t>      destroy_cnt;    /* Number of entries destroyed during cleanup. */
+	std::vector<struct shard> shards;         /* Independently-locked partitions of the handle map. */
 
-	otel_handle() noexcept
+	void otel_handle_init(void)
 	{
 		OTELC_FUNCPP("", OTEL_HANDLE_DEMANGLED_NAME);
 
-		map.clear();
-		map.reserve(OTEL_HANDLE_RESERVE_COUNT);
+		for (auto &it : shards) {
+			it.map.clear();
+			it.map.reserve(OTEL_HANDLE_RESERVE_COUNT / shards.size());
+		}
 
 		id             = 0;
 		peak_size      = 0;
@@ -153,53 +204,112 @@ struct otel_handle {
 		OTELC_RETURN();
 	}
 
-	/***
-	 * NAME
-	 *   find - look up a handle by its key
-	 *
-	 * ARGUMENTS
-	 *   key - the key to look up in the handle map
-	 *
-	 * DESCRIPTION
-	 *   Looks up a handle in the map by its key using a single search
-	 *   operation.  Unlike map.at(), this method does not throw an
-	 *   exception when the key is not found.
-	 *
-	 * RETURN VALUE
-	 *   Returns the handle associated with the key, or nullptr if the key
-	 *   is not found.
-	 */
-	T find(int64_t key) const noexcept
+	otel_handle() : shards(OTEL_HANDLE_MAP_SHARDS)
 	{
-		const auto it = map.find(key);
+		otel_handle_init();
+	}
 
-		return (it != map.end()) ? it->second : nullptr;
+	otel_handle(size_t num_shards) : shards(num_shards)
+	{
+		if ((num_shards == 0) || ((num_shards & (num_shards - 1)) != 0))
+			throw std::invalid_argument("Invalid vector size, must be a power of two: " + std::to_string(num_shards));
+
+		otel_handle_init();
 	}
 
 	/***
-	 * Acquire the mutex, invoke a callback on every entry, and clear the
-	 * map.  Acquiring the mutex drains any in-flight operation that already
-	 * passed its null-check but has not yet released the lock.
+	 * Get the shard index for a given ID.
+	 */
+	size_t get_shard_index(int64_t key) const noexcept
+	{
+		return OTEL_CAST_STATIC(size_t, key & (shards.size() - 1));
+	}
+
+	/***
+	 * Get the shard for a given ID.
+	 */
+	struct shard &get_shard(int64_t key) noexcept
+	{
+		return shards[get_shard_index(key)];
+	}
+
+	/***
+	 * Calculate the total memory usage of this handle structure.  This
+	 * includes the struct itself, the vector's heap-allocated shard storage
+	 * and each unordered_map's buckets and nodes.  It does not account for
+	 * objects pointed to by stored values.
+	 */
+	size_t size_of() const noexcept
+	{
+		size_t retval = sizeof(*this);
+
+		/* Heap-allocated shard storage managed by the vector. */
+		retval += shards.capacity() * sizeof(struct shard);
+
+		for (const auto &it : shards) {
+			/* Bucket array of the unordered_map. */
+			retval += it.map.bucket_count() * sizeof(void *);
+
+			/* Each map node: next-pointer and key-value pair. */
+			retval += it.map.size() * (sizeof(void *) + sizeof(std::pair<const int64_t, T>));
+		}
+
+		return retval;
+	}
+
+	/***
+	 * Returns the total number of elements across all shards.
+	 */
+	size_t total_map_size() const noexcept
+	{
+		size_t retval = 0;
+
+		for (const auto &it : shards)
+			retval += it.map.size();
+
+		return retval;
+	}
+
+	/***
+	 * Returns the maximum bucket count among all shards.
+	 */
+	size_t max_bucket_count() const noexcept
+	{
+		size_t retval = 0;
+
+		for (const auto &it : shards)
+			retval = std::max(retval, it.map.bucket_count());
+
+		return retval;
+	}
+
+	/***
+	 * For each shard, acquire its mutex, invoke a callback on every entry,
+	 * and clear the map.  Acquiring the mutex drains any in-flight
+	 * operation that already passed its null-check but has not yet
+	 * released the shard lock.
 	 */
 	template<typename F>
 	void for_each_locked(F f) noexcept
 	{
-		if constexpr (shared) {
-			const std::lock_guard<std::mutex> guard(mutex);
+		for (auto &it_shard : shards) {
+			if constexpr (shared) {
+				const std::lock_guard<std::mutex> guard(it_shard.mutex);
 
-			for (auto &it : map)
-				f(it.first, it.second);
-			map.clear();
-		} else {
-			for (auto &it : map)
-				f(it.first, it.second);
-			map.clear();
+				for (auto &it : it_shard.map)
+					f(it.first, it.second);
+				it_shard.map.clear();
+			} else {
+				for (auto &it : it_shard.map)
+					f(it.first, it.second);
+				it_shard.map.clear();
+			}
 		}
 	}
 
 	/***
-	 * Delete all entries and clear the map while holding the mutex, making
-	 * a subsequent delete of the handle safe.
+	 * Delete all entries and clear every shard while holding the per-shard
+	 * mutex, making a subsequent delete of the handle safe.
 	 */
 	void clear_locked() noexcept
 	{
@@ -213,14 +323,20 @@ struct otel_handle {
 	 */
 	~otel_handle() noexcept
 	{
+		OTELC_DBG_IFDEF(size_t total_size = 0, );
+
 		OTELC_FUNCPP("", OTEL_HANDLE_DEMANGLED_NAME);
 
-		OTELC_DBG(OTEL, "handle size: %" PRId64, map.size());
+		for (auto &it_shard : shards) {
+			OTELC_DBG_IFDEF(total_size += it_shard.map.size(), );
 
-		for (auto &it : map)
-			delete it.second;
+			for (auto &it : it_shard.map)
+				delete it.second;
 
-		map.clear();
+			it_shard.map.clear();
+		}
+
+		OTELC_DBG(OTEL, "handle size: %zu", total_size);
 
 		OTELC_RETURN();
 	}

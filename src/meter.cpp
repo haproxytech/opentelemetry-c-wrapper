@@ -20,8 +20,8 @@
 static otel_nostd::shared_ptr<otel_metrics::Meter>          otel_meter_owner{};
 static std::atomic<otel_metrics::Meter *>                   otel_meter{nullptr};
 #ifdef OTELC_USE_STATIC_HANDLE
-struct otel_handle<struct otel_view_handle *>               otel_view{};
-struct otel_handle<struct otel_instrument_handle *>         otel_instrument{};
+struct otel_handle<struct otel_view_handle *>               otel_view{1};
+struct otel_handle<struct otel_instrument_handle *>         otel_instrument{1};
 #else
 struct otel_handle<struct otel_view_handle *>              *otel_view = nullptr;
 struct otel_handle<struct otel_instrument_handle *>        *otel_instrument = nullptr;
@@ -112,14 +112,14 @@ static int64_t otel_meter_get_view_id(const char *name)
 		return OTELC_RET_ERROR;
 
 	const auto view = std::find_if(
-		OTEL_HANDLE(otel_view, map).begin(),
-		OTEL_HANDLE(otel_view, map).end(),
+		OTEL_HANDLE(otel_view, shards[0].map).begin(),
+		OTEL_HANDLE(otel_view, shards[0].map).end(),
 		[&](const auto &it) {
 			return otel_sdk_metrics::InstrumentDescriptorUtil::CaseInsensitiveAsciiEquals(it.second->name, name);
 		}
 	);
 
-	if (view != OTEL_HANDLE(otel_view, map).end()) {
+	if (view != OTEL_HANDLE(otel_view, shards[0].map).end()) {
 		OTELC_DBG(OTEL, "view found: %" PRId64, view->first);
 
 		return view->first;
@@ -166,7 +166,6 @@ static int64_t otel_meter_get_view_id(const char *name)
 static int64_t otel_meter_add_view(struct otelc_meter *meter, const char *view_name, const char *view_desc, const char *instrument_name, const char *instrument_unit, otelc_metric_instrument_t instrument_type, otelc_metric_aggregation_type_t aggregation_type, const double *bounds, size_t bounds_num)
 {
 	OTEL_LOCK_METER(view);
-
 	std::shared_ptr<otel_sdk_metrics::HistogramAggregationConfig> config{};
 	otel_sdk_metrics::InstrumentType                              instr_type;
 	otel_sdk_metrics::AggregationType                             aggr_type;
@@ -286,7 +285,7 @@ static int64_t otel_meter_add_view(struct otelc_meter *meter, const char *view_n
 
 		try {
 			OTEL_DBG_THROW();
-			emplace_status = OTEL_HANDLE(otel_view, map).emplace(OTEL_HANDLE(otel_view, id), view_handle);
+			emplace_status = OTEL_HANDLE(otel_view, shards[0].map).emplace(OTEL_HANDLE(otel_view, id), view_handle);
 		}
 		OTEL_CATCH_ERETURN(delete view_handle, OTEL_METER_ERETURN_INT, "Unable to add meter instrument view")
 
@@ -295,10 +294,10 @@ static int64_t otel_meter_add_view(struct otelc_meter *meter, const char *view_n
 		} else {
 			delete view_handle;
 
-			OTEL_METER_ERETURN_INT("Unable to add meter instrument view: duplicate id %" PRId64, OTEL_HANDLE(otel_view, id));
+			OTEL_METER_ERETURN_INT("Unable to add meter instrument view: duplicate id %" PRId64, OTEL_HANDLE(otel_view, id).load());
 		}
 
-		OTEL_HANDLE(otel_view, peak_size) = std::max(OTEL_HANDLE(otel_view, peak_size), OTEL_HANDLE(otel_view, map).size());
+		OTEL_HANDLE_PEAK_SIZE(otel_view, shards[0]);
 	} else {
 		OTEL_METER_ERETURN_INT("Unable to get meter provider");
 	}
@@ -370,14 +369,14 @@ static int otel_nolock_meter_add_instrument_callback(struct otelc_meter *meter, 
  */
 static int otel_meter_add_instrument_callback(struct otelc_meter *meter, int idx, struct otelc_metric_observable_cb *data)
 {
-	OTEL_LOCK_METER(instrument);
-
 	OTELC_FUNC("%p, %d, %p", meter, idx, data);
 
 	if (OTEL_NULL(meter))
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
 	else if (OTEL_NULL(data))
 		OTEL_METER_ERETURN_INT("Invalid observable callback descriptor");
+
+	OTEL_LOCK_METER(instrument);
 
 	OTELC_RETURN_INT(otel_nolock_meter_add_instrument_callback(meter, OTEL_INSTRUMENT_HANDLE(idx), data));
 }
@@ -413,8 +412,6 @@ static int otel_meter_add_instrument_callback(struct otelc_meter *meter, int idx
  */
 static int otel_meter_remove_instrument_callback(struct otelc_meter *meter, int idx, struct otelc_metric_observable_cb *data)
 {
-	OTEL_LOCK_METER(instrument);
-
 	OTELC_FUNC("%p, %d, %p", meter, idx, data);
 
 	if (OTEL_NULL(meter))
@@ -422,9 +419,7 @@ static int otel_meter_remove_instrument_callback(struct otelc_meter *meter, int 
 	else if (OTEL_NULL(data))
 		OTEL_METER_ERETURN_INT("Invalid observable callback descriptor");
 
-	const auto instrument = OTEL_INSTRUMENT_HANDLE(idx);
-	if (OTEL_NULL(instrument))
-		OTEL_METER_ERETURN_INT("Invalid OpenTelemetry meter instrument index: %d", idx);
+	OTEL_LOCK_INSTRUMENT_HANDLE(_INT, idx);
 
 	OTEL_METER_OBSERVABLE_DISPATCH(instrument, RemoveCallback, data);
 
@@ -461,8 +456,6 @@ static int otel_meter_remove_instrument_callback(struct otelc_meter *meter, int 
  */
 static int64_t otel_meter_create_instrument(struct otelc_meter *meter, const char *name, const char *desc, const char *unit, otelc_metric_instrument_t type, struct otelc_metric_observable_cb *data)
 {
-	OTEL_LOCK_METER(instrument);
-
 	OTELC_FUNC("%p, \"%s\", \"%s\", \"%s\", %d, %p", meter, OTELC_STR_ARG(name), OTELC_STR_ARG(desc), OTELC_STR_ARG(unit), type, data);
 
 	if (OTEL_NULL(meter))
@@ -492,13 +485,15 @@ static int64_t otel_meter_create_instrument(struct otelc_meter *meter, const cha
 	if (OTEL_NULL(meter_ptr))
 		OTEL_METER_ERETURN_INT("Invalid meter");
 
+	OTEL_LOCK_METER(instrument);
+
 	/***
 	 * Returns the instrument ID if the instrument already exists.  The
 	 * lookup is based on both the instrument name and type, with the name
 	 * compared case-insensitively.
 	 */
 #if 0
-	for (const auto &it : OTEL_HANDLE(otel_instrument, map))
+	for (const auto &it : OTEL_HANDLE(otel_instrument, shards[0].map))
 		if (otel_sdk_metrics::InstrumentDescriptorUtil::CaseInsensitiveAsciiEquals(it.second->name, name) && (it.second->type == type)) {
 			OTELC_DBG(OTEL, "instrument found: %" PRId64, it.first);
 
@@ -507,14 +502,14 @@ static int64_t otel_meter_create_instrument(struct otelc_meter *meter, const cha
 #endif
 
 	const auto instrument = std::find_if(
-		OTEL_HANDLE(otel_instrument, map).begin(),
-		OTEL_HANDLE(otel_instrument, map).end(),
+		OTEL_HANDLE(otel_instrument, shards[0].map).begin(),
+		OTEL_HANDLE(otel_instrument, shards[0].map).end(),
 		[&](const auto &it) {
 			return otel_sdk_metrics::InstrumentDescriptorUtil::CaseInsensitiveAsciiEquals(it.second->name, name) && (it.second->type == type);
 		}
 	);
 
-	if (instrument != OTEL_HANDLE(otel_instrument, map).end()) {
+	if (instrument != OTEL_HANDLE(otel_instrument, shards[0].map).end()) {
 		OTELC_DBG(OTEL, "instrument found: %" PRId64, instrument->first);
 
 		OTELC_RETURN_INT(instrument->first);
@@ -563,18 +558,18 @@ static int64_t otel_meter_create_instrument(struct otelc_meter *meter, const cha
 	std::pair<std::unordered_map<int64_t, struct otel_instrument_handle *>::iterator, bool> emplace_status{};
 	try {
 		OTEL_DBG_THROW();
-		emplace_status = OTEL_HANDLE(otel_instrument, map).emplace(OTEL_HANDLE(otel_instrument, id), instrument_handle);
+		emplace_status = OTEL_HANDLE(otel_instrument, shards[0].map).emplace(OTEL_HANDLE(otel_instrument, id), instrument_handle);
 
 		if (!emplace_status.second) {
 			delete instrument_handle;
 
-			OTEL_METER_ERETURN_INT("Unable to create meter instrument: duplicate id %" PRId64, OTEL_HANDLE(otel_instrument, id));
+			OTEL_METER_ERETURN_INT("Unable to create meter instrument: duplicate id %" PRId64, OTEL_HANDLE(otel_instrument, id).load());
 		}
 		else if (OTEL_NULL(data)) {
 			/* Do nothing. */
 		}
 		else if (otel_nolock_meter_add_instrument_callback(meter, instrument_handle, data) == OTELC_RET_ERROR) {
-			OTEL_HANDLE(otel_instrument, map).erase(OTEL_HANDLE(otel_instrument, id));
+			OTEL_HANDLE(otel_instrument, shards[0].map).erase(OTEL_HANDLE(otel_instrument, id));
 
 			delete instrument_handle;
 
@@ -585,13 +580,13 @@ static int64_t otel_meter_create_instrument(struct otelc_meter *meter, const cha
 	}
 	OTEL_CATCH_ERETURN({
 		if (emplace_status.second)
-			OTEL_HANDLE(otel_instrument, map).erase(OTEL_HANDLE(otel_instrument, id));
+			OTEL_HANDLE(otel_instrument, shards[0].map).erase(OTEL_HANDLE(otel_instrument, id));
 
 		delete instrument_handle;
 		}, OTEL_METER_ERETURN_INT, "Unable to create meter instrument"
 	)
 
-	OTEL_HANDLE(otel_instrument, peak_size) = std::max(OTEL_HANDLE(otel_instrument, peak_size), OTEL_HANDLE(otel_instrument, map).size());
+	OTEL_HANDLE_PEAK_SIZE(otel_instrument, shards[0]);
 
 	OTEL_DBG_INSTRUMENT();
 
@@ -690,8 +685,6 @@ static int otel_meter_instrument_value_type(struct otelc_meter *meter, const str
  */
 static int otel_meter_update_instrument(struct otelc_meter *meter, int idx, const struct otelc_value *value)
 {
-	OTEL_LOCK_METER(instrument);
-
 	OTELC_FUNC("%p, %d, %p", meter, idx, value);
 
 	if (OTEL_NULL(meter))
@@ -699,9 +692,7 @@ static int otel_meter_update_instrument(struct otelc_meter *meter, int idx, cons
 	else if (OTEL_NULL(value))
 		OTEL_METER_ERETURN_INT("Invalid value");
 
-	const auto instrument = OTEL_INSTRUMENT_HANDLE(idx);
-	if (OTEL_NULL(instrument))
-		OTEL_METER_ERETURN_INT("Invalid OpenTelemetry meter instrument index: %d", idx);
+	OTEL_LOCK_INSTRUMENT_HANDLE(_INT, idx);
 
 	if (otel_meter_instrument_value_type(meter, value, instrument->type) == OTELC_RET_ERROR)
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
@@ -781,7 +772,6 @@ static int otel_meter_update_instrument(struct otelc_meter *meter, int idx, cons
  */
 static int otel_meter_update_instrument_kv_n(struct otelc_meter *meter, int idx, const struct otelc_value *value, const struct otelc_kv *kv, size_t kv_len)
 {
-	OTEL_LOCK_METER(instrument);
 	std::map<std::string, otel_attribute_value> attr{};
 
 	OTELC_FUNC("%p, %d, %p, %p, %zu", meter, idx, value, kv, kv_len);
@@ -791,9 +781,7 @@ static int otel_meter_update_instrument_kv_n(struct otelc_meter *meter, int idx,
 	else if (OTEL_NULL(value))
 		OTEL_METER_ERETURN_INT("Invalid value");
 
-	const auto instrument = OTEL_INSTRUMENT_HANDLE(idx);
-	if (OTEL_NULL(instrument))
-		OTEL_METER_ERETURN_INT("Invalid OpenTelemetry meter instrument index: %d", idx);
+	OTEL_LOCK_INSTRUMENT_HANDLE(_INT, idx);
 
 	if (otel_meter_instrument_value_type(meter, value, instrument->type) == OTELC_RET_ERROR)
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
@@ -1138,7 +1126,7 @@ struct otelc_meter *otelc_meter_create(char **err)
 
 #ifndef OTELC_USE_STATIC_HANDLE
 	if (OTEL_NULL(otel_instrument))
-		otel_instrument = new(std::nothrow) struct otel_handle<struct otel_instrument_handle *>();
+		otel_instrument = new(std::nothrow) struct otel_handle<struct otel_instrument_handle *>(1);
 	if (OTEL_NULL(otel_instrument)) {
 		otel_meter_destroy(&retptr);
 
@@ -1146,7 +1134,7 @@ struct otelc_meter *otelc_meter_create(char **err)
 	}
 
 	if (OTEL_NULL(otel_view))
-		otel_view = new(std::nothrow) struct otel_handle<struct otel_view_handle *>();
+		otel_view = new(std::nothrow) struct otel_handle<struct otel_view_handle *>(1);
 	if (OTEL_NULL(otel_view)) {
 		otel_meter_destroy(&retptr);
 

@@ -71,6 +71,21 @@ template <typename T> otel_defer_struct<T>make_defer(T fn) { return { fn }; }
 #define OTEL_EXT_FREE_CLEAR(p)        do { if (!OTEL_NULL(p)) { otelc_ext_free(OTELC_DBG_ARGS (p)); (p) = nullptr; } } while (0)
 
 /***
+ * Variadic macro argument-count selectors used for overloading a single macro
+ * name with different argument counts.  Each selector discards a fixed number
+ * of leading arguments and returns the next one (NAME).  The digit pair in the
+ * name indicates which two argument counts can be distinguished: OTEL_23, for
+ * instance, tells apart 2-argument and 3-argument invocations.
+ *
+ * Usage pattern (shown for OTEL_23):
+ *   #define FOO(...)  OTEL_23(__VA_ARGS__, FOO_3, FOO_2)(__VA_ARGS__)
+ * With 2 args, FOO_2 is selected; with 3 args, FOO_3 is selected.
+ */
+#define OTEL_01(_1,NAME, ...)         NAME
+#define OTEL_12(_1,_2,NAME, ...)      NAME
+#define OTEL_23(_1,_2,_3,NAME, ...)   NAME
+
+/***
  * Automatically frees a C-style resource n of type t using the function f when
  * it goes out of scope.  Internally, it creates a std::unique_ptr with a custom
  * deleter, mimicking Go-style defer in C++.  This ensures exception-safe and

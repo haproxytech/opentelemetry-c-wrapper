@@ -25,7 +25,7 @@
 #define OTEL_METER_ERETURN_INT(f, ...)      OTEL_METER_ERETURN_EX(_INT, OTELC_RET_ERROR, f, ##__VA_ARGS__)
 #define OTEL_METER_ERETURN_PTR(f, ...)      OTEL_METER_ERETURN_EX(_PTR, nullptr, f, ##__VA_ARGS__)
 
-#define OTEL_INSTRUMENT_HANDLE(a)           (OTEL_HANDLE(otel_instrument, find)(a))
+#define OTEL_INSTRUMENT_HANDLE(a)           otel_map_find(OTEL_HANDLE(otel_instrument, shards[0].map), (a))
 #define OTEL_DBG_INSTRUMENT()               OTEL_DBG_HANDLE(OTEL, "otel_instrument", otel_instrument)
 
 #define T_CONSTRUCTOR(arg_ptr, arg_type, arg_member)                                                                              \
@@ -107,6 +107,13 @@ struct T {
 	}
 };
 #undef T
+
+#define OTEL_LOCK_INSTRUMENT_HANDLE(arg_type, arg_idx)           \
+	OTEL_LOCK_METER(instrument);                             \
+	                                                         \
+	const auto instrument = OTEL_INSTRUMENT_HANDLE(arg_idx); \
+	if (OTEL_NULL(instrument))                               \
+		OTEL_METER_ERETURN##arg_type("Invalid OpenTelemetry meter instrument index: %d", (arg_idx));
 
 /***
  * Generates an observable callback function that adapts the OpenTelemetry

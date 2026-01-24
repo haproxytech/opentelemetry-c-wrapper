@@ -46,13 +46,13 @@ static std::atomic<otel_trace::Tracer *>          otel_tracer{nullptr};
 static int otel_tracer_handle_init(void)
 {
 	if (OTEL_NULL(otel_span)) {
-		otel_span = new(std::nothrow) struct otel_handle<struct otel_span_handle *, OTEL_HANDLE_SHARED>();
+		otel_span = new(std::nothrow) struct otel_handle<struct otel_span_handle *, OTEL_HANDLE_SHARED>(OTEL_HANDLE_MAP_SHARDS);
 		if (OTEL_NULL(otel_span))
 			return OTELC_RET_ERROR;
 	}
 
 	if (OTEL_NULL(otel_span_context)) {
-		otel_span_context = new(std::nothrow) struct otel_handle<struct otel_span_context_handle *, OTEL_HANDLE_SHARED>();
+		otel_span_context = new(std::nothrow) struct otel_handle<struct otel_span_context_handle *, OTEL_HANDLE_SHARED>(OTEL_HANDLE_MAP_SHARDS);
 		if (OTEL_NULL(otel_span_context))
 			return OTELC_RET_ERROR;
 	}
@@ -101,7 +101,6 @@ static int otel_tracer_handle_init(void)
  */
 static struct otelc_span *otel_tracer_start_span_with_options(struct otelc_tracer *tracer, const char *operation_name, const struct otelc_span *parent_span, const struct otelc_span_context *parent_context, const struct timespec *ts_steady, const struct timespec *ts_system, otelc_span_kind_t kind, const struct otelc_span_link *links, size_t links_len)
 {
-	OTEL_LOCK(span, span_context);
 	otel_nostd::shared_ptr<otel_context::Context>  parent_maybe{};
 	otel_trace::StartSpanOptions                   span_options{};
 	struct otelc_span                             *retptr = nullptr;
@@ -150,6 +149,8 @@ static struct otelc_span *otel_tracer_start_span_with_options(struct otelc_trace
 
 	/* Resolve the parent context from a span, span context, or runtime. */
 	if (!OTEL_NULL(parent_span)) {
+		OTEL_LOCK_TRACER(span, parent_span->idx);
+
 		const auto handle = OTEL_SPAN_HANDLE(parent_span);
 		if (OTEL_NULL(handle))
 			OTEL_TRACER_ERETURN_PTR("Invalid parent span");
@@ -159,6 +160,8 @@ static struct otelc_span *otel_tracer_start_span_with_options(struct otelc_trace
 			OTEL_TRACER_ERETURN_PTR("Unable to get parent span context");
 	}
 	else if (!OTEL_NULL(parent_context)) {
+		OTEL_LOCK_TRACER(span_context, parent_context->idx);
+
 		const auto handle = OTEL_SPAN_CONTEXT_HANDLE(parent_context);
 		if (OTEL_NULL(handle))
 			OTEL_TRACER_ERETURN_PTR("Invalid parent span context");
@@ -203,7 +206,9 @@ static struct otelc_span *otel_tracer_start_span_with_options(struct otelc_trace
 				OTEL_TRACER_ERETURN_PTR("Link[%zu]: span and context are mutually exclusive", i);
 			else if (OTEL_NULL(links[i].span) && OTEL_NULL(links[i].context))
 				OTEL_TRACER_ERETURN_PTR("Link[%zu]: one of span or context must be specified", i);
-			else if (!OTEL_NULL(links[i].span)) {
+			if (!OTEL_NULL(links[i].span)) {
+				OTEL_LOCK_TRACER(span, links[i].span->idx);
+
 				const auto lh = OTEL_SPAN_HANDLE(links[i].span);
 				if (OTEL_NULL(lh))
 					OTEL_TRACER_ERETURN_PTR("Link[%zu]: invalid span", i);
@@ -211,6 +216,8 @@ static struct otelc_span *otel_tracer_start_span_with_options(struct otelc_trace
 				link_ctx = lh->span->GetContext();
 			}
 			else {
+				OTEL_LOCK_TRACER(span_context, links[i].context->idx);
+
 				const auto ch = OTEL_SPAN_CONTEXT_HANDLE(links[i].context);
 				if (OTEL_NULL(ch))
 					OTEL_TRACER_ERETURN_PTR("Link[%zu]: invalid span context", i);
@@ -248,6 +255,7 @@ static struct otelc_span *otel_tracer_start_span_with_options(struct otelc_trace
 	if (OTEL_NULL(span_maybe)) {
 		OTEL_TRACER_ERROR("Unable to start new span");
 
+		OTEL_LOCK_TRACER(span, retptr->idx);
 		otel_nolock_span_destroy(&retptr);
 	} else {
 #ifdef OTELC_USE_RUNTIME_CONTEXT
@@ -258,6 +266,8 @@ static struct otelc_span *otel_tracer_start_span_with_options(struct otelc_trace
 		auto scope = otel::make_shared_nothrow<otel_trace::Scope>(otel_trace::Scope(span_maybe));
 		if (OTEL_NULL(scope)) {
 			span_maybe->End(otel_trace::EndSpanOptions{});
+
+			OTEL_LOCK_TRACER(span, retptr->idx);
 			otel_nolock_span_destroy(&retptr);
 
 			OTEL_TRACER_ERETURN_PTR(OTEL_ERROR_MSG_ENOMEM("span scope"));
@@ -268,6 +278,8 @@ static struct otelc_span *otel_tracer_start_span_with_options(struct otelc_trace
 		auto context = otel::make_shared_nothrow<otel_context::Context>(otel_trace::SetSpan(*parent_maybe, span_maybe));
 		if (OTEL_NULL(context)) {
 			span_maybe->End(otel_trace::EndSpanOptions{});
+
+			OTEL_LOCK_TRACER(span, retptr->idx);
 			otel_nolock_span_destroy(&retptr);
 
 			OTEL_TRACER_ERETURN_PTR(OTEL_ERROR_MSG_ENOMEM("span context"));
@@ -283,38 +295,20 @@ static struct otelc_span *otel_tracer_start_span_with_options(struct otelc_trace
 #endif
 		if (OTEL_NULL(span_handle)) {
 			span_end->End(otel_trace::EndSpanOptions{});
+
+			OTEL_LOCK_TRACER(span, retptr->idx);
 			otel_nolock_span_destroy(&retptr);
 
 			OTEL_TRACER_ERETURN_PTR(OTEL_ERROR_MSG_ENOMEM("span handle"));
 		}
 
+		OTEL_LOCK_TRACER(span, retptr->idx);
+
 		/* Register the span handle in the shared map. */
-		std::pair<std::unordered_map<int64_t, struct otel_span_handle *>::iterator, bool> emplace_status{};
-		try {
-			OTEL_DBG_THROW();
-			emplace_status = OTEL_HANDLE(otel_span, map).emplace(retptr->idx, span_handle);
-
-			if (!emplace_status.second) {
-				span_handle->span->End(otel_trace::EndSpanOptions{});
-
-				delete span_handle;
-				otel_nolock_span_destroy(&retptr);
-
-				OTEL_TRACER_ERETURN_PTR("Unable to add span: duplicate id");
-			}
-		}
-		OTEL_CATCH_ERETURN({
-			if (emplace_status.second)
-				OTEL_HANDLE(otel_span, map).erase(retptr->idx);
-
-			span_handle->span->End(otel_trace::EndSpanOptions{});
-
-			delete span_handle;
-			otel_nolock_span_destroy(&retptr);
-			}, OTEL_TRACER_ERETURN_PTR, "Unable to add span"
-		)
-
-		OTEL_HANDLE(otel_span, peak_size) = std::max(OTEL_HANDLE(otel_span, peak_size), OTEL_HANDLE(otel_span, map).size());
+		OTEL_HANDLE_EMPLACE(otel_span, retptr->idx, span_handle,
+			{ span_handle->span->End(otel_trace::EndSpanOptions{}); delete span_handle; otel_nolock_span_destroy(&retptr); },
+			OTEL_TRACER_ERETURN_PTR, "Unable to add span: duplicate id", "Unable to add span"
+		);
 	}
 
 	OTEL_DBG_SPAN();
@@ -373,8 +367,6 @@ static struct otelc_span *otel_tracer_start_span(struct otelc_tracer *tracer, co
  */
 static int otel_span_context_add(struct otelc_tracer *tracer, struct otelc_span_context **span_context, std::shared_ptr<otel_context::Context> &context)
 {
-	OTEL_LOCK_TRACER(span_context);
-
 	OTELC_FUNC("%p, %p:%p, <context>", tracer, OTELC_DPTR_ARGS(span_context));
 
 	if (OTEL_NULL(tracer))
@@ -388,34 +380,19 @@ static int otel_span_context_add(struct otelc_tracer *tracer, struct otelc_span_
 	/* Allocate the span context handle wrapping the extracted context. */
 	const auto span_context_handle = new(std::nothrow) otel_span_context_handle{std::move(context)};
 	if (OTEL_NULL(span_context_handle)) {
+		OTEL_LOCK_TRACER(span_context, (*span_context)->idx);
 		otel_nolock_span_context_destroy(span_context);
 
 		OTEL_TRACER_ERETURN_INT(OTEL_ERROR_MSG_ENOMEM("span context handle"));
 	}
 
+	OTEL_LOCK_TRACER(span_context, (*span_context)->idx);
+
 	/* Register the span context handle in the shared map. */
-	std::pair<std::unordered_map<int64_t, struct otel_span_context_handle *>::iterator, bool> emplace_status{};
-	try {
-		OTEL_DBG_THROW();
-		emplace_status = OTEL_HANDLE(otel_span_context, map).emplace((*span_context)->idx, span_context_handle);
-
-		if (!emplace_status.second) {
-			delete span_context_handle;
-			otel_nolock_span_context_destroy(span_context);
-
-			OTEL_TRACER_ERETURN_INT("Unable to add span context: duplicate id");
-		}
-	}
-	OTEL_CATCH_ERETURN({
-		if (emplace_status.second)
-			OTEL_HANDLE(otel_span_context, map).erase((*span_context)->idx);
-
-		delete span_context_handle;
-		otel_nolock_span_context_destroy(span_context);
-		}, OTEL_TRACER_ERETURN_INT, "Unable to add span context"
+	OTEL_HANDLE_EMPLACE(otel_span_context, (*span_context)->idx, span_context_handle,
+		{ delete span_context_handle; otel_nolock_span_context_destroy(span_context); },
+		OTEL_TRACER_ERETURN_INT, "Unable to add span context: duplicate id", "Unable to add span context"
 	);
-
-	OTEL_HANDLE(otel_span_context, peak_size) = std::max(OTEL_HANDLE(otel_span_context, peak_size), OTEL_HANDLE(otel_span_context, map).size());
 
 	OTEL_DBG_SPAN_CONTEXT();
 
@@ -755,6 +732,8 @@ static int otel_tracer_start(struct otelc_tracer *tracer)
 
 		tracer_maybe = provider->GetTracer(tracer->scope_name, OTELC_SCOPE_VERSION, OTELC_SCOPE_SCHEMA_URL);
 
+		otel_context::propagation::TextMapPropagator *propagator = nullptr;
+
 		/* Set up the global text map propagator (composite or single). */
 #ifdef OTELC_USE_COMPOSITE_PROPAGATOR
 		std::vector<std::unique_ptr<otel_context::propagation::TextMapPropagator>> propagators{};
@@ -770,26 +749,21 @@ static int otel_tracer_start(struct otelc_tracer *tracer)
 		}
 		OTEL_CATCH_ERETURN( , OTEL_TRACER_ERETURN_INT, "Unable to add propagator")
 
-		const auto propagator = new(std::nothrow) otel_context::propagation::CompositePropagator(std::move(propagators));
+		propagator = new(std::nothrow) otel_context::propagation::CompositePropagator(std::move(propagators));
 		if (OTEL_NULL(propagator))
 			OTEL_TRACER_ERETURN_INT(OTEL_ERROR_MSG_ENOMEM("composite propagator"));
 
-		otel_tracer_owner = std::move(tracer_maybe);
-		otel_tracer.store(otel_tracer_owner.get());
-		otel_trace::Provider::SetTracerProvider(std::move(provider));
-		otel_context::propagation::GlobalTextMapPropagator::SetGlobalPropagator(otel_nostd::shared_ptr<otel_context::propagation::TextMapPropagator>(propagator));
-
 #else
 
-		const auto propagator = new(std::nothrow) otel_trace::propagation::HttpTraceContext();
+		propagator = new(std::nothrow) otel_trace::propagation::HttpTraceContext();
 		if (OTEL_NULL(propagator))
-			OTEL_TRACER_ERETURN_INT(OTEL_ERROR_MSG_ENOMEM("http trace propagator"));
+			OTEL_TRACER_ERETURN_INT(OTEL_ERROR_MSG_ENOMEM("HTTP trace propagator"));
+#endif /* OTELC_USE_COMPOSITE_PROPAGATOR */
 
 		otel_tracer_owner = std::move(tracer_maybe);
 		otel_tracer.store(otel_tracer_owner.get());
 		otel_trace::Provider::SetTracerProvider(std::move(provider));
 		otel_context::propagation::GlobalTextMapPropagator::SetGlobalPropagator(otel_nostd::shared_ptr<otel_context::propagation::TextMapPropagator>(propagator));
-#endif /* OTELC_USE_COMPOSITE_PROPAGATOR */
 	}
 
 	OTELC_DBG_TRACER(OTEL, "tracer", tracer);
@@ -876,10 +850,10 @@ static void otel_tracer_destroy(struct otelc_tracer **tracer)
 
 				OTELC_DBG(DEBUG, "span #%" PRId64 " ended implicitly", id);
 			}
-
-			delete otel_span;
-			otel_span = nullptr;
 		}));
+
+		delete otel_span;
+		otel_span = nullptr;
 	}
 #endif /* OTELC_USE_STATIC_HANDLE */
 

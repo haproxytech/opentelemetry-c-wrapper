@@ -17,8 +17,8 @@
 
 
 #ifdef OTELC_USE_STATIC_HANDLE
-THREAD_LOCAL struct otel_handle<struct otel_span_handle *, OTEL_HANDLE_SHARED>          otel_span{};
-THREAD_LOCAL struct otel_handle<struct otel_span_context_handle *, OTEL_HANDLE_SHARED>  otel_span_context{};
+THREAD_LOCAL struct otel_handle<struct otel_span_handle *, OTEL_HANDLE_SHARED>          otel_span{OTEL_HANDLE_MAP_SHARDS};
+THREAD_LOCAL struct otel_handle<struct otel_span_context_handle *, OTEL_HANDLE_SHARED>  otel_span_context{OTEL_HANDLE_MAP_SHARDS};
 #else
 THREAD_LOCAL struct otel_handle<struct otel_span_handle *, OTEL_HANDLE_SHARED>         *otel_span = nullptr;
 THREAD_LOCAL struct otel_handle<struct otel_span_context_handle *, OTEL_HANDLE_SHARED> *otel_span_context = nullptr;
@@ -52,16 +52,12 @@ THREAD_LOCAL struct otel_handle<struct otel_span_context_handle *, OTEL_HANDLE_S
  */
 static int otel_span_get_id(const struct otelc_span *span, uint8_t *span_id, size_t span_id_size, uint8_t *trace_id, size_t trace_id_size, uint8_t *trace_flags)
 {
-	OTEL_LOCK_TRACER(span);
-
 	OTELC_FUNC("%p, %p, %zu, %p, %zu, %p", span, span_id, span_id_size, trace_id, trace_id_size, trace_flags);
 
 	if (OTEL_NULL(span))
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
 
-	const auto handle = OTEL_SPAN_HANDLE(span);
-	if (OTEL_NULL(handle))
-		OTEL_SPAN_ERETURN_INT("Invalid span");
+	OTEL_LOCK_SPAN_HANDLE(_INT, span);
 
 	const auto span_ctx = handle->span->GetContext();
 	if (!span_ctx.IsValid())
@@ -101,16 +97,12 @@ static int otel_span_get_id(const struct otelc_span *span, uint8_t *span_id, siz
  */
 static int otel_span_is_recording(const struct otelc_span *span)
 {
-	OTEL_LOCK_TRACER(span);
-
 	OTELC_FUNC("%p", span);
 
 	if (OTEL_NULL(span))
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
 
-	const auto handle = OTEL_SPAN_HANDLE(span);
-	if (OTEL_NULL(handle))
-		OTEL_SPAN_ERETURN_INT("Invalid span");
+	OTEL_LOCK_SPAN_HANDLE(_INT, span);
 
 	OTELC_RETURN_INT(handle->span->IsRecording() ? true : false);
 }
@@ -141,8 +133,6 @@ static int otel_span_is_recording(const struct otelc_span *span)
  */
 static int otel_span_set_status(const struct otelc_span *span, otelc_span_status_t status, const char *desc)
 {
-	OTEL_LOCK_TRACER(span);
-
 	OTELC_FUNC("%p, %d, \"%s\"", span, status, OTELC_STR_ARG(desc));
 
 	if (OTEL_NULL(span))
@@ -150,9 +140,7 @@ static int otel_span_set_status(const struct otelc_span *span, otelc_span_status
 	else if (!OTELC_IN_RANGE(status, OTELC_SPAN_STATUS_UNSET, OTELC_SPAN_STATUS_ERROR))
 		OTEL_SPAN_ERETURN_INT("Invalid span status: %d", status);
 
-	const auto handle = OTEL_SPAN_HANDLE(span);
-	if (OTEL_NULL(handle))
-		OTEL_SPAN_ERETURN_INT("Invalid span");
+	OTEL_LOCK_SPAN_HANDLE(_INT, span);
 
 	handle->span->SetStatus(OTEL_CAST_STATIC(otel_trace::StatusCode, status), otel_nostd::string_view{OTEL_NULL(desc) ? "" : desc});
 
@@ -186,7 +174,6 @@ static int otel_span_set_status(const struct otelc_span *span, otelc_span_status
 template <template <typename> class C, typename W>
 static int otel_span_inject_carrier(const struct otelc_span *span, W *carrier, const char *carrier_name, const char *dump_label __maybe_unused)
 {
-	OTEL_LOCK_TRACER(span);
 	/***
 	 * NOTE: the carrier data may contain initially some predefined content
 	 * to which the injected content will be added.
@@ -201,9 +188,7 @@ static int otel_span_inject_carrier(const struct otelc_span *span, W *carrier, c
 	else if (OTEL_NULL(carrier))
 		OTEL_SPAN_ERETURN_INT("Invalid carrier");
 
-	const auto handle = OTEL_SPAN_HANDLE(span);
-	if (OTEL_NULL(handle))
-		OTEL_SPAN_ERETURN_INT("Invalid span");
+	OTEL_LOCK_SPAN_HANDLE(_INT, span);
 
 	/* Inject the span context into the carrier via the global propagator. */
 	const auto propagator = otel_context::propagation::GlobalTextMapPropagator::GetGlobalPropagator();
@@ -328,12 +313,12 @@ static int otel_span_inject_http_headers(const struct otelc_span *span, struct o
  */
 static void otel_span_end_with_options(struct otelc_span **span, const struct timespec *ts_steady, otelc_span_status_t status, const char *desc)
 {
-	OTEL_LOCK_TRACER(span);
-
 	OTELC_FUNC("%p:%p, %p, %d, \"%s\"", OTELC_DPTR_ARGS(span), ts_steady, status, OTELC_STR_ARG(desc));
 
 	if (OTEL_NULL(span) || OTEL_NULL(*span))
 		OTELC_RETURN();
+
+	OTEL_LOCK_TRACER(span, (*span)->idx);
 
 	/* End the span with optional status and steady-clock timestamp. */
 	const auto handle = OTEL_SPAN_HANDLE(*span);
@@ -413,8 +398,6 @@ static void otel_span_end(struct otelc_span **span)
  */
 static void otel_span_set_operation_name(const struct otelc_span *span, const char *operation_name)
 {
-	OTEL_LOCK_TRACER(span);
-
 	OTELC_FUNC("%p, \"%s\"", span, OTELC_STR_ARG(operation_name));
 
 	if (OTEL_NULL(span))
@@ -422,9 +405,7 @@ static void otel_span_set_operation_name(const struct otelc_span *span, const ch
 	else if (!OTELC_STR_IS_VALID(operation_name))
 		OTEL_SPAN_ERETURN("Invalid operation name");
 
-	const auto handle = OTEL_SPAN_HANDLE(span);
-	if (OTEL_NULL(handle))
-		OTEL_SPAN_ERETURN("Invalid span");
+	OTEL_LOCK_SPAN_HANDLE( , span);
 
 	handle->span->UpdateName(operation_name);
 
@@ -457,7 +438,6 @@ static void otel_span_set_operation_name(const struct otelc_span *span, const ch
  */
 static int otel_span_set_baggage_var(const struct otelc_span *span, const char *key, const char *value, ...)
 {
-	OTEL_LOCK_TRACER(span);
 	va_list ap;
 	int     retval = OTELC_RET_ERROR;
 
@@ -470,9 +450,7 @@ static int otel_span_set_baggage_var(const struct otelc_span *span, const char *
 	else if (!OTELC_STR_IS_VALID(value))
 		OTEL_SPAN_ERETURN_INT("Invalid baggage value");
 
-	const auto handle = OTEL_SPAN_HANDLE(span);
-	if (OTEL_NULL(handle))
-		OTEL_SPAN_ERETURN_INT("Invalid span");
+	OTEL_LOCK_SPAN_HANDLE(_INT, span);
 
 	auto baggage = otel_baggage::GetBaggage(*(handle->context));
 
@@ -514,7 +492,6 @@ static int otel_span_set_baggage_var(const struct otelc_span *span, const char *
  */
 static int otel_span_set_baggage_kv_var(const struct otelc_span *span, const struct otelc_kv *kv, ...)
 {
-	OTEL_LOCK_TRACER(span);
 	va_list ap;
 	int     retval = OTELC_RET_ERROR;
 
@@ -525,9 +502,7 @@ static int otel_span_set_baggage_kv_var(const struct otelc_span *span, const str
 	else if (OTEL_NULL(kv))
 		OTEL_SPAN_ERETURN_INT("Invalid baggage key-value");
 
-	const auto handle = OTEL_SPAN_HANDLE(span);
-	if (OTEL_NULL(handle))
-		OTEL_SPAN_ERETURN_INT("Invalid span");
+	OTEL_LOCK_SPAN_HANDLE(_INT, span);
 
 	auto baggage = otel_baggage::GetBaggage(*(handle->context));
 
@@ -577,7 +552,6 @@ static int otel_span_set_baggage_kv_var(const struct otelc_span *span, const str
  */
 static int otel_span_set_baggage_kv_n(const struct otelc_span *span, const struct otelc_kv *kv, size_t kv_len)
 {
-	OTEL_LOCK_TRACER(span);
 	int retval = OTELC_RET_ERROR;
 
 	OTELC_FUNC("%p, %p, %zu", span, kv, kv_len);
@@ -589,9 +563,7 @@ static int otel_span_set_baggage_kv_n(const struct otelc_span *span, const struc
 	else if (kv_len == 0)
 		OTEL_SPAN_ERETURN_INT("Invalid baggage key-value array size");
 
-	const auto handle = OTEL_SPAN_HANDLE(span);
-	if (OTEL_NULL(handle))
-		OTEL_SPAN_ERETURN_INT("Invalid span");
+	OTEL_LOCK_SPAN_HANDLE(_INT, span);
 
 	auto baggage = otel_baggage::GetBaggage(*(handle->context));
 
@@ -635,7 +607,6 @@ static int otel_span_set_baggage_kv_n(const struct otelc_span *span, const struc
  */
 static char *otel_span_get_baggage(const struct otelc_span *span, const char *key)
 {
-	OTEL_LOCK_TRACER(span);
 	std::string  value;
 	char        *retptr = nullptr;
 
@@ -646,9 +617,7 @@ static char *otel_span_get_baggage(const struct otelc_span *span, const char *ke
 	else if (!OTELC_STR_IS_VALID(key))
 		OTEL_SPAN_ERETURN_PTR("Invalid baggage name");
 
-	const auto handle = OTEL_SPAN_HANDLE(span);
-	if (OTEL_NULL(handle))
-		OTEL_SPAN_ERETURN_PTR("Invalid span");
+	OTEL_LOCK_SPAN_HANDLE(_PTR, span);
 
 	const auto baggage = otel_baggage::GetBaggage(*(handle->context));
 	OTEL_DBG_BAGGAGE(baggage);
@@ -690,7 +659,6 @@ static char *otel_span_get_baggage(const struct otelc_span *span, const char *ke
  */
 static struct otelc_text_map *otel_span_get_baggage_var(const struct otelc_span *span, const char *key, ...)
 {
-	OTEL_LOCK_TRACER(span);
 	va_list                ap;
 	struct otelc_text_map *retptr = nullptr;
 	int                    i, m, n;
@@ -708,6 +676,8 @@ static struct otelc_text_map *otel_span_get_baggage_var(const struct otelc_span 
 
 	if (OTEL_NULL(retptr = OTELC_TEXT_MAP_NEW(nullptr, n)))
 		OTEL_SPAN_ERETURN_PTR(OTEL_ERROR_MSG_ENOMEM("baggage map"));
+
+	OTEL_LOCK_TRACER(span, span->idx);
 
 	const auto handle = OTEL_SPAN_HANDLE(span);
 	if (OTEL_NULL(handle)) {
@@ -810,7 +780,6 @@ static int otel_span_set_one_attribute(otel_nostd::shared_ptr<otel_trace::Span> 
  */
 static int otel_span_set_attribute_var(const struct otelc_span *span, const char *key, const struct otelc_value *value, ...)
 {
-	OTEL_LOCK_TRACER(span);
 	va_list ap;
 	int     retval = OTELC_RET_ERROR;
 
@@ -823,9 +792,7 @@ static int otel_span_set_attribute_var(const struct otelc_span *span, const char
 	else if (OTEL_NULL(value))
 		OTEL_SPAN_ERETURN_INT("Invalid attribute value");
 
-	const auto handle = OTEL_SPAN_HANDLE(span);
-	if (OTEL_NULL(handle))
-		OTEL_SPAN_ERETURN_INT("Invalid span");
+	OTEL_LOCK_SPAN_HANDLE(_INT, span);
 
 	/* Iterate over the variadic key-value pairs and set each attribute. */
 	OTEL_VA_AUTO(ap, value);
@@ -866,7 +833,6 @@ static int otel_span_set_attribute_var(const struct otelc_span *span, const char
  */
 static int otel_span_set_attribute_kv_var(const struct otelc_span *span, const struct otelc_kv *kv, ...)
 {
-	OTEL_LOCK_TRACER(span);
 	va_list ap;
 	int     retval = OTELC_RET_ERROR;
 
@@ -877,9 +843,7 @@ static int otel_span_set_attribute_kv_var(const struct otelc_span *span, const s
 	else if (OTEL_NULL(kv))
 		OTEL_SPAN_ERETURN_INT("Invalid attribute key-value");
 
-	const auto handle = OTEL_SPAN_HANDLE(span);
-	if (OTEL_NULL(handle))
-		OTEL_SPAN_ERETURN_INT("Invalid span");
+	OTEL_LOCK_SPAN_HANDLE(_INT, span);
 
 	/* Iterate over the variadic kv pairs and set each attribute. */
 	OTEL_VA_AUTO(ap, kv);
@@ -918,7 +882,6 @@ static int otel_span_set_attribute_kv_var(const struct otelc_span *span, const s
  */
 static int otel_span_set_attribute_kv_n(const struct otelc_span *span, const struct otelc_kv *kv, size_t kv_len)
 {
-	OTEL_LOCK_TRACER(span);
 	int retval = OTELC_RET_ERROR;
 
 	OTELC_FUNC("%p, %p, %zu", span, kv, kv_len);
@@ -930,9 +893,7 @@ static int otel_span_set_attribute_kv_n(const struct otelc_span *span, const str
 	else if (kv_len == 0)
 		OTEL_SPAN_ERETURN_INT("Invalid attribute key-value array size");
 
-	const auto handle = OTEL_SPAN_HANDLE(span);
-	if (OTEL_NULL(handle))
-		OTEL_SPAN_ERETURN_INT("Invalid span");
+	OTEL_LOCK_SPAN_HANDLE(_INT, span);
 
 	/* Iterate over the kv array and set each attribute. */
 	for (retval = 0; retval < OTEL_CAST_STATIC(int, kv_len); retval++)
@@ -1008,7 +969,6 @@ static int otel_span_add_one_event(const struct otelc_span *span, std::map<std::
  */
 static int otel_span_add_event_var(const struct otelc_span *span, const char *name, const struct timespec *ts_system, const char *key, const struct otelc_value *value, ...)
 {
-	OTEL_LOCK_TRACER(span);
 	va_list                                     ap;
 	std::map<std::string, otel_attribute_value> attr{};
 	otel_system_timestamp                       timestamp = std::chrono::system_clock::now();
@@ -1025,9 +985,7 @@ static int otel_span_add_event_var(const struct otelc_span *span, const char *na
 	else if (OTEL_NULL(value))
 		OTEL_SPAN_ERETURN_INT("Invalid event value");
 
-	const auto handle = OTEL_SPAN_HANDLE(span);
-	if (OTEL_NULL(handle))
-		OTEL_SPAN_ERETURN_INT("Invalid span");
+	OTEL_LOCK_SPAN_HANDLE(_INT, span);
 
 	if (!OTEL_NULL(ts_system))
 		timestamp = otel_system_timestamp(timespec_to_duration(ts_system));
@@ -1075,7 +1033,6 @@ static int otel_span_add_event_var(const struct otelc_span *span, const char *na
  */
 static int otel_span_add_event_kv_var(const struct otelc_span *span, const char *name, const struct timespec *ts_system, const struct otelc_kv *kv, ...)
 {
-	OTEL_LOCK_TRACER(span);
 	va_list                                     ap;
 	std::map<std::string, otel_attribute_value> attr{};
 	otel_system_timestamp                       timestamp = std::chrono::system_clock::now();
@@ -1090,9 +1047,7 @@ static int otel_span_add_event_kv_var(const struct otelc_span *span, const char 
 	else if (OTEL_NULL(kv))
 		OTEL_SPAN_ERETURN_INT("Invalid event key-value");
 
-	const auto handle = OTEL_SPAN_HANDLE(span);
-	if (OTEL_NULL(handle))
-		OTEL_SPAN_ERETURN_INT("Invalid span");
+	OTEL_LOCK_SPAN_HANDLE(_INT, span);
 
 	if (!OTEL_NULL(ts_system))
 		timestamp = otel_system_timestamp(timespec_to_duration(ts_system));
@@ -1138,7 +1093,6 @@ static int otel_span_add_event_kv_var(const struct otelc_span *span, const char 
  */
 static int otel_span_add_event_kv_n(const struct otelc_span *span, const char *name, const struct timespec *ts_system, const struct otelc_kv *kv, size_t kv_len)
 {
-	OTEL_LOCK_TRACER(span);
 	std::map<std::string, otel_attribute_value> attr{};
 	otel_system_timestamp                       timestamp = std::chrono::system_clock::now();
 	int                                         retval = OTELC_RET_ERROR;
@@ -1154,9 +1108,7 @@ static int otel_span_add_event_kv_n(const struct otelc_span *span, const char *n
 	else if (kv_len == 0)
 		OTEL_SPAN_ERETURN_INT("Invalid event key-value array size");
 
-	const auto handle = OTEL_SPAN_HANDLE(span);
-	if (OTEL_NULL(handle))
-		OTEL_SPAN_ERETURN_INT("Invalid span");
+	OTEL_LOCK_SPAN_HANDLE(_INT, span);
 
 	if (!OTEL_NULL(ts_system))
 		timestamp = otel_system_timestamp(timespec_to_duration(ts_system));
@@ -1197,16 +1149,10 @@ static int otel_span_add_event_kv_n(const struct otelc_span *span, const char *n
  */
 static int otel_span_add_link(const struct otelc_span *span, const struct otelc_span *link_span, const struct otelc_span_context *link_context, const struct otelc_kv *kv, size_t kv_len)
 {
-	OTEL_LOCK_TRACER(span);
-
 	OTELC_FUNC("%p, %p, %p, %p, %zu", span, link_span, link_context, kv, kv_len);
 
 	if (OTEL_NULL(span))
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
-
-	const auto handle = OTEL_SPAN_HANDLE(span);
-	if (OTEL_NULL(handle))
-		OTEL_SPAN_ERETURN_INT("Invalid span");
 
 #if defined(OPENTELEMETRY_ABI_VERSION_NO) && (OPENTELEMETRY_ABI_VERSION_NO >= 2)
 	auto                                        target = otel_trace::SpanContext::GetInvalid();
@@ -1224,12 +1170,12 @@ static int otel_span_add_link(const struct otelc_span *span, const struct otelc_
 
 	/* Resolve the link target from either a span or a span context. */
 	if (!OTEL_NULL(link_span)) {
-		const auto link_handle = OTEL_SPAN_HANDLE(link_span);
-		if (OTEL_NULL(link_handle))
-			OTEL_SPAN_ERETURN_INT("Invalid linked span");
+		OTEL_LOCK_SPAN_HANDLE(_INT, link_span, "Invalid linked span");
 
-		target = link_handle->span->GetContext();
+		target = handle->span->GetContext();
 	} else {
+		OTEL_LOCK_TRACER(span_context, link_context->idx);
+
 		const auto context_handle = OTEL_SPAN_CONTEXT_HANDLE(link_context);
 		if (OTEL_NULL(context_handle))
 			OTEL_SPAN_ERETURN_INT("Invalid linked span context");
@@ -1238,10 +1184,13 @@ static int otel_span_add_link(const struct otelc_span *span, const struct otelc_
 	}
 
 	/* Add the resolved link to the span. */
-	if (target.IsValid())
+	if (target.IsValid()) {
+		OTEL_LOCK_SPAN_HANDLE(_INT, span);
+
 		handle->span->AddLink(target, attribute);
-	else
+	} else {
 		OTEL_SPAN_ERETURN_INT("Invalid linked span context");
+	}
 
 	OTELC_RETURN_INT(OTELC_RET_OK);
 #else
@@ -1261,7 +1210,12 @@ static int otel_span_add_link(const struct otelc_span *span, const struct otelc_
  *   span - span instance
  *
  * DESCRIPTION
- *   This is the non-locking version of the otel_span_destroy() function.
+ *   Non-locking version of otel_span_destroy().  The caller must hold
+ *   the per-shard mutex for the span's index before calling this function.
+ *   Looks up the span handle in the otel_span handle map, deletes the
+ *   associated C++ object, erases the map entry, and frees the C-style
+ *   otelc_span structure.  After this function, the *span pointer is set
+ *   to null.
  *
  * RETURN VALUE
  *   This function does not return a value.
@@ -1278,7 +1232,7 @@ void otel_nolock_span_destroy(struct otelc_span **span)
 	if (!OTEL_NULL(handle)) {
 		delete handle;
 
-		OTEL_HANDLE(otel_span, map).erase((*span)->idx);
+		OTEL_HANDLE(otel_span, get_shard((*span)->idx).map).erase((*span)->idx);
 		OTEL_HANDLE(otel_span, erase_cnt++);
 
 		OTELC_DBG(OTEL, "otel_span[%" PRId64 "] erased", (*span)->idx);
@@ -1306,21 +1260,21 @@ void otel_nolock_span_destroy(struct otelc_span **span)
  *   span - span instance
  *
  * DESCRIPTION
- *   Destroying all references associated with a specific span, as well as
- *   deleting the span from the span array defined in the otel_span handle.
- *   After this function is executed, all data related to the span is deleted.
+ *   Destroys all references associated with a specific span, as well as
+ *   deleting the span from the otel_span handle map.  After this function
+ *   is executed, all data related to the span is deleted.
  *
  * RETURN VALUE
  *   This function does not return a value.
  */
 static void otel_span_destroy(struct otelc_span **span)
 {
-	OTEL_LOCK_TRACER(span);
-
 	OTELC_FUNC("%p:%p", OTELC_DPTR_ARGS(span));
 
 	if (OTEL_NULL(span) || OTEL_NULL(*span))
 		OTELC_RETURN();
+
+	OTEL_LOCK_TRACER(span, (*span)->idx);
 
 	otel_nolock_span_destroy(span);
 
@@ -1421,19 +1375,12 @@ struct otelc_span *otel_span_new(struct otelc_tracer *tracer)
  */
 static int otel_span_context_get_id(const struct otelc_span_context *context, uint8_t *span_id, size_t span_id_size, uint8_t *trace_id, size_t trace_id_size, uint8_t *trace_flags)
 {
-	OTEL_LOCK_TRACER(span_context);
-
 	OTELC_FUNC("%p, %p, %zu, %p, %zu, %p", context, span_id, span_id_size, trace_id, trace_id_size, trace_flags);
 
 	if (OTEL_NULL(context))
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
 
-	const auto handle = OTEL_SPAN_CONTEXT_HANDLE(context);
-	if (OTEL_NULL(handle)) {
-		OTELC_DBG(OTEL, "invalid otel_span_context[%" PRId64 "]", context->idx);
-
-		OTELC_RETURN_INT(OTELC_RET_ERROR);
-	}
+	OTEL_LOCK_SPAN_CONTEXT_HANDLE(_INT, context);
 
 	/* Retrieve and validate the span context from the handle. */
 	const auto span_ctx = otel_trace::GetSpan(*(handle->context))->GetContext();
@@ -1476,19 +1423,12 @@ static int otel_span_context_get_id(const struct otelc_span_context *context, ui
  */
 static int otel_span_context_is_valid(const struct otelc_span_context *context)
 {
-	OTEL_LOCK_TRACER(span_context);
-
 	OTELC_FUNC("%p", context);
 
 	if (OTEL_NULL(context))
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
 
-	const auto handle = OTEL_SPAN_CONTEXT_HANDLE(context);
-	if (OTEL_NULL(handle)) {
-		OTELC_DBG(OTEL, "invalid otel_span_context[%" PRId64 "]", context->idx);
-
-		OTELC_RETURN_INT(OTELC_RET_ERROR);
-	}
+	OTEL_LOCK_SPAN_CONTEXT_HANDLE(_INT, context);
 
 	const auto span_ctx = otel_trace::GetSpan(*(handle->context))->GetContext();
 
@@ -1517,19 +1457,12 @@ static int otel_span_context_is_valid(const struct otelc_span_context *context)
  */
 static int otel_span_context_is_sampled(const struct otelc_span_context *context)
 {
-	OTEL_LOCK_TRACER(span_context);
-
 	OTELC_FUNC("%p", context);
 
 	if (OTEL_NULL(context))
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
 
-	const auto handle = OTEL_SPAN_CONTEXT_HANDLE(context);
-	if (OTEL_NULL(handle)) {
-		OTELC_DBG(OTEL, "invalid otel_span_context[%" PRId64 "]", context->idx);
-
-		OTELC_RETURN_INT(OTELC_RET_ERROR);
-	}
+	OTEL_LOCK_SPAN_CONTEXT_HANDLE(_INT, context);
 
 	const auto span_ctx = otel_trace::GetSpan(*(handle->context))->GetContext();
 
@@ -1559,19 +1492,12 @@ static int otel_span_context_is_sampled(const struct otelc_span_context *context
  */
 static int otel_span_context_is_remote(const struct otelc_span_context *context)
 {
-	OTEL_LOCK_TRACER(span_context);
-
 	OTELC_FUNC("%p", context);
 
 	if (OTEL_NULL(context))
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
 
-	const auto handle = OTEL_SPAN_CONTEXT_HANDLE(context);
-	if (OTEL_NULL(handle)) {
-		OTELC_DBG(OTEL, "invalid otel_span_context[%" PRId64 "]", context->idx);
-
-		OTELC_RETURN_INT(OTELC_RET_ERROR);
-	}
+	OTEL_LOCK_SPAN_CONTEXT_HANDLE(_INT, context);
 
 	const auto span_ctx = otel_trace::GetSpan(*(handle->context))->GetContext();
 
@@ -1606,19 +1532,12 @@ static int otel_span_context_is_remote(const struct otelc_span_context *context)
  */
 static int otel_span_context_trace_state_get(const struct otelc_span_context *context, const char *key, char *value, size_t value_size)
 {
-	OTEL_LOCK_TRACER(span_context);
-
 	OTELC_FUNC("%p, \"%s\", %p, %zu", context, OTELC_STR_ARG(key), value, value_size);
 
 	if (OTEL_NULL(context) || OTEL_NULL(key))
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
 
-	const auto handle = OTEL_SPAN_CONTEXT_HANDLE(context);
-	if (OTEL_NULL(handle)) {
-		OTELC_DBG(OTEL, "invalid otel_span_context[%" PRId64 "]", context->idx);
-
-		OTELC_RETURN_INT(OTELC_RET_ERROR);
-	}
+	OTEL_LOCK_SPAN_CONTEXT_HANDLE(_INT, context);
 
 	/* Retrieve the trace state and look up the requested key. */
 	const auto span_ctx = otel_trace::GetSpan(*(handle->context))->GetContext();
@@ -1659,19 +1578,12 @@ static int otel_span_context_trace_state_get(const struct otelc_span_context *co
  */
 static int otel_span_context_trace_state_entries(const struct otelc_span_context *context, struct otelc_text_map *text_map)
 {
-	OTEL_LOCK_TRACER(span_context);
-
 	OTELC_FUNC("%p, %p", context, text_map);
 
 	if (OTEL_NULL(context) || OTEL_NULL(text_map))
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
 
-	const auto handle = OTEL_SPAN_CONTEXT_HANDLE(context);
-	if (OTEL_NULL(handle)) {
-		OTELC_DBG(OTEL, "invalid otel_span_context[%" PRId64 "]", context->idx);
-
-		OTELC_RETURN_INT(OTELC_RET_ERROR);
-	}
+	OTEL_LOCK_SPAN_CONTEXT_HANDLE(_INT, context);
 
 	/* Iterate over all trace state entries and copy them to the text map. */
 	const auto span_ctx = otel_trace::GetSpan(*(handle->context))->GetContext();
@@ -1746,19 +1658,12 @@ static inline void otel_trace_state_copy_header(const std::string &str, char *he
  */
 static int otel_span_context_trace_state_header(const struct otelc_span_context *context, char *header, size_t header_size)
 {
-	OTEL_LOCK_TRACER(span_context);
-
 	OTELC_FUNC("%p, %p, %zu", context, header, header_size);
 
 	if (OTEL_NULL(context))
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
 
-	const auto handle = OTEL_SPAN_CONTEXT_HANDLE(context);
-	if (OTEL_NULL(handle)) {
-		OTELC_DBG(OTEL, "invalid otel_span_context[%" PRId64 "]", context->idx);
-
-		OTELC_RETURN_INT(OTELC_RET_ERROR);
-	}
+	OTEL_LOCK_SPAN_CONTEXT_HANDLE(_INT, context);
 
 	/* Serialize the trace state to a W3C header string. */
 	const auto span_ctx = otel_trace::GetSpan(*(handle->context))->GetContext();
@@ -1791,19 +1696,12 @@ static int otel_span_context_trace_state_header(const struct otelc_span_context 
  */
 static int otel_span_context_trace_state_empty(const struct otelc_span_context *context)
 {
-	OTEL_LOCK_TRACER(span_context);
-
 	OTELC_FUNC("%p", context);
 
 	if (OTEL_NULL(context))
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
 
-	const auto handle = OTEL_SPAN_CONTEXT_HANDLE(context);
-	if (OTEL_NULL(handle)) {
-		OTELC_DBG(OTEL, "invalid otel_span_context[%" PRId64 "]", context->idx);
-
-		OTELC_RETURN_INT(OTELC_RET_ERROR);
-	}
+	OTEL_LOCK_SPAN_CONTEXT_HANDLE(_INT, context);
 
 	/* Query whether the trace state contains any entries. */
 	const auto span_ctx = otel_trace::GetSpan(*(handle->context))->GetContext();
@@ -1842,19 +1740,12 @@ static int otel_span_context_trace_state_empty(const struct otelc_span_context *
  */
 static int otel_span_context_trace_state_set(const struct otelc_span_context *context, const char *key, const char *value, char *header, size_t header_size)
 {
-	OTEL_LOCK_TRACER(span_context);
-
 	OTELC_FUNC("%p, \"%s\", \"%s\", %p, %zu", context, OTELC_STR_ARG(key), OTELC_STR_ARG(value), header, header_size);
 
 	if (OTEL_NULL(context) || OTEL_NULL(key) || OTEL_NULL(value))
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
 
-	const auto handle = OTEL_SPAN_CONTEXT_HANDLE(context);
-	if (OTEL_NULL(handle)) {
-		OTELC_DBG(OTEL, "invalid otel_span_context[%" PRId64 "]", context->idx);
-
-		OTELC_RETURN_INT(OTELC_RET_ERROR);
-	}
+	OTEL_LOCK_SPAN_CONTEXT_HANDLE(_INT, context);
 
 	/* Set the key-value pair in the trace state and serialize the result. */
 	const auto  span_ctx = otel_trace::GetSpan(*(handle->context))->GetContext();
@@ -1896,19 +1787,12 @@ static int otel_span_context_trace_state_set(const struct otelc_span_context *co
  */
 static int otel_span_context_trace_state_delete(const struct otelc_span_context *context, const char *key, char *header, size_t header_size)
 {
-	OTEL_LOCK_TRACER(span_context);
-
 	OTELC_FUNC("%p, \"%s\", %p, %zu", context, OTELC_STR_ARG(key), header, header_size);
 
 	if (OTEL_NULL(context) || OTEL_NULL(key))
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
 
-	const auto handle = OTEL_SPAN_CONTEXT_HANDLE(context);
-	if (OTEL_NULL(handle)) {
-		OTELC_DBG(OTEL, "invalid otel_span_context[%" PRId64 "]", context->idx);
-
-		OTELC_RETURN_INT(OTELC_RET_ERROR);
-	}
+	OTEL_LOCK_SPAN_CONTEXT_HANDLE(_INT, context);
 
 	/* Remove the key from the trace state and serialize the result. */
 	const auto  span_ctx = otel_trace::GetSpan(*(handle->context))->GetContext();
@@ -1933,8 +1817,12 @@ static int otel_span_context_trace_state_delete(const struct otelc_span_context 
  *   context - instance of span context
  *
  * DESCRIPTION
- *   This is the non-locking version of the otel_span_context_destroy()
- *   function.
+ *   Non-locking version of otel_span_context_destroy().  The caller must
+ *   hold the per-shard mutex for the context's index before calling this
+ *   function.  Looks up the span context handle in the otel_span_context
+ *   handle map, deletes the associated C++ object, erases the map entry,
+ *   and frees the C-style otelc_span_context structure.  After this
+ *   function, the *context pointer is set to null.
  *
  * RETURN VALUE
  *   This function does not return a value.
@@ -1951,7 +1839,7 @@ void otel_nolock_span_context_destroy(struct otelc_span_context **context)
 	if (!OTEL_NULL(handle)) {
 		delete handle;
 
-		OTEL_HANDLE(otel_span_context, map).erase((*context)->idx);
+		OTEL_HANDLE(otel_span_context, get_shard((*context)->idx).map).erase((*context)->idx);
 		OTEL_HANDLE(otel_span_context, erase_cnt++);
 
 		OTELC_DBG(OTEL, "otel_span_context[%" PRId64 "] erased", (*context)->idx);
@@ -1991,12 +1879,12 @@ void otel_nolock_span_context_destroy(struct otelc_span_context **context)
  */
 static void otel_span_context_destroy(struct otelc_span_context **context)
 {
-	OTEL_LOCK_TRACER(span_context);
-
 	OTELC_FUNC("%p:%p", OTELC_DPTR_ARGS(context));
 
 	if (OTEL_NULL(context) || OTEL_NULL(*context))
 		OTELC_RETURN();
+
+	OTEL_LOCK_TRACER(span_context, (*context)->idx);
 
 	otel_nolock_span_context_destroy(context);
 
@@ -2087,7 +1975,6 @@ struct otelc_span_context *otel_span_context_new(void)
  */
 struct otelc_span_context *otelc_span_context_create(const uint8_t *trace_id, size_t trace_id_size, const uint8_t *span_id, size_t span_id_size, uint8_t trace_flags, int is_remote, const char *trace_state_header, char **err)
 {
-	OTEL_LOCK_TRACER(span_context);
 	uint8_t                    tid[otel_trace::TraceId::kSize] = { 0 };
 	uint8_t                    sid[otel_trace::SpanId::kSize]  = { 0 };
 	struct otelc_span_context *retptr = nullptr;
@@ -2122,35 +2009,20 @@ struct otelc_span_context *otelc_span_context_create(const uint8_t *trace_id, si
 
 	const auto span_context_handle = new(std::nothrow) otel_span_context_handle{std::move(context)};
 	if (OTEL_NULL(span_context_handle)) {
+		OTEL_LOCK_TRACER(span_context, retptr->idx);
 		otel_nolock_span_context_destroy(&retptr);
 
 		OTEL_ERETURN_PTR(OTEL_ERROR_MSG_ENOMEM("span context handle"));
 	}
 
+	OTEL_LOCK_TRACER(span_context, retptr->idx);
+
 	/* Register the span context handle in the shared map. */
-	std::pair<std::unordered_map<int64_t, struct otel_span_context_handle *>::iterator, bool> emplace_status{};
-	try {
-		OTEL_DBG_THROW();
-		emplace_status = OTEL_HANDLE(otel_span_context, map).emplace(retptr->idx, span_context_handle);
+	OTEL_HANDLE_EMPLACE(otel_span_context, retptr->idx, span_context_handle,
+		{ delete span_context_handle; otel_nolock_span_context_destroy(&retptr); },
+		OTEL_ERETURN_PTR, "Unable to add span context: duplicate id", "Unable to add span context"
+	);
 
-		if (!emplace_status.second) {
-			delete span_context_handle;
-
-			otel_nolock_span_context_destroy(&retptr);
-
-			OTEL_ERETURN_PTR("Unable to add span context: duplicate id");
-		}
-	}
-	OTEL_CATCH_ERETURN({
-		if (emplace_status.second)
-			OTEL_HANDLE(otel_span_context, map).erase(retptr->idx);
-
-		delete span_context_handle;
-		otel_nolock_span_context_destroy(&retptr);
-		}, OTEL_ERETURN_PTR, "Unable to add span context"
-	)
-
-	OTEL_HANDLE(otel_span_context, peak_size) = std::max(OTEL_HANDLE(otel_span_context, peak_size), OTEL_HANDLE(otel_span_context, map).size());
 	OTEL_DBG_SPAN_CONTEXT();
 
 	OTELC_RETURN_PTR(retptr);

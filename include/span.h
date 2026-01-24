@@ -22,8 +22,8 @@
 #define OTEL_SPAN_ERETURN_INT(f, ...)      OTEL_SPAN_ERETURN_EX(_INT, OTELC_RET_ERROR, f, ##__VA_ARGS__)
 #define OTEL_SPAN_ERETURN_PTR(f, ...)      OTEL_SPAN_ERETURN_EX(_PTR, nullptr, f, ##__VA_ARGS__)
 
-#define OTEL_SPAN_HANDLE(a)                (OTEL_HANDLE(otel_span, find)((a)->idx))
-#define OTEL_SPAN_CONTEXT_HANDLE(a)        (OTEL_HANDLE(otel_span_context, find)((a)->idx))
+#define OTEL_SPAN_HANDLE(a)                otel_map_find(OTEL_HANDLE(otel_span, get_shard((a)->idx).map), (a)->idx)
+#define OTEL_SPAN_CONTEXT_HANDLE(a)        otel_map_find(OTEL_HANDLE(otel_span_context, get_shard((a)->idx).map), (a)->idx)
 
 #define OTEL_DBG_SPAN()                    OTEL_DBG_HANDLE(OTEL, "otel_span", otel_span)
 #define OTEL_DBG_SPAN_CONTEXT()            OTEL_DBG_HANDLE(OTEL, "otel_span_context", otel_span_context)
@@ -93,6 +93,28 @@ struct T {
 	}
 };
 #undef T
+
+#define OTEL_LOCK_SPAN_HANDLE(...)         OTEL_23(__VA_ARGS__, OTEL_LOCK_SPAN_HANDLE_3, OTEL_LOCK_SPAN_HANDLE_2)(__VA_ARGS__)
+#define OTEL_LOCK_SPAN_HANDLE_2(t,h)       OTEL_LOCK_SPAN_HANDLE_3(t, (h), "Invalid span")
+#define OTEL_LOCK_SPAN_HANDLE_3(arg_type, arg_handle, arg_msg)                        \
+	OTEL_LOCK_TRACER(span, (arg_handle)->idx);                                    \
+	                                                                              \
+	const auto handle = OTEL_SPAN_HANDLE(arg_handle);                             \
+	if (OTEL_NULL(handle)) {                                                      \
+		OTELC_DBG(OTEL, "invalid otel_span[%" PRId64 "]", (arg_handle)->idx); \
+		                                                                      \
+		OTEL_SPAN_ERETURN##arg_type(arg_msg);                                 \
+	}
+
+#define OTEL_LOCK_SPAN_CONTEXT_HANDLE(arg_type, arg_handle)                                   \
+	OTEL_LOCK_TRACER(span_context, (arg_handle)->idx);                                    \
+	                                                                                      \
+	const auto handle = OTEL_SPAN_CONTEXT_HANDLE(arg_handle);                             \
+	if (OTEL_NULL(handle)) {                                                              \
+		OTELC_DBG(OTEL, "invalid otel_span_context[%" PRId64 "]", (arg_handle)->idx); \
+		                                                                              \
+		OTELC_RETURN##arg_type(OTELC_RET_ERROR);                                      \
+	}
 
 /***
  * Updates the baggage context after modifying baggage entries, then returns
