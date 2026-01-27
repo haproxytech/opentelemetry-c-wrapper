@@ -241,6 +241,10 @@ signals:
 
   logs:
     scope_name: "OTEL C wrapper - logs"
-    exporters:  exporter_logs_ostream
-    processors: processor_logs_batch
+    exporters:
+      - exporter_logs_ostream
+      - exporter_logs_otlp_file
+    processors:
+      - processor_logs_batch
+      - processor_logs_single
     providers:  provider_logs

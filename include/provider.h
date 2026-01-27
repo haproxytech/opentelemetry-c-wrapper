@@ -26,7 +26,7 @@ int  otel_tracer_provider_get(struct otelc_tracer *tracer, otel_nostd::shared_pt
 void otel_tracer_provider_destroy(void);
 int  otel_meter_provider_create(struct otelc_meter *meter, std::unique_ptr<otel_sdk_metrics::PushMetricExporter> &exporter, std::shared_ptr<otel_metrics::MeterProvider> &provider);
 void otel_meter_provider_destroy(void);
-int  otel_logger_provider_create(struct otelc_logger *logger, std::unique_ptr<otel_sdk_logs::LogRecordProcessor> &processor, std::shared_ptr<otel_logs::LoggerProvider> &provider);
+int  otel_logger_provider_create(struct otelc_logger *logger, std::vector<std::unique_ptr<otel_sdk_logs::LogRecordProcessor>> &processors, std::shared_ptr<otel_logs::LoggerProvider> &provider);
 void otel_logger_provider_destroy(void);
 
 #endif /* _OPENTELEMETRY_C_WRAPPER_PROVIDER_H_ */

@@ -835,10 +835,10 @@ PRAGMA_DIAG_RESTORE
 
 /***
  * NAME
- *   yaml_get_node - retrieves a YAML node and its properties
+ *   yaml_get_node - retrieves properties of a named YAML node
  *
  * SYNOPSIS
- *   int yaml_get_node(OTEL_YAML_DOC *fyd, char **err, bool is_mandatory, const char *desc, const char *path, int type, ...)
+ *   int yaml_get_node(OTEL_YAML_DOC *fyd, char **err, bool is_mandatory, const char *desc, const char *path, const char *name, int type, ...)
  *
  * ARGUMENTS
  *   fyd          - pointer to the YAML document
@@ -846,40 +846,52 @@ PRAGMA_DIAG_RESTORE
  *   is_mandatory - if true, an error is returned if the node is not found
  *   desc         - description of the node, used in error messages
  *   path         - the path to the node in the YAML document
- *   type         - the expected type of the node value
- *   ...          - additional property definitions, terminated by OTEL_YAML_END
+ *   name         - the name of the node, or nullptr to resolve from path
+ *   type         - the data type of the first property to retrieve
+ *   ...          - arguments for the first property, followed by subsequent
+ *                  property definitions, terminated by OTEL_YAML_END
  *
  * DESCRIPTION
- *   Retrieves a node from a YAML document and parses its value according to
- *   the specified type.  This function supports various data types, such as
- *   strings, booleans, integers, and doubles, and performs validation and
- *   range checking.
+ *   Retrieves properties of a YAML node and parses their values according to
+ *   the specified types.  The name parameter is substituted into %s
+ *   placeholders in the property path patterns to form the actual lookup paths.
+ *   Supported data types include strings, booleans, integers, doubles, and
+ *   maps.  Validation and range checking are performed for numeric types.
+ *
+ *   If name is nullptr, it is resolved from path using yaml_find().  If name
+ *   is non-null, the path parameter is not used.
  *
  * RETURN VALUE
  *   Returns the number of successfully parsed properties on success, or
  *   OTELC_RET_ERROR on failure.
  */
-int yaml_get_node(OTEL_YAML_DOC *fyd, char **err, bool is_mandatory, const char *desc, const char *path, int type, ...)
+int yaml_get_node(OTEL_YAML_DOC *fyd, char **err, bool is_mandatory, const char *desc, const char *path, const char *name, int type, ...)
 {
 	va_list ap;
 	char    arg[OTEL_YAML_BUFSIZ];
 	int     rc;
 
-	OTELC_FUNC("%p, %p:%p, %hhu, \"%s\", \"%s\", %d, ...", fyd, OTELC_DPTR_ARGS(err), is_mandatory, OTELC_STR_ARG(desc), OTELC_STR_ARG(path), type);
+	OTELC_FUNC("%p, %p:%p, %hhu, \"%s\", \"%s\", \"%s\", %d, ...", fyd, OTELC_DPTR_ARGS(err), is_mandatory, OTELC_STR_ARG(desc), OTELC_STR_ARG(path), OTELC_STR_ARG(name), type);
 
 	if (OTEL_NULL(fyd))
 		OTEL_ERETURN_INT("YAML document not specified");
 	else if (OTEL_NULL(desc))
 		OTEL_ERETURN_INT("YAML node description not specified");
-	else if (OTEL_NULL(path) || (*path == '\0'))
-		OTEL_ERETURN_INT("YAML node path not specified");
 
-	rc = yaml_find(fyd, err, is_mandatory, desc, path, arg, sizeof(arg));
-	if (rc < 1)
-		OTELC_RETURN_INT(rc);
+	/* name takes priority over the path parameter. */
+	if (OTEL_NULL(name) && !OTEL_NULL(path) && (*path != '\0')) {
+		rc = yaml_find(fyd, err, is_mandatory, desc, path, arg, sizeof(arg));
+		if (rc < 1)
+			OTELC_RETURN_INT(rc);
+
+		name = arg;
+	}
+
+	if (OTEL_NULL(name) || (*name == '\0'))
+		OTEL_ERETURN_INT("YAML node name not specified");
 
 	va_start(ap, type);
-	rc = yaml_get_node_v(fyd, err, desc, arg, type, ap);
+	rc = yaml_get_node_v(fyd, err, desc, name, type, ap);
 	va_end(ap);
 
 	OTELC_RETURN_INT(rc);

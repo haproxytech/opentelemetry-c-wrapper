@@ -437,11 +437,10 @@ static int otel_logger_shutdown(struct otelc_logger *logger, const struct timesp
  */
 static int otel_logger_start(struct otelc_logger *logger)
 {
-	std::unique_ptr<otel_sdk_logs::LogRecordExporter>  exporter;
-	std::unique_ptr<otel_sdk_logs::LogRecordProcessor> processor;
-	std::shared_ptr<otel_logs::LoggerProvider>         provider;
-	char                                               scope_name[OTEL_YAML_BUFSIZ], min_severity[OTEL_YAML_BUFSIZ] = "";
-	int                                                retval = OTELC_RET_ERROR;
+	std::shared_ptr<otel_logs::LoggerProvider>                      provider;
+	std::vector<std::unique_ptr<otel_sdk_logs::LogRecordProcessor>> processors;
+	char                                                            scope_name[OTEL_YAML_BUFSIZ], min_severity[OTEL_YAML_BUFSIZ] = "";
+	int                                                             retval = OTELC_RET_ERROR;
 
 	OTELC_FUNC("%p", logger);
 
@@ -464,11 +463,66 @@ static int otel_logger_start(struct otelc_logger *logger)
 		logger->min_severity = severity;
 	}
 
-	if ((retval = otel_logger_exporter_create(logger, exporter)) == OTELC_RET_ERROR)
-		/* Do nothing. */;
-	else if ((retval = otel_logger_processor_create(logger, exporter, processor)) == OTELC_RET_ERROR)
-		/* Do nothing. */;
-	else if ((retval = otel_logger_provider_create(logger, processor, provider)) != OTELC_RET_ERROR) {
+	/* Build processors and exporters from YAML configuration. */
+	if (yaml_is_sequence(otelc_fyd, OTEL_YAML_LOGGER_PREFIX OTEL_YAML_PROCESSORS)) {
+		const int count = yaml_get_sequence_len(otelc_fyd, &(logger->err), OTEL_YAML_LOGGER_PREFIX OTEL_YAML_PROCESSORS);
+		if (count < 0)
+			OTELC_RETURN_INT(OTELC_RET_ERROR);
+
+		int count_exporters = yaml_get_sequence_len(otelc_fyd, &(logger->err), OTEL_YAML_LOGGER_PREFIX OTEL_YAML_EXPORTERS);
+		if (count_exporters < 0)
+			count_exporters = 0;
+
+		for (int i = 0; i < count; i++) {
+			std::unique_ptr<otel_sdk_logs::LogRecordExporter>  exporter;
+			std::unique_ptr<otel_sdk_logs::LogRecordProcessor> processor;
+			char                                               processor_name[OTEL_YAML_BUFSIZ], exporter_name[OTEL_YAML_BUFSIZ] = "";
+
+			if (yaml_get_sequence_value(otelc_fyd, &(logger->err), OTEL_YAML_LOGGER_PREFIX OTEL_YAML_PROCESSORS, i, processor_name, sizeof(processor_name)) != 1)
+				OTELC_RETURN_INT(OTELC_RET_ERROR);
+
+			if (!yaml_is_sequence(otelc_fyd, OTEL_YAML_LOGGER_PREFIX OTEL_YAML_EXPORTERS)) {
+				/* Do nothing. */
+			}
+			else if (i < count_exporters) {
+				if (yaml_get_sequence_value(otelc_fyd, &(logger->err), OTEL_YAML_LOGGER_PREFIX OTEL_YAML_EXPORTERS, i, exporter_name, sizeof(exporter_name)) != 1)
+					OTELC_RETURN_INT(OTELC_RET_ERROR);
+			}
+			else if (count_exporters > 0) {
+				if (yaml_get_sequence_value(otelc_fyd, &(logger->err), OTEL_YAML_LOGGER_PREFIX OTEL_YAML_EXPORTERS, count_exporters - 1, exporter_name, sizeof(exporter_name)) != 1)
+					OTELC_RETURN_INT(OTELC_RET_ERROR);
+			}
+
+			if (otel_logger_exporter_create(logger, exporter, exporter_name) != OTELC_RET_OK)
+				OTELC_RETURN_INT(OTELC_RET_ERROR);
+			else if (otel_logger_processor_create(logger, exporter, processor, processor_name) != OTELC_RET_OK)
+				OTELC_RETURN_INT(OTELC_RET_ERROR);
+
+			try {
+				OTEL_DBG_THROW();
+				processors.push_back(std::move(processor));
+			}
+			OTEL_CATCH_ERETURN( , OTEL_LOGGER_ERETURN_INT, "Unable to add processor")
+		}
+	} else {
+		std::unique_ptr<otel_sdk_logs::LogRecordExporter>  exporter;
+		std::unique_ptr<otel_sdk_logs::LogRecordProcessor> processor;
+
+		/* Use default exporter and processor when no sequence is defined. */
+		if ((retval = otel_logger_exporter_create(logger, exporter)) == OTELC_RET_ERROR)
+			OTELC_RETURN_INT(retval);
+		else if ((retval = otel_logger_processor_create(logger, exporter, processor)) == OTELC_RET_ERROR)
+			OTELC_RETURN_INT(retval);
+
+		try {
+			OTEL_DBG_THROW();
+			processors.push_back(std::move(processor));
+		}
+		OTEL_CATCH_ERETURN( , OTEL_LOGGER_ERETURN_INT, "Unable to add processor")
+	}
+
+	/* Create the provider and logger, then install them as globals. */
+	if ((retval = otel_logger_provider_create(logger, processors, provider)) != OTELC_RET_ERROR) {
 		otel_nostd::shared_ptr<otel_logs::Logger> logger_maybe{};
 
 		logger_maybe = provider->GetLogger(logger->scope_name, "", OTELC_SCOPE_VERSION, OTELC_SCOPE_SCHEMA_URL);

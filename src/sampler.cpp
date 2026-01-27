@@ -47,7 +47,7 @@ int otel_sampler_create(struct otelc_tracer *tracer, std::unique_ptr<otel_sdk_tr
 	if (OTEL_NULL(tracer))
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
 
-	rc = yaml_get_node(otelc_fyd, &(tracer->err), 0, "OpenTelemetry sampler", OTEL_YAML_TRACER_PREFIX OTEL_YAML_SAMPLERS,
+	rc = yaml_get_node(otelc_fyd, &(tracer->err), 0, "OpenTelemetry sampler", OTEL_YAML_TRACER_PREFIX OTEL_YAML_SAMPLERS, nullptr,
 	                   OTEL_YAML_ARG_STR(1, SAMPLERS, type),
 	                   OTEL_YAML_END);
 	if (rc == OTELC_RET_ERROR)
@@ -60,7 +60,7 @@ int otel_sampler_create(struct otelc_tracer *tracer, std::unique_ptr<otel_sdk_tr
 		sampler_maybe = otel::make_unique_nothrow<otel_sdk_trace::AlwaysOffSampler>();
 	}
 	else if (strcasecmp(type, "trace_id_ratio_based") == 0) {
-		rc = yaml_get_node(otelc_fyd, &(tracer->err), 0, "OpenTelemetry sampler", OTEL_YAML_TRACER_PREFIX OTEL_YAML_SAMPLERS,
+		rc = yaml_get_node(otelc_fyd, &(tracer->err), 0, "OpenTelemetry sampler", OTEL_YAML_TRACER_PREFIX OTEL_YAML_SAMPLERS, nullptr,
 		                   OTEL_YAML_ARG_DOUBLE(1, SAMPLERS, ratio, 0.0, 1.0),
 		                   OTEL_YAML_END);
 		if (rc == OTELC_RET_ERROR)
@@ -84,7 +84,7 @@ int otel_sampler_create(struct otelc_tracer *tracer, std::unique_ptr<otel_sdk_tr
 		char                                     delegate[OTEL_YAML_BUFSIZ] = "always_on";
 		std::unique_ptr<otel_sdk_trace::Sampler> delegate_sampler;
 
-		rc = yaml_get_node(otelc_fyd, &(tracer->err), 0, "OpenTelemetry parent_based sampler", OTEL_YAML_TRACER_PREFIX OTEL_YAML_SAMPLERS,
+		rc = yaml_get_node(otelc_fyd, &(tracer->err), 0, "OpenTelemetry parent_based sampler", OTEL_YAML_TRACER_PREFIX OTEL_YAML_SAMPLERS, nullptr,
 		                   OTEL_YAML_ARG_STR(0, SAMPLERS, delegate),
 		                   OTEL_YAML_END);
 		if (rc == OTELC_RET_ERROR)
@@ -97,7 +97,7 @@ int otel_sampler_create(struct otelc_tracer *tracer, std::unique_ptr<otel_sdk_tr
 			delegate_sampler = otel::make_unique_nothrow<otel_sdk_trace::AlwaysOffSampler>();
 		}
 		else if (strcasecmp(delegate, "trace_id_ratio_based") == 0) {
-			rc = yaml_get_node(otelc_fyd, &(tracer->err), 0, "OpenTelemetry parent_based sampler ratio", OTEL_YAML_TRACER_PREFIX OTEL_YAML_SAMPLERS,
+			rc = yaml_get_node(otelc_fyd, &(tracer->err), 0, "OpenTelemetry parent_based sampler ratio", OTEL_YAML_TRACER_PREFIX OTEL_YAML_SAMPLERS, nullptr,
 			                   OTEL_YAML_ARG_DOUBLE(1, SAMPLERS, ratio, 0.0, 1.0),
 			                   OTEL_YAML_END);
 			if (rc == OTELC_RET_ERROR)

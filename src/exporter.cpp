@@ -75,7 +75,7 @@ static void otel_exporter_logfile_close(std::ofstream &logfile)
  *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR on failure.
  */
 template <typename T, typename R>
-static int otel_exporter_set_otlp_file_options(const char *desc, const char *path, T &options, R &rt_options, char **err)
+static int otel_exporter_set_otlp_file_options(const char *desc, const char *path, T &options, R &rt_options, char **err, const char *name = nullptr)
 {
 	/***
 	 * The default values are defined in the include file
@@ -87,14 +87,14 @@ static int otel_exporter_set_otlp_file_options(const char *desc, const char *pat
 	int64_t                                             flush_interval = 30000000, flush_count = 256, file_size = 1024 * 1024 * 20, rotate_size = 3;
 	int                                                 rc;
 
-	OTELC_FUNC("\"%s\", \"%s\", <options>, %p:%p", OTELC_STR_ARG(desc), OTELC_STR_ARG(path), OTELC_DPTR_ARGS(err));
+	OTELC_FUNC("\"%s\", \"%s\", <options>, %p:%p, \"%s\"", OTELC_STR_ARG(desc), OTELC_STR_ARG(path), OTELC_DPTR_ARGS(err), OTELC_STR_ARG(name));
 
 	if (OTEL_NULL(desc))
 		OTEL_ERETURN_INT("Exporter description not specified");
 	else if (OTEL_NULL(path))
 		OTEL_ERETURN_INT("Exporter path not specified");
 
-	rc = yaml_get_node(otelc_fyd, err, 1, desc, path,
+	rc = yaml_get_node(otelc_fyd, err, 1, desc, path, name,
 	                   OTEL_YAML_ARG_STR(0, EXPORTERS, thread_name),
 	                   OTEL_YAML_ARG_STR(0, EXPORTERS, file_pattern),
 	                   OTEL_YAML_ARG_STR(0, EXPORTERS, alias_pattern),
@@ -105,6 +105,12 @@ static int otel_exporter_set_otlp_file_options(const char *desc, const char *pat
 	                   OTEL_YAML_END);
 	if (rc == OTELC_RET_ERROR)
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
+	else if (rc == 0) {
+		if (OTEL_NULL(name))
+			OTEL_ERETURN_INT("OpenTelemetry exporter type not specified");
+		else
+			OTEL_ERETURN_INT("'%s': OpenTelemetry exporter type not specified", name);
+	}
 
 	fs_options.file_pattern   = file_pattern;
 	fs_options.alias_pattern  = alias_pattern;
@@ -158,7 +164,7 @@ static int otel_exporter_set_otlp_file_options(const char *desc, const char *pat
  *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR on failure.
  */
 template <typename T>
-static int otel_exporter_set_otlp_grpc_options(const char *desc, const char *path, char *endpoint, T &options, char **err)
+static int otel_exporter_set_otlp_grpc_options(const char *desc, const char *path, char *endpoint, T &options, char **err, const char *name = nullptr)
 {
 	char    thread_name[OTEL_YAML_BUFSIZ] = "";
 	char    ssl_credentials_cacert_path[OTEL_YAML_BUFSIZ] = "", ssl_credentials_cacert_as_string[OTEL_YAML_BUFSIZ] = "", user_agent[OTEL_YAML_BUFSIZ] = "", compression[OTEL_YAML_BUFSIZ] = "";
@@ -169,7 +175,7 @@ static int otel_exporter_set_otlp_grpc_options(const char *desc, const char *pat
 	int     rc, use_ssl_credentials = false;
 	int64_t timeout = 10, max_threads = 0, max_concurrent_requests = 0;
 
-	OTELC_FUNC("\"%s\", \"%s\", \"%s\", <options>, %p:%p", OTELC_STR_ARG(desc), OTELC_STR_ARG(path), OTELC_STR_ARG(endpoint), OTELC_DPTR_ARGS(err));
+	OTELC_FUNC("\"%s\", \"%s\", \"%s\", <options>, %p:%p, \"%s\"", OTELC_STR_ARG(desc), OTELC_STR_ARG(path), OTELC_STR_ARG(endpoint), OTELC_DPTR_ARGS(err), OTELC_STR_ARG(name));
 
 	if (OTEL_NULL(desc))
 		OTEL_ERETURN_INT("Exporter description not specified");
@@ -178,7 +184,7 @@ static int otel_exporter_set_otlp_grpc_options(const char *desc, const char *pat
 	else if (OTEL_NULL(endpoint))
 		OTEL_ERETURN_INT("Exporter endpoint not specified");
 
-	rc = yaml_get_node(otelc_fyd, err, 1, desc, path,
+	rc = yaml_get_node(otelc_fyd, err, 1, desc, path, name,
 	                   OTEL_YAML_ARG_STR(0, EXPORTERS, thread_name),
 	                   OTEL_YAML_ARG_STR_PTR(0, EXPORTERS, endpoint, OTEL_YAML_BUFSIZ),
 	                   OTEL_YAML_ARG_BOOL(0, EXPORTERS, use_ssl_credentials),
@@ -252,7 +258,7 @@ static int otel_exporter_set_otlp_grpc_options(const char *desc, const char *pat
  *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR on failure.
  */
 template <typename T, typename R>
-static int otel_exporter_set_otlp_http_options(const char *desc, const char *path, char *endpoint, T &options, R &rt_options, char **err)
+static int otel_exporter_set_otlp_http_options(const char *desc, const char *path, char *endpoint, T &options, R &rt_options, char **err, const char *name = nullptr)
 {
 	/***
 	 * The default values are defined in the include file
@@ -270,7 +276,7 @@ static int otel_exporter_set_otlp_http_options(const char *desc, const char *pat
 	int                              rc, use_json_name = false, debug = false, ssl_insecure_skip_verify = false;
 	int64_t                          timeout = 10, max_concurrent_requests = 64, max_requests_per_connection = 8;
 
-	OTELC_FUNC("\"%s\", \"%s\", \"%s\", <options>, %p:%p", OTELC_STR_ARG(desc), OTELC_STR_ARG(path), OTELC_STR_ARG(endpoint), OTELC_DPTR_ARGS(err));
+	OTELC_FUNC("\"%s\", \"%s\", \"%s\", <options>, %p:%p, \"%s\"", OTELC_STR_ARG(desc), OTELC_STR_ARG(path), OTELC_STR_ARG(endpoint), OTELC_DPTR_ARGS(err), OTELC_STR_ARG(name));
 
 	if (OTEL_NULL(desc))
 		OTEL_ERETURN_INT("Exporter description not specified");
@@ -279,7 +285,7 @@ static int otel_exporter_set_otlp_http_options(const char *desc, const char *pat
 	else if (OTEL_NULL(endpoint))
 		OTEL_ERETURN_INT("Exporter endpoint not specified");
 
-	rc = yaml_get_node(otelc_fyd, err, 1, desc, path,
+	rc = yaml_get_node(otelc_fyd, err, 1, desc, path, name,
 	                   OTEL_YAML_ARG_STR(0, EXPORTERS, thread_name),
 	                   OTEL_YAML_ARG_STR_PTR(0, EXPORTERS, endpoint, OTEL_YAML_BUFSIZ),
 	                   OTEL_YAML_ARG_STR(0, EXPORTERS, content_type),
@@ -395,19 +401,19 @@ static int otel_exporter_set_otlp_http_options(const char *desc, const char *pat
  *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR on failure.
  */
 template <typename C, typename T>
-static int otel_exporter_set_ostream_options(const char *desc, const char *path, std::ofstream &stream, T &exporter, char **err)
+static int otel_exporter_set_ostream_options(const char *desc, const char *path, std::ofstream &stream, T &exporter, char **err, const char *name = nullptr)
 {
 	char filename[PATH_MAX] = OTEL_EXPORTER_OSTREAM_STDOUT;
 	int  rc;
 
-	OTELC_FUNC("\"%s\", \"%s\", <stream>, <exporter>, %p:%p", OTELC_STR_ARG(desc), OTELC_STR_ARG(path), OTELC_DPTR_ARGS(err));
+	OTELC_FUNC("\"%s\", \"%s\", <stream>, <exporter>, %p:%p, \"%s\"", OTELC_STR_ARG(desc), OTELC_STR_ARG(path), OTELC_DPTR_ARGS(err), OTELC_STR_ARG(name));
 
 	if (OTEL_NULL(desc))
 		OTEL_ERETURN_INT("Exporter description not specified");
 	else if (OTEL_NULL(path))
 		OTEL_ERETURN_INT("Exporter path not specified");
 
-	rc = yaml_get_node(otelc_fyd, err, 1, desc, path, OTEL_YAML_ARG_STR(0, EXPORTERS, filename), OTEL_YAML_END);
+	rc = yaml_get_node(otelc_fyd, err, 1, desc, path, name, OTEL_YAML_ARG_STR(0, EXPORTERS, filename), OTEL_YAML_END);
 	if (rc == OTELC_RET_ERROR)
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
 
@@ -466,7 +472,7 @@ int otel_tracer_exporter_create(struct otelc_tracer *tracer, std::unique_ptr<ote
 	if (OTEL_NULL(tracer))
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
 
-	rc = yaml_get_node(otelc_fyd, &(tracer->err), 1, OTEL_TRACER_EXPORTER_DESC, OTEL_YAML_TRACER_PREFIX OTEL_YAML_EXPORTERS,
+	rc = yaml_get_node(otelc_fyd, &(tracer->err), 1, OTEL_TRACER_EXPORTER_DESC, OTEL_YAML_TRACER_PREFIX OTEL_YAML_EXPORTERS, nullptr,
 	                   OTEL_YAML_ARG_STR(1, EXPORTERS, type),
 	                   OTEL_YAML_END);
 	if (rc == OTELC_RET_ERROR)
@@ -480,7 +486,7 @@ int otel_tracer_exporter_create(struct otelc_tracer *tracer, std::unique_ptr<ote
 		/* <opentelemetry/exporters/memory/in_memory_span_exporter.h> */
 		int64_t buffer_size = otel_exporter_memory::MAX_BUFFER_SIZE;
 
-		rc = yaml_get_node(otelc_fyd, &(tracer->err), 1, OTEL_TRACER_EXPORTER_DESC, OTEL_YAML_TRACER_PREFIX OTEL_YAML_EXPORTERS,
+		rc = yaml_get_node(otelc_fyd, &(tracer->err), 1, OTEL_TRACER_EXPORTER_DESC, OTEL_YAML_TRACER_PREFIX OTEL_YAML_EXPORTERS, nullptr,
 		                   OTEL_YAML_ARG_INT64(0, EXPORTERS, buffer_size, 16, 65536),
 		                   OTEL_YAML_END);
 		if (rc == OTELC_RET_ERROR)
@@ -558,7 +564,7 @@ int otel_tracer_exporter_create(struct otelc_tracer *tracer, std::unique_ptr<ote
 		char                                        endpoint[OTEL_YAML_BUFSIZ] = OTEL_TRACER_EXPORTER_ZIPKIN_ENDPOINT, format[OTEL_YAML_BUFSIZ] = "", service_name[OTEL_YAML_BUFSIZ] = "default-service";
 		char                                        ipv4[OTEL_YAML_BUFSIZ] = "", ipv6[OTEL_YAML_BUFSIZ] = "";
 
-		rc = yaml_get_node(otelc_fyd, &(tracer->err), 1, OTEL_TRACER_EXPORTER_DESC, OTEL_YAML_TRACER_PREFIX OTEL_YAML_EXPORTERS,
+		rc = yaml_get_node(otelc_fyd, &(tracer->err), 1, OTEL_TRACER_EXPORTER_DESC, OTEL_YAML_TRACER_PREFIX OTEL_YAML_EXPORTERS, nullptr,
 		                   OTEL_YAML_ARG_STR(0, EXPORTERS, endpoint),
 		                   OTEL_YAML_ARG_STR(0, EXPORTERS, format),
 		                   OTEL_YAML_ARG_STR(0, EXPORTERS, service_name),
@@ -658,7 +664,7 @@ int otel_meter_exporter_create(struct otelc_meter *meter, std::unique_ptr<otel_s
 	if (OTEL_NULL(meter))
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
 
-	rc = yaml_get_node(otelc_fyd, &(meter->err), 1, OTEL_METER_EXPORTER_DESC, OTEL_YAML_METER_PREFIX OTEL_YAML_EXPORTERS,
+	rc = yaml_get_node(otelc_fyd, &(meter->err), 1, OTEL_METER_EXPORTER_DESC, OTEL_YAML_METER_PREFIX OTEL_YAML_EXPORTERS, nullptr,
 	                   OTEL_YAML_ARG_STR(1, EXPORTERS, type),
 	                   OTEL_YAML_END);
 	if (rc == OTELC_RET_ERROR)
@@ -672,7 +678,7 @@ int otel_meter_exporter_create(struct otelc_meter *meter, std::unique_ptr<otel_s
 		/* <opentelemetry/exporters/memory/in_memory_metric_data.h> */
 		int64_t buffer_size = otel_exporter_memory::MAX_BUFFER_SIZE;
 
-		rc = yaml_get_node(otelc_fyd, &(meter->err), 1, OTEL_METER_EXPORTER_DESC, OTEL_YAML_METER_PREFIX OTEL_YAML_EXPORTERS,
+		rc = yaml_get_node(otelc_fyd, &(meter->err), 1, OTEL_METER_EXPORTER_DESC, OTEL_YAML_METER_PREFIX OTEL_YAML_EXPORTERS, nullptr,
 		                   OTEL_YAML_ARG_INT64(0, EXPORTERS, buffer_size, 16, 65536),
 		                   OTEL_YAML_END);
 		if (rc == OTELC_RET_ERROR)
@@ -791,11 +797,12 @@ void otel_meter_exporter_destroy(void)
  *   otel_logger_exporter_create - creates a new log record exporter
  *
  * SYNOPSIS
- *   int otel_logger_exporter_create(struct otelc_logger *logger, std::unique_ptr<otel_sdk_logs::LogRecordExporter> &exporter)
+ *   int otel_logger_exporter_create(struct otelc_logger *logger, std::unique_ptr<otel_sdk_logs::LogRecordExporter> &exporter, const char *name)
  *
  * ARGUMENTS
  *   logger   - logger instance
  *   exporter - unique pointer to store the created log record exporter
+ *   name     - name of the exporter configuration node, or nullptr for default
  *
  * DESCRIPTION
  *   Creates a new log record exporter based on the configuration provided in
@@ -805,18 +812,18 @@ void otel_meter_exporter_destroy(void)
  * RETURN VALUE
  *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR in case of an error.
  */
-int otel_logger_exporter_create(struct otelc_logger *logger, std::unique_ptr<otel_sdk_logs::LogRecordExporter> &exporter)
+int otel_logger_exporter_create(struct otelc_logger *logger, std::unique_ptr<otel_sdk_logs::LogRecordExporter> &exporter, const char *name)
 {
 	std::unique_ptr<otel_sdk_logs::LogRecordExporter> exporter_maybe{};
 	char                                              type[OTEL_YAML_BUFSIZ] = "";
 	int                                               rc;
 
-	OTELC_FUNC("%p, <exporter>", logger);
+	OTELC_FUNC("%p, <exporter>, \"%s\"", logger, OTELC_STR_ARG(name));
 
 	if (OTEL_NULL(logger))
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
 
-	rc = yaml_get_node(otelc_fyd, &(logger->err), 1, OTEL_LOGGER_EXPORTER_DESC, OTEL_YAML_LOGGER_PREFIX OTEL_YAML_EXPORTERS,
+	rc = yaml_get_node(otelc_fyd, &(logger->err), 1, OTEL_LOGGER_EXPORTER_DESC, OTEL_YAML_LOGGER_PREFIX OTEL_YAML_EXPORTERS, name,
 	                   OTEL_YAML_ARG_STR(1, EXPORTERS, type),
 	                   OTEL_YAML_END);
 	if (rc == OTELC_RET_ERROR)
@@ -835,13 +842,13 @@ int otel_logger_exporter_create(struct otelc_logger *logger, std::unique_ptr<ote
 		int64_t                                           port = 9200, response_timeout = 30;
 		int                                               debug = false;
 
-		rc = yaml_get_node(otelc_fyd, &(logger->err), 1, OTEL_LOGGER_EXPORTER_DESC, OTEL_YAML_LOGGER_PREFIX OTEL_YAML_EXPORTERS,
+		rc = yaml_get_node(otelc_fyd, &(logger->err), 1, OTEL_LOGGER_EXPORTER_DESC, OTEL_YAML_LOGGER_PREFIX OTEL_YAML_EXPORTERS, name,
 		                   OTEL_YAML_ARG_STR(0, EXPORTERS, host),
 		                   OTEL_YAML_ARG_INT64(0, EXPORTERS, port, 1, 65535),
 		                   OTEL_YAML_ARG_STR(0, EXPORTERS, index),
 		                   OTEL_YAML_ARG_INT64(0, EXPORTERS, response_timeout, 1, 3600),
 		                   OTEL_YAML_ARG_BOOL(0, EXPORTERS, debug),
-				   OTEL_YAML_ARG_MAP(0, EXPORTERS, http_headers),
+		                   OTEL_YAML_ARG_MAP(0, EXPORTERS, http_headers),
 		                   OTEL_YAML_END);
 		OTEL_DEFER_DPTR_FREE(struct otelc_text_map, http_headers, otelc_text_map_destroy);
 		if (rc == OTELC_RET_ERROR)
@@ -875,7 +882,7 @@ int otel_logger_exporter_create(struct otelc_logger *logger, std::unique_ptr<ote
 	}
 	else if (strcasecmp(type, OTEL_EXPORTER_OSTREAM) == 0) {
 #ifdef HAVE_OTEL_EXPORTER_OSTREAM
-		if (otel_exporter_set_ostream_options<otel_exporter_logs::OStreamLogRecordExporter>(OTEL_LOGGER_EXPORTER_DESC, OTEL_YAML_LOGGER_PREFIX OTEL_YAML_EXPORTERS, otel_logger_logfile, exporter_maybe, &(logger->err)) == OTELC_RET_ERROR)
+		if (otel_exporter_set_ostream_options<otel_exporter_logs::OStreamLogRecordExporter>(OTEL_LOGGER_EXPORTER_DESC, OTEL_YAML_LOGGER_PREFIX OTEL_YAML_EXPORTERS, otel_logger_logfile, exporter_maybe, &(logger->err), name) == OTELC_RET_ERROR)
 			OTELC_RETURN_INT(OTELC_RET_ERROR);
 #else
 		OTEL_LOGGER_ERROR(OTEL_LOGGER_EXPORTER_NOT_SUPPORTED("ostream"));
@@ -886,7 +893,7 @@ int otel_logger_exporter_create(struct otelc_logger *logger, std::unique_ptr<ote
 		otel_exporter_otlp::OtlpFileLogRecordExporterOptions        options{};
 		otel_exporter_otlp::OtlpFileLogRecordExporterRuntimeOptions rt_options{};
 
-		if (otel_exporter_set_otlp_file_options(OTEL_LOGGER_EXPORTER_DESC, OTEL_YAML_LOGGER_PREFIX OTEL_YAML_EXPORTERS, options, rt_options, &(logger->err)) == OTELC_RET_ERROR)
+		if (otel_exporter_set_otlp_file_options(OTEL_LOGGER_EXPORTER_DESC, OTEL_YAML_LOGGER_PREFIX OTEL_YAML_EXPORTERS, options, rt_options, &(logger->err), name) == OTELC_RET_ERROR)
 			OTELC_RETURN_INT(OTELC_RET_ERROR);
 
 		exporter_maybe = otel::make_unique_nothrow<otel_exporter_otlp::OtlpFileLogRecordExporter>(options, rt_options);
@@ -901,7 +908,7 @@ int otel_logger_exporter_create(struct otelc_logger *logger, std::unique_ptr<ote
 		otel_exporter_otlp::OtlpGrpcLogRecordExporterOptions options{};
 		char                                                 endpoint[OTEL_YAML_BUFSIZ] = OTEL_LOGGER_EXPORTER_OTLP_GRPC_ENDPOINT;
 
-		if (otel_exporter_set_otlp_grpc_options(OTEL_LOGGER_EXPORTER_DESC, OTEL_YAML_LOGGER_PREFIX OTEL_YAML_EXPORTERS, endpoint, options, &(logger->err)) == OTELC_RET_ERROR)
+		if (otel_exporter_set_otlp_grpc_options(OTEL_LOGGER_EXPORTER_DESC, OTEL_YAML_LOGGER_PREFIX OTEL_YAML_EXPORTERS, endpoint, options, &(logger->err), name) == OTELC_RET_ERROR)
 			OTELC_RETURN_INT(OTELC_RET_ERROR);
 
 		exporter_maybe = otel::make_unique_nothrow<otel_exporter_otlp::OtlpGrpcLogRecordExporter>(options);
@@ -917,7 +924,7 @@ int otel_logger_exporter_create(struct otelc_logger *logger, std::unique_ptr<ote
 		otel_exporter_otlp::OtlpHttpLogRecordExporterRuntimeOptions rt_options{};
 		char                                                        endpoint[OTEL_YAML_BUFSIZ] = OTEL_LOGGER_EXPORTER_OTLP_HTTP_ENDPOINT;
 
-		if (otel_exporter_set_otlp_http_options(OTEL_LOGGER_EXPORTER_DESC, OTEL_YAML_LOGGER_PREFIX OTEL_YAML_EXPORTERS, endpoint, options, rt_options, &(logger->err)) == OTELC_RET_ERROR)
+		if (otel_exporter_set_otlp_http_options(OTEL_LOGGER_EXPORTER_DESC, OTEL_YAML_LOGGER_PREFIX OTEL_YAML_EXPORTERS, endpoint, options, rt_options, &(logger->err), name) == OTELC_RET_ERROR)
 			OTELC_RETURN_INT(OTELC_RET_ERROR);
 
 		exporter_maybe = otel::make_unique_nothrow<otel_exporter_otlp::OtlpHttpLogRecordExporter>(options, rt_options);

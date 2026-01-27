@@ -183,7 +183,7 @@ static int otel_meter_reader_create(struct otelc_meter *meter, std::unique_ptr<o
 	if (OTEL_NULL(meter))
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
 
-	rc = yaml_get_node(otelc_fyd, &(meter->err), 0, "OpenTelemetry meter reader", OTEL_YAML_METER_PREFIX OTEL_YAML_READERS,
+	rc = yaml_get_node(otelc_fyd, &(meter->err), 0, "OpenTelemetry meter reader", OTEL_YAML_METER_PREFIX OTEL_YAML_READERS, nullptr,
 	                   OTEL_YAML_ARG_STR(0, READERS, thread_name),
 	                   OTEL_YAML_ARG_INT64(0, READERS, export_interval, 100, 3600000),
 	                   OTEL_YAML_ARG_INT64(0, READERS, export_timeout, 100, 3600000),
@@ -307,26 +307,26 @@ void otel_meter_provider_destroy(void)
  *   otel_logger_provider_create - creates a new logger provider
  *
  * SYNOPSIS
- *   int otel_logger_provider_create(struct otelc_logger *logger, std::unique_ptr<otel_sdk_logs::LogRecordProcessor> &processor, std::shared_ptr<otel_logs::LoggerProvider> &provider)
+ *   int otel_logger_provider_create(struct otelc_logger *logger, std::vector<std::unique_ptr<otel_sdk_logs::LogRecordProcessor>> &processors, std::shared_ptr<otel_logs::LoggerProvider> &provider)
  *
  * ARGUMENTS
- *   logger    - logger instance
- *   processor - the log record processor to be used by the provider
- *   provider  - shared pointer to store the created logger provider
+ *   logger     - logger instance
+ *   processors - the log record processors to be used by the provider
+ *   provider   - shared pointer to store the created logger provider
  *
  * DESCRIPTION
- *   Creates a new logger provider with the specified log record processor.  The
- *   provider is responsible for creating and managing logger instances, and it
- *   is configured with resource attributes from the YAML file.
+ *   Creates a new logger provider with the specified log record processors.
+ *   The provider is responsible for creating and managing logger instances,
+ *   and it is configured with resource attributes from the YAML file.
  *
  * RETURN VALUE
  *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR in case of an error.
  */
-int otel_logger_provider_create(struct otelc_logger *logger, std::unique_ptr<otel_sdk_logs::LogRecordProcessor> &processor, std::shared_ptr<otel_logs::LoggerProvider> &provider)
+int otel_logger_provider_create(struct otelc_logger *logger, std::vector<std::unique_ptr<otel_sdk_logs::LogRecordProcessor>> &processors, std::shared_ptr<otel_logs::LoggerProvider> &provider)
 {
 	otel_sdk_resource::Resource resource{};
 
-	OTELC_FUNC("%p, <processor>, <provider>", logger);
+	OTELC_FUNC("%p, <processors>, <provider>", logger);
 
 	if (OTEL_NULL(logger))
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
@@ -334,14 +334,10 @@ int otel_logger_provider_create(struct otelc_logger *logger, std::unique_ptr<ote
 	if (otel_resource_create("OpenTelemetry logger provider", OTEL_YAML_LOGGER_PREFIX OTEL_YAML_PROVIDERS, resource, &(logger->err)) == OTELC_RET_ERROR)
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
 
-#ifdef OTELC_USE_MULTIPLE_PROCESSORS
-	std::vector<std::unique_ptr<otel_sdk_logs::LogRecordProcessor>> processors;
-	try {
-		OTEL_DBG_THROW();
-		processors.push_back(std::move(processor));
-	}
-	OTEL_CATCH_ERETURN( , OTEL_LOGGER_ERETURN_INT, "Unable to add processor")
+	if (processors.empty())
+		OTEL_LOGGER_ERETURN_INT("No OpenTelemetry logs processors configured");
 
+#ifdef OTELC_USE_MULTIPLE_PROCESSORS
 #  if 0
 	auto context_maybe = otel::make_unique_nothrow<otel_sdk_logs::LoggerContext>(std::move(processors), std::move(resource));
 	if (OTEL_NULL(context_maybe))
@@ -351,7 +347,7 @@ int otel_logger_provider_create(struct otelc_logger *logger, std::unique_ptr<ote
 	auto provider_maybe = otel::make_shared_nothrow<otel_sdk_logs::LoggerProvider>(std::move(processors), std::move(resource));
 #  endif
 #else
-	auto provider_maybe = otel::make_shared_nothrow<otel_sdk_logs::LoggerProvider>(std::move(processor), std::move(resource));
+	auto provider_maybe = otel::make_shared_nothrow<otel_sdk_logs::LoggerProvider>(std::move(processors[0]), std::move(resource));
 #endif /* OTELC_USE_MULTIPLE_PROCESSORS */
 
 	if (OTEL_NULL(provider_maybe))

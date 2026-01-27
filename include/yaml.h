@@ -55,7 +55,7 @@ int            yaml_get_sequence_len(OTEL_YAML_DOC *fyd, char **err, const char 
 bool           yaml_is_sequence(OTEL_YAML_DOC *fyd, const char *path);
 int            yaml_get_sequence_value(OTEL_YAML_DOC *fyd, char **err, const char *path, int index, char *data, size_t data_size);
 int            yaml_find_sequence(OTEL_YAML_DOC *fyd, char **err, bool is_mandatory, const char *path, const char *sequence, struct otelc_text_map **map);
-int            yaml_get_node(OTEL_YAML_DOC *fyd, char **err, bool is_mandatory, const char *desc, const char *path, int type, ...);
+int            yaml_get_node(OTEL_YAML_DOC *fyd, char **err, bool is_mandatory, const char *desc, const char *path, const char *name, int type, ...);
 
 #endif /* _OPENTELEMETRY_C_WRAPPER_YAML_H_ */
 

@@ -61,7 +61,7 @@ int otel_tracer_processor_create(struct otelc_tracer *tracer, std::unique_ptr<ot
 	 * NOTE: The export_timeout member of the BatchSpanProcessorOptions
 	 * structure is defined but not yet utilized.
 	 */
-	rc = yaml_get_node(otelc_fyd, &(tracer->err), 0, "OpenTelemetry traces processor", OTEL_YAML_TRACER_PREFIX OTEL_YAML_PROCESSORS,
+	rc = yaml_get_node(otelc_fyd, &(tracer->err), 0, "OpenTelemetry traces processor", OTEL_YAML_TRACER_PREFIX OTEL_YAML_PROCESSORS, nullptr,
 	                   OTEL_YAML_ARG_STR(1, PROCESSORS, type),
 	                   OTEL_YAML_ARG_STR(0, PROCESSORS, thread_name),
 	                   OTEL_YAML_ARG_INT64(0, PROCESSORS, max_queue_size, 64, 65536),
@@ -120,12 +120,13 @@ int otel_tracer_processor_create(struct otelc_tracer *tracer, std::unique_ptr<ot
  *   otel_logger_processor_create - creates a log record processor for a logger
  *
  * SYNOPSIS
- *   int otel_logger_processor_create(struct otelc_logger *logger, std::unique_ptr<otel_sdk_logs::LogRecordExporter> &exporter, std::unique_ptr<otel_sdk_logs::LogRecordProcessor> &processor)
+ *   int otel_logger_processor_create(struct otelc_logger *logger, std::unique_ptr<otel_sdk_logs::LogRecordExporter> &exporter, std::unique_ptr<otel_sdk_logs::LogRecordProcessor> &processor, const char *name)
  *
  * ARGUMENTS
  *   logger    - pointer to the logger instance for which the processor is being created
  *   exporter  - unique pointer to the log record exporter to be used by the processor
  *   processor - reference to a unique pointer where the created processor is returned
+ *   name      - name of the processor configuration node, or nullptr for default
  *
  * DESCRIPTION
  *   Creates a log record processor configured to use the specified log record
@@ -141,7 +142,7 @@ int otel_tracer_processor_create(struct otelc_tracer *tracer, std::unique_ptr<ot
  *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR if the processor could
  *   not be created.
  */
-int otel_logger_processor_create(struct otelc_logger *logger, std::unique_ptr<otel_sdk_logs::LogRecordExporter> &exporter, std::unique_ptr<otel_sdk_logs::LogRecordProcessor> &processor)
+int otel_logger_processor_create(struct otelc_logger *logger, std::unique_ptr<otel_sdk_logs::LogRecordExporter> &exporter, std::unique_ptr<otel_sdk_logs::LogRecordProcessor> &processor, const char *name)
 {
 	std::unique_ptr<otel_sdk_logs::LogRecordProcessor> processor_maybe;
 	int                                                rc;
@@ -149,7 +150,7 @@ int otel_logger_processor_create(struct otelc_logger *logger, std::unique_ptr<ot
 	int64_t                                            max_queue_size = 2048, schedule_delay = 1000, export_timeout = 30000, max_export_batch_size = 512;
 	bool                                               flag_batch = true;
 
-	OTELC_FUNC("%p, <exporter>, <processor>", logger);
+	OTELC_FUNC("%p, <exporter>, <processor>, \"%s\"", logger, OTELC_STR_ARG(name));
 
 	if (OTEL_NULL(logger))
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
@@ -161,7 +162,7 @@ int otel_logger_processor_create(struct otelc_logger *logger, std::unique_ptr<ot
 	 * BatchLogRecordProcessorOptions structure is defined but not yet
 	 * utilized.
 	 */
-	rc = yaml_get_node(otelc_fyd, &(logger->err), 0, "OpenTelemetry logs processor", OTEL_YAML_LOGGER_PREFIX OTEL_YAML_PROCESSORS,
+	rc = yaml_get_node(otelc_fyd, &(logger->err), 0, "OpenTelemetry logs processor", OTEL_YAML_LOGGER_PREFIX OTEL_YAML_PROCESSORS, name,
 	                   OTEL_YAML_ARG_STR(1, PROCESSORS, type),
 	                   OTEL_YAML_ARG_STR(0, PROCESSORS, thread_name),
 	                   OTEL_YAML_ARG_INT64(0, PROCESSORS, max_queue_size, 64, 65536),
@@ -171,6 +172,12 @@ int otel_logger_processor_create(struct otelc_logger *logger, std::unique_ptr<ot
 	                   OTEL_YAML_END);
 	if (rc == OTELC_RET_ERROR)
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
+	else if (rc == 0) {
+		if (name)
+			OTEL_LOGGER_ERETURN_INT("'%s': OpenTelemetry logs processor type not specified", name);
+		else
+			OTEL_LOGGER_ERETURN_INT("OpenTelemetry logs processor type not specified");
+	}
 	else if (strcasecmp(type, "batch") == 0)
 		flag_batch = 1;
 	else if (strcasecmp(type, "single") == 0)

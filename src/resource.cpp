@@ -143,7 +143,7 @@ int otel_resource_create(const char *desc, const char *path, otel_sdk_resource::
 
 	(void)otel_resource_detector(res_attr);
 
-	rc = yaml_get_node(otelc_fyd, err, 0, desc, path, OTEL_YAML_ARG_MAP(0, PROVIDERS, resources), OTEL_YAML_END);
+	rc = yaml_get_node(otelc_fyd, err, 0, desc, path, nullptr, OTEL_YAML_ARG_MAP(0, PROVIDERS, resources), OTEL_YAML_END);
 	OTEL_DEFER_DPTR_FREE(struct otelc_text_map, resources, otelc_text_map_destroy);
 	if (rc == OTELC_RET_ERROR)
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
