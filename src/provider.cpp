@@ -21,16 +21,16 @@
  *   otel_tracer_provider_create - creates a new tracer provider
  *
  * SYNOPSIS
- *   int otel_tracer_provider_create(struct otelc_tracer *tracer, std::unique_ptr<otel_sdk_trace::SpanProcessor> &processor, std::unique_ptr<otel_sdk_trace::Sampler> &sampler, std::unique_ptr<otel_trace::TracerProvider> &provider)
+ *   int otel_tracer_provider_create(struct otelc_tracer *tracer, std::vector<std::unique_ptr<otel_sdk_trace::SpanProcessor>> &processors, std::unique_ptr<otel_sdk_trace::Sampler> &sampler, std::unique_ptr<otel_trace::TracerProvider> &provider)
  *
  * ARGUMENTS
- *   tracer    - tracer instance
- *   processor - the span processor to be used by the provider
- *   sampler   - the sampler to be used by the provider
- *   provider  - unique pointer to store the created tracer provider
+ *   tracer     - tracer instance
+ *   processors - the span processors to be used by the provider
+ *   sampler    - the sampler to be used by the provider
+ *   provider   - unique pointer to store the created tracer provider
  *
  * DESCRIPTION
- *   Creates a new tracer provider with the specified span processor and sampler.
+ *   Creates a new tracer provider with the specified span processors and sampler.
  *   The provider is responsible for creating and managing tracer instances, and
  *   it is configured with resource attributes detected from the environment and
  *   the YAML configuration file.
@@ -38,11 +38,11 @@
  * RETURN VALUE
  *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR in case of an error.
  */
-int otel_tracer_provider_create(struct otelc_tracer *tracer, std::unique_ptr<otel_sdk_trace::SpanProcessor> &processor, std::unique_ptr<otel_sdk_trace::Sampler> &sampler, std::unique_ptr<otel_trace::TracerProvider> &provider)
+int otel_tracer_provider_create(struct otelc_tracer *tracer, std::vector<std::unique_ptr<otel_sdk_trace::SpanProcessor>> &processors, std::unique_ptr<otel_sdk_trace::Sampler> &sampler, std::unique_ptr<otel_trace::TracerProvider> &provider)
 {
 	otel_sdk_resource::Resource resource{};
 
-	OTELC_FUNC("%p, <processor>, <sampler>, <provider>", tracer);
+	OTELC_FUNC("%p, <processors>, <sampler>, <provider>", tracer);
 
 	if (OTEL_NULL(tracer))
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
@@ -51,19 +51,12 @@ int otel_tracer_provider_create(struct otelc_tracer *tracer, std::unique_ptr<ote
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
 
 #ifdef OTELC_USE_MULTIPLE_PROCESSORS
-	std::vector<std::unique_ptr<otel_sdk_trace::SpanProcessor>> processors;
-	try {
-		OTEL_DBG_THROW();
-		processors.push_back(std::move(processor));
-	}
-	OTEL_CATCH_ERETURN( , OTEL_TRACER_ERETURN_INT, "Unable to add processor")
-
 	auto context_maybe = otel::make_unique_nothrow<otel_sdk_trace::TracerContext>(std::move(processors), std::move(resource), std::move(sampler));
 	if (OTEL_NULL(context_maybe))
 		OTEL_TRACER_ERETURN_INT("Unable to create OpenTelemetry tracer context");
 	auto provider_maybe = otel_nostd::unique_ptr<otel_trace::TracerProvider>(otel::make_unique_nothrow<otel_sdk_trace::TracerProvider>(std::move(context_maybe)).release());
 #else
-	auto provider_maybe = otel_nostd::unique_ptr<otel_trace::TracerProvider>(otel::make_unique_nothrow<otel_sdk_trace::TracerProvider>(std::move(processor), std::move(resource), std::move(sampler)).release());
+	auto provider_maybe = otel_nostd::unique_ptr<otel_trace::TracerProvider>(otel::make_unique_nothrow<otel_sdk_trace::TracerProvider>(std::move(processors[0]), std::move(resource), std::move(sampler)).release());
 #endif /* OTELC_USE_MULTIPLE_PROCESSORS */
 
 	if (OTEL_NULL(provider_maybe))

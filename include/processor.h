@@ -16,7 +16,7 @@
 #ifndef _OPENTELEMETRY_C_WRAPPER_PROCESSOR_H_
 #define _OPENTELEMETRY_C_WRAPPER_PROCESSOR_H_
 
-int otel_tracer_processor_create(struct otelc_tracer *tracer, std::unique_ptr<otel_sdk_trace::SpanExporter> &exporter, std::unique_ptr<otel_sdk_trace::SpanProcessor> &processor);
+int otel_tracer_processor_create(struct otelc_tracer *tracer, std::unique_ptr<otel_sdk_trace::SpanExporter> &exporter, std::unique_ptr<otel_sdk_trace::SpanProcessor> &processor, const char *name = nullptr);
 int otel_logger_processor_create(struct otelc_logger *logger, std::unique_ptr<otel_sdk_logs::LogRecordExporter> &exporter, std::unique_ptr<otel_sdk_logs::LogRecordProcessor> &processor, const char *name = nullptr);
 
 #endif /* _OPENTELEMETRY_C_WRAPPER_PROCESSOR_H_ */

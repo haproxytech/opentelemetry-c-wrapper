@@ -447,11 +447,12 @@ static int otel_exporter_set_ostream_options(const char *desc, const char *path,
  *   otel_tracer_exporter_create - creates a new span exporter
  *
  * SYNOPSIS
- *   int otel_tracer_exporter_create(struct otelc_tracer *tracer, std::unique_ptr<otel_sdk_trace::SpanExporter> &exporter)
+ *   int otel_tracer_exporter_create(struct otelc_tracer *tracer, std::unique_ptr<otel_sdk_trace::SpanExporter> &exporter, const char *name)
  *
  * ARGUMENTS
  *   tracer   - tracer instance
  *   exporter - unique pointer to store the created span exporter
+ *   name     - name of the exporter configuration node, or nullptr for default
  *
  * DESCRIPTION
  *   Creates a new span exporter based on the configuration provided in the YAML
@@ -461,18 +462,18 @@ static int otel_exporter_set_ostream_options(const char *desc, const char *path,
  * RETURN VALUE
  *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR in case of an error.
  */
-int otel_tracer_exporter_create(struct otelc_tracer *tracer, std::unique_ptr<otel_sdk_trace::SpanExporter> &exporter)
+int otel_tracer_exporter_create(struct otelc_tracer *tracer, std::unique_ptr<otel_sdk_trace::SpanExporter> &exporter, const char *name)
 {
 	std::unique_ptr<otel_sdk_trace::SpanExporter> exporter_maybe{};
 	char                                          type[OTEL_YAML_BUFSIZ] = "";
 	int                                           rc;
 
-	OTELC_FUNC("%p, <exporter>", tracer);
+	OTELC_FUNC("%p, <exporter>, \"%s\"", tracer, OTELC_STR_ARG(name));
 
 	if (OTEL_NULL(tracer))
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
 
-	rc = yaml_get_node(otelc_fyd, &(tracer->err), 1, OTEL_TRACER_EXPORTER_DESC, OTEL_YAML_TRACER_PREFIX OTEL_YAML_EXPORTERS, nullptr,
+	rc = yaml_get_node(otelc_fyd, &(tracer->err), 1, OTEL_TRACER_EXPORTER_DESC, OTEL_YAML_TRACER_PREFIX OTEL_YAML_EXPORTERS, name,
 	                   OTEL_YAML_ARG_STR(1, EXPORTERS, type),
 	                   OTEL_YAML_END);
 	if (rc == OTELC_RET_ERROR)
@@ -486,7 +487,7 @@ int otel_tracer_exporter_create(struct otelc_tracer *tracer, std::unique_ptr<ote
 		/* <opentelemetry/exporters/memory/in_memory_span_exporter.h> */
 		int64_t buffer_size = otel_exporter_memory::MAX_BUFFER_SIZE;
 
-		rc = yaml_get_node(otelc_fyd, &(tracer->err), 1, OTEL_TRACER_EXPORTER_DESC, OTEL_YAML_TRACER_PREFIX OTEL_YAML_EXPORTERS, nullptr,
+		rc = yaml_get_node(otelc_fyd, &(tracer->err), 1, OTEL_TRACER_EXPORTER_DESC, OTEL_YAML_TRACER_PREFIX OTEL_YAML_EXPORTERS, name,
 		                   OTEL_YAML_ARG_INT64(0, EXPORTERS, buffer_size, 16, 65536),
 		                   OTEL_YAML_END);
 		if (rc == OTELC_RET_ERROR)
@@ -501,7 +502,7 @@ int otel_tracer_exporter_create(struct otelc_tracer *tracer, std::unique_ptr<ote
 	}
 	else if (strcasecmp(type, OTEL_EXPORTER_OSTREAM) == 0) {
 #ifdef HAVE_OTEL_EXPORTER_OSTREAM
-		if (otel_exporter_set_ostream_options<otel_exporter_trace::OStreamSpanExporter>(OTEL_TRACER_EXPORTER_DESC, OTEL_YAML_TRACER_PREFIX OTEL_YAML_EXPORTERS, otel_tracer_logfile, exporter_maybe, &(tracer->err)) == OTELC_RET_ERROR)
+		if (otel_exporter_set_ostream_options<otel_exporter_trace::OStreamSpanExporter>(OTEL_TRACER_EXPORTER_DESC, OTEL_YAML_TRACER_PREFIX OTEL_YAML_EXPORTERS, otel_tracer_logfile, exporter_maybe, &(tracer->err), name) == OTELC_RET_ERROR)
 			OTELC_RETURN_INT(OTELC_RET_ERROR);
 #else
 		OTEL_TRACER_ERROR(OTEL_TRACER_EXPORTER_NOT_SUPPORTED("ostream"));
@@ -512,7 +513,7 @@ int otel_tracer_exporter_create(struct otelc_tracer *tracer, std::unique_ptr<ote
 		otel_exporter_otlp::OtlpFileExporterOptions        options{};
 		otel_exporter_otlp::OtlpFileExporterRuntimeOptions rt_options{};
 
-		if (otel_exporter_set_otlp_file_options(OTEL_TRACER_EXPORTER_DESC, OTEL_YAML_TRACER_PREFIX OTEL_YAML_EXPORTERS, options, rt_options, &(tracer->err)) == OTELC_RET_ERROR)
+		if (otel_exporter_set_otlp_file_options(OTEL_TRACER_EXPORTER_DESC, OTEL_YAML_TRACER_PREFIX OTEL_YAML_EXPORTERS, options, rt_options, &(tracer->err), name) == OTELC_RET_ERROR)
 			OTELC_RETURN_INT(OTELC_RET_ERROR);
 
 		exporter_maybe = otel::make_unique_nothrow<otel_exporter_otlp::OtlpFileExporter>(options, rt_options);
@@ -528,7 +529,7 @@ int otel_tracer_exporter_create(struct otelc_tracer *tracer, std::unique_ptr<ote
 		otel_exporter_otlp::OtlpGrpcExporterOptions options{};
 		char                                        endpoint[OTEL_YAML_BUFSIZ] = OTEL_TRACER_EXPORTER_OTLP_GRPC_ENDPOINT;
 
-		if (otel_exporter_set_otlp_grpc_options(OTEL_TRACER_EXPORTER_DESC, OTEL_YAML_TRACER_PREFIX OTEL_YAML_EXPORTERS, endpoint, options, &(tracer->err)) == OTELC_RET_ERROR)
+		if (otel_exporter_set_otlp_grpc_options(OTEL_TRACER_EXPORTER_DESC, OTEL_YAML_TRACER_PREFIX OTEL_YAML_EXPORTERS, endpoint, options, &(tracer->err), name) == OTELC_RET_ERROR)
 			OTELC_RETURN_INT(OTELC_RET_ERROR);
 
 		exporter_maybe = otel::make_unique_nothrow<otel_exporter_otlp::OtlpGrpcExporter>(options);
@@ -548,7 +549,7 @@ int otel_tracer_exporter_create(struct otelc_tracer *tracer, std::unique_ptr<ote
 		otel_exporter_otlp::OtlpHttpExporterRuntimeOptions rt_options{};
 		char                                               endpoint[OTEL_YAML_BUFSIZ] = OTEL_TRACER_EXPORTER_OTLP_HTTP_ENDPOINT;
 
-		if (otel_exporter_set_otlp_http_options(OTEL_TRACER_EXPORTER_DESC, OTEL_YAML_TRACER_PREFIX OTEL_YAML_EXPORTERS, endpoint, options, rt_options, &(tracer->err)) == OTELC_RET_ERROR)
+		if (otel_exporter_set_otlp_http_options(OTEL_TRACER_EXPORTER_DESC, OTEL_YAML_TRACER_PREFIX OTEL_YAML_EXPORTERS, endpoint, options, rt_options, &(tracer->err), name) == OTELC_RET_ERROR)
 			OTELC_RETURN_INT(OTELC_RET_ERROR);
 
 		exporter_maybe = otel::make_unique_nothrow<otel_exporter_otlp::OtlpHttpExporter>(options, rt_options);
@@ -564,7 +565,7 @@ int otel_tracer_exporter_create(struct otelc_tracer *tracer, std::unique_ptr<ote
 		char                                        endpoint[OTEL_YAML_BUFSIZ] = OTEL_TRACER_EXPORTER_ZIPKIN_ENDPOINT, format[OTEL_YAML_BUFSIZ] = "", service_name[OTEL_YAML_BUFSIZ] = "default-service";
 		char                                        ipv4[OTEL_YAML_BUFSIZ] = "", ipv6[OTEL_YAML_BUFSIZ] = "";
 
-		rc = yaml_get_node(otelc_fyd, &(tracer->err), 1, OTEL_TRACER_EXPORTER_DESC, OTEL_YAML_TRACER_PREFIX OTEL_YAML_EXPORTERS, nullptr,
+		rc = yaml_get_node(otelc_fyd, &(tracer->err), 1, OTEL_TRACER_EXPORTER_DESC, OTEL_YAML_TRACER_PREFIX OTEL_YAML_EXPORTERS, name,
 		                   OTEL_YAML_ARG_STR(0, EXPORTERS, endpoint),
 		                   OTEL_YAML_ARG_STR(0, EXPORTERS, format),
 		                   OTEL_YAML_ARG_STR(0, EXPORTERS, service_name),

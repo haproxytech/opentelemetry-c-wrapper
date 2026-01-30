@@ -683,20 +683,22 @@ static int otel_tracer_shutdown(struct otelc_tracer *tracer, const struct timesp
  *   The tracer whose configuration is specified in the OpenTelemetry YAML
  *   configuration file (set by the previous call to the otelc_init() function)
  *   is started.  The function initializes the tracer in such a way that the
- *   following components are initialized individually: exporter, sampler,
- *   processor and finally provider.
+ *   following components are initialized individually: sampler, one or more
+ *   exporter-processor pairs, and finally provider.  When the YAML
+ *   configuration specifies a sequence of processors (and optionally a
+ *   matching sequence of exporters), each pair is created and passed to
+ *   the provider.
  *
  * RETURN VALUE
  *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR in case of an error.
  */
 static int otel_tracer_start(struct otelc_tracer *tracer)
 {
-	std::unique_ptr<otel_sdk_trace::SpanExporter>  exporter;
-	std::unique_ptr<otel_sdk_trace::Sampler>       sampler;
-	std::unique_ptr<otel_sdk_trace::SpanProcessor> processor;
-	std::unique_ptr<otel_trace::TracerProvider>    provider;
-	char                                           scope_name[OTEL_YAML_BUFSIZ];
-	int                                            retval = OTELC_RET_ERROR;
+	std::unique_ptr<otel_sdk_trace::Sampler>                    sampler;
+	std::vector<std::unique_ptr<otel_sdk_trace::SpanProcessor>> processors;
+	std::unique_ptr<otel_trace::TracerProvider>                 provider;
+	char                                                        scope_name[OTEL_YAML_BUFSIZ];
+	int                                                         retval = OTELC_RET_ERROR;
 
 	OTELC_FUNC("%p", tracer);
 
@@ -711,23 +713,70 @@ static int otel_tracer_start(struct otelc_tracer *tracer)
 	if (OTEL_NULL(tracer->scope_name))
 		OTEL_TRACER_ERETURN_INT(OTEL_ERROR_MSG_ENOMEM("scope name"));
 
-	/***
-	 * The function initializes the tracer in such a way that the following
-	 * components are initialized individually:
-	 *   - exporter (SpanExporter)
-	 *   - sampler (Sampler)
-	 *   - processor (SpanProcessor)
-	 *   - provider (TracerProvider)
-	 *
-	 * Finally, if everything is initialized, set the global trace provider.
-	 */
-	if ((retval = otel_tracer_exporter_create(tracer, exporter)) == OTELC_RET_ERROR)
-		/* Do nothing. */;
-	else if ((retval = otel_sampler_create(tracer, sampler)) == OTELC_RET_ERROR)
-		/* Do nothing. */;
-	else if ((retval = otel_tracer_processor_create(tracer, exporter, processor)) == OTELC_RET_ERROR)
-		/* Do nothing. */;
-	else if ((retval = otel_tracer_provider_create(tracer, processor, sampler, provider)) != OTELC_RET_ERROR) {
+	if ((retval = otel_sampler_create(tracer, sampler)) == OTELC_RET_ERROR)
+		OTELC_RETURN_INT(retval);
+
+	/* Build processors and exporters from YAML configuration. */
+	if (yaml_is_sequence(otelc_fyd, OTEL_YAML_TRACER_PREFIX OTEL_YAML_PROCESSORS)) {
+		const int count = yaml_get_sequence_len(otelc_fyd, &(tracer->err), OTEL_YAML_TRACER_PREFIX OTEL_YAML_PROCESSORS);
+		if (count < 0)
+			OTELC_RETURN_INT(OTELC_RET_ERROR);
+
+		int count_exporters = yaml_get_sequence_len(otelc_fyd, &(tracer->err), OTEL_YAML_TRACER_PREFIX OTEL_YAML_EXPORTERS);
+		if (count_exporters < 0)
+			count_exporters = 0;
+
+		/* Iterate over each processor/exporter pair in the sequence. */
+		for (int i = 0; i < count; i++) {
+			std::unique_ptr<otel_sdk_trace::SpanExporter>  exporter;
+			std::unique_ptr<otel_sdk_trace::SpanProcessor> processor;
+			char                                           processor_name[OTEL_YAML_BUFSIZ], exporter_name[OTEL_YAML_BUFSIZ] = "";
+
+			if (yaml_get_sequence_value(otelc_fyd, &(tracer->err), OTEL_YAML_TRACER_PREFIX OTEL_YAML_PROCESSORS, i, processor_name, sizeof(processor_name)) != 1)
+				OTELC_RETURN_INT(OTELC_RET_ERROR);
+
+			if (!yaml_is_sequence(otelc_fyd, OTEL_YAML_TRACER_PREFIX OTEL_YAML_EXPORTERS)) {
+				/* Do nothing. */
+			}
+			else if (i < count_exporters) {
+				if (yaml_get_sequence_value(otelc_fyd, &(tracer->err), OTEL_YAML_TRACER_PREFIX OTEL_YAML_EXPORTERS, i, exporter_name, sizeof(exporter_name)) != 1)
+					OTELC_RETURN_INT(OTELC_RET_ERROR);
+			}
+			else if (count_exporters > 0) {
+				if (yaml_get_sequence_value(otelc_fyd, &(tracer->err), OTEL_YAML_TRACER_PREFIX OTEL_YAML_EXPORTERS, count_exporters - 1, exporter_name, sizeof(exporter_name)) != 1)
+					OTELC_RETURN_INT(OTELC_RET_ERROR);
+			}
+
+			if (otel_tracer_exporter_create(tracer, exporter, exporter_name) != OTELC_RET_OK)
+				OTELC_RETURN_INT(OTELC_RET_ERROR);
+			else if (otel_tracer_processor_create(tracer, exporter, processor, processor_name) != OTELC_RET_OK)
+				OTELC_RETURN_INT(OTELC_RET_ERROR);
+
+			try {
+				OTEL_DBG_THROW();
+				processors.push_back(std::move(processor));
+			}
+			OTEL_CATCH_ERETURN( , OTEL_TRACER_ERETURN_INT, "Unable to add processor")
+		}
+	} else {
+		std::unique_ptr<otel_sdk_trace::SpanExporter>  exporter;
+		std::unique_ptr<otel_sdk_trace::SpanProcessor> processor;
+
+		/* Use default exporter and processor when no sequence is defined. */
+		if ((retval = otel_tracer_exporter_create(tracer, exporter)) == OTELC_RET_ERROR)
+			OTELC_RETURN_INT(retval);
+		else if ((retval = otel_tracer_processor_create(tracer, exporter, processor)) == OTELC_RET_ERROR)
+			OTELC_RETURN_INT(retval);
+
+		try {
+			OTEL_DBG_THROW();
+			processors.push_back(std::move(processor));
+		}
+		OTEL_CATCH_ERETURN( , OTEL_TRACER_ERETURN_INT, "Unable to add processor")
+	}
+
+	/* Create the provider, tracer, and propagator, then store the handle. */
+	if ((retval = otel_tracer_provider_create(tracer, processors, sampler, provider)) != OTELC_RET_ERROR) {
 		otel_nostd::shared_ptr<otel_trace::Tracer> tracer_maybe{};
 
 		tracer_maybe = provider->GetTracer(tracer->scope_name, OTELC_SCOPE_VERSION, OTELC_SCOPE_SCHEMA_URL);
@@ -760,6 +809,7 @@ static int otel_tracer_start(struct otelc_tracer *tracer)
 			OTEL_TRACER_ERETURN_INT(OTEL_ERROR_MSG_ENOMEM("HTTP trace propagator"));
 #endif /* OTELC_USE_COMPOSITE_PROPAGATOR */
 
+		/* Install the tracer, provider, and propagator as globals. */
 		otel_tracer_owner = std::move(tracer_maybe);
 		otel_tracer.store(otel_tracer_owner.get());
 		otel_trace::Provider::SetTracerProvider(std::move(provider));

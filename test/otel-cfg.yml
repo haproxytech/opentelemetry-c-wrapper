@@ -228,9 +228,13 @@ providers:
 signals:
   traces:
     scope_name: "OTEL C wrapper - traces"
-    exporters:  exporter_traces_ostream
+    exporters:
+      - exporter_traces_ostream
+      - exporter_traces_otlp_file
     samplers:   sampler_traces
-    processors: processor_traces_batch
+    processors:
+      - processor_traces_batch
+      - processor_traces_single
     providers:  provider_traces
 
   metrics:

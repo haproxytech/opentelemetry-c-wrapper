@@ -48,7 +48,7 @@
 #define OTEL_LOGGER_EXPORTER_OTLP_HTTP_ENDPOINT   "http://localhost:4318/v1/logs"
 
 
-int  otel_tracer_exporter_create(struct otelc_tracer *tracer, std::unique_ptr<otel_sdk_trace::SpanExporter> &exporter);
+int  otel_tracer_exporter_create(struct otelc_tracer *tracer, std::unique_ptr<otel_sdk_trace::SpanExporter> &exporter, const char *name = nullptr);
 void otel_tracer_exporter_destroy(void);
 int  otel_meter_exporter_create(struct otelc_meter *meter, std::unique_ptr<otel_sdk_metrics::PushMetricExporter> &exporter);
 void otel_meter_exporter_destroy(void);
