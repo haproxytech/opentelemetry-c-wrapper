@@ -16,6 +16,267 @@
 #include "include.h"
 
 
+std::atomic<uint64_t> otel_counting_span_processor::dropped_count_{0};
+std::atomic<uint64_t> otel_counting_log_processor::dropped_count_{0};
+
+
+/***
+ * NAME
+ *   otel_counting_span_exporter - exporter wrapper that counts exported spans
+ *
+ * DESCRIPTION
+ *   Decorates a SpanExporter to track how many span records the batch processor
+ *   has dequeued for export.  Before each inner Export() call, the wrapper
+ *   atomically increments a shared consumed counter by the number of spans in
+ *   the batch.  Incrementing before the actual export minimizes the window in
+ *   which the delegating processor overestimates queue depth, since the batch
+ *   processor frees its circular buffer slots before invoking the exporter.
+ *
+ *   All SpanExporter interface methods are forwarded to the wrapped exporter
+ *   unchanged.
+ */
+otel_counting_span_exporter::otel_counting_span_exporter(std::unique_ptr<otel_sdk_trace::SpanExporter> &&exporter, std::shared_ptr<std::atomic<uint64_t>> consumed)
+	: inner_(std::move(exporter)), consumed_(std::move(consumed))
+{
+}
+
+
+std::unique_ptr<otel_sdk_trace::Recordable> otel_counting_span_exporter::MakeRecordable() noexcept
+{
+	return inner_->MakeRecordable();
+}
+
+
+otel_sdk_common::ExportResult otel_counting_span_exporter::Export(const otel_nostd::span<std::unique_ptr<otel_sdk_trace::Recordable>> &spans) noexcept
+{
+	consumed_->fetch_add(spans.size(), std::memory_order_relaxed);
+
+	return inner_->Export(spans);
+}
+
+
+bool otel_counting_span_exporter::ForceFlush(std::chrono::microseconds timeout) noexcept
+{
+	return inner_->ForceFlush(timeout);
+}
+
+
+bool otel_counting_span_exporter::Shutdown(std::chrono::microseconds timeout) noexcept
+{
+	return inner_->Shutdown(timeout);
+}
+
+
+/***
+ * NAME
+ *   otel_counting_span_processor - delegating processor that counts dropped spans
+ *
+ * DESCRIPTION
+ *   Wraps a BatchSpanProcessor and delegates all SpanProcessor interface
+ *   calls to it.  In OnEnd(), the processor compares a local produced counter
+ *   against the shared consumed counter maintained by the counting exporter.
+ *   When the difference reaches the configured max_queue_size, the span is
+ *   considered dropped and a process-wide static drop counter is incremented;
+ *   otherwise the produced counter is incremented.  A guard ensures unsigned
+ *   subtraction is skipped when consumed has raced past produced, preventing
+ *   wraparound and allowing the counters to self-correct.
+ *
+ *   The drop counter is shared across all otel_counting_span_processor
+ *   instances and can be queried via the static dropped_count() method or
+ *   the C-linkage function otelc_processor_dropped_count().
+ */
+otel_counting_span_processor::otel_counting_span_processor(std::unique_ptr<otel_sdk_trace::BatchSpanProcessor> &&inner, std::shared_ptr<std::atomic<uint64_t>> consumed, size_t max_queue_size)
+	: consumed_(std::move(consumed)), max_queue_size_(max_queue_size), inner_(std::move(inner))
+{
+}
+
+
+std::unique_ptr<otel_sdk_trace::Recordable> otel_counting_span_processor::MakeRecordable() noexcept
+{
+	return inner_->MakeRecordable();
+}
+
+
+void otel_counting_span_processor::OnStart(otel_sdk_trace::Recordable &span, const otel_trace::SpanContext &parent_context) noexcept
+{
+	inner_->OnStart(span, parent_context);
+}
+
+
+void otel_counting_span_processor::OnEnd(std::unique_ptr<otel_sdk_trace::Recordable> &&span) noexcept
+{
+	if (OTEL_NULL(span)) {
+		inner_->OnEnd(std::move(span));
+		return;
+	}
+
+	uint64_t prod = produced_.load(std::memory_order_relaxed);
+	uint64_t cons = consumed_->load(std::memory_order_relaxed);
+
+	if ((prod > cons) && ((prod - cons) >= max_queue_size_))
+		dropped_count_.fetch_add(1, std::memory_order_relaxed);
+	else
+		produced_.fetch_add(1, std::memory_order_relaxed);
+
+	inner_->OnEnd(std::move(span));
+}
+
+
+bool otel_counting_span_processor::ForceFlush(std::chrono::microseconds timeout) noexcept
+{
+	return inner_->ForceFlush(timeout);
+}
+
+
+bool otel_counting_span_processor::Shutdown(std::chrono::microseconds timeout) noexcept
+{
+	return inner_->Shutdown(timeout);
+}
+
+
+/***
+ * NAME
+ *   otel_counting_log_exporter - exporter wrapper that counts exported log records
+ *
+ * DESCRIPTION
+ *   Decorates a LogRecordExporter to track how many log records the batch
+ *   processor has dequeued for export.  Before each inner Export() call, the
+ *   wrapper atomically increments a shared consumed counter by the number of
+ *   records in the batch.  Incrementing before the actual export minimizes the
+ *   window in which the delegating processor overestimates queue depth, since
+ *   the batch processor frees its buffer slots before invoking the exporter.
+ *
+ *   All LogRecordExporter interface methods are forwarded to the wrapped
+ *   exporter unchanged.
+ */
+otel_counting_log_exporter::otel_counting_log_exporter(std::unique_ptr<otel_sdk_logs::LogRecordExporter> &&exporter, std::shared_ptr<std::atomic<uint64_t>> consumed)
+	: inner_(std::move(exporter)), consumed_(std::move(consumed))
+{
+}
+
+
+std::unique_ptr<otel_sdk_logs::Recordable> otel_counting_log_exporter::MakeRecordable() noexcept
+{
+	return inner_->MakeRecordable();
+}
+
+
+otel_sdk_common::ExportResult otel_counting_log_exporter::Export(const otel_nostd::span<std::unique_ptr<otel_sdk_logs::Recordable>> &records) noexcept
+{
+	consumed_->fetch_add(records.size(), std::memory_order_relaxed);
+
+	return inner_->Export(records);
+}
+
+
+bool otel_counting_log_exporter::ForceFlush(std::chrono::microseconds timeout) noexcept
+{
+	return inner_->ForceFlush(timeout);
+}
+
+
+bool otel_counting_log_exporter::Shutdown(std::chrono::microseconds timeout) noexcept
+{
+	return inner_->Shutdown(timeout);
+}
+
+
+/***
+ * NAME
+ *   otel_counting_log_processor - delegating processor that counts dropped log records
+ *
+ * DESCRIPTION
+ *   Wraps a BatchLogRecordProcessor and delegates all LogRecordProcessor
+ *   interface calls to it.  In OnEmit(), the processor compares a local
+ *   produced counter against the shared consumed counter maintained by the
+ *   counting log exporter.  When the difference reaches the configured
+ *   max_queue_size, the record is considered dropped and a process-wide
+ *   static drop counter is incremented; otherwise the produced counter is
+ *   incremented.  A guard ensures unsigned subtraction is skipped when
+ *   consumed has raced past produced, preventing wraparound and allowing
+ *   the counters to self-correct.
+ *
+ *   The drop counter is shared across all otel_counting_log_processor instances
+ *   and can be queried via the static dropped_count() method or the C-linkage
+ *   function otelc_processor_dropped_count().
+ */
+
+otel_counting_log_processor::otel_counting_log_processor(std::unique_ptr<otel_sdk_logs::BatchLogRecordProcessor> &&inner, std::shared_ptr<std::atomic<uint64_t>> consumed, size_t max_queue_size)
+	: consumed_(std::move(consumed)), max_queue_size_(max_queue_size), inner_(std::move(inner))
+{
+}
+
+
+std::unique_ptr<otel_sdk_logs::Recordable> otel_counting_log_processor::MakeRecordable() noexcept
+{
+	return inner_->MakeRecordable();
+}
+
+
+void otel_counting_log_processor::OnEmit(std::unique_ptr<otel_sdk_logs::Recordable> &&record) noexcept
+{
+	if (OTEL_NULL(record)) {
+		inner_->OnEmit(std::move(record));
+
+		return;
+	}
+
+	uint64_t prod = produced_.load(std::memory_order_relaxed);
+	uint64_t cons = consumed_->load(std::memory_order_relaxed);
+
+	if ((prod > cons) && ((prod - cons) >= max_queue_size_))
+		dropped_count_.fetch_add(1, std::memory_order_relaxed);
+	else
+		produced_.fetch_add(1, std::memory_order_relaxed);
+
+	inner_->OnEmit(std::move(record));
+}
+
+
+bool otel_counting_log_processor::ForceFlush(std::chrono::microseconds timeout) noexcept
+{
+	return inner_->ForceFlush(timeout);
+}
+
+
+bool otel_counting_log_processor::Shutdown(std::chrono::microseconds timeout) noexcept
+{
+	return inner_->Shutdown(timeout);
+}
+
+
+/***
+ * NAME
+ *   otelc_processor_dropped_count - returns the number of dropped items
+ *
+ * SYNOPSIS
+ *   int64_t otelc_processor_dropped_count(int type)
+ *
+ * ARGUMENTS
+ *   type - processor type: 0 for traces, 1 for logs
+ *
+ * DESCRIPTION
+ *   Returns the cumulative number of spans or log records that were dropped
+ *   because the batch processor queue was full.  The type argument selects
+ *   which counter to query: 0 for trace spans, 1 for log records.
+ *
+ * RETURN VALUE
+ *   Returns the drop count as a non-negative value, or OTELC_RET_ERROR if the
+ *   type argument is invalid.
+ */
+int64_t otelc_processor_dropped_count(int type)
+{
+	OTELC_FUNC("%d", type);
+
+	if (type == 0)
+		OTELC_RETURN_EX(OTEL_CAST_STATIC(int64_t, otel_counting_span_processor::dropped_count()), int64_t, "%" PRId64);
+	else if (type == 1)
+		OTELC_RETURN_EX(OTEL_CAST_STATIC(int64_t, otel_counting_log_processor::dropped_count()), int64_t, "%" PRId64);
+
+	OTELC_RETURN_EX(OTELC_RET_ERROR, int64_t, "%" PRId64);
+}
+
+
 /***
  * NAME
  *   otel_tracer_processor_create - creates a span processor for a tracer
@@ -106,7 +367,16 @@ int otel_tracer_processor_create(struct otelc_tracer *tracer, std::unique_ptr<ot
 				rt_options.thread_instrumentation = thread_instrumentation;
 		}
 
-		processor_maybe = otel::make_unique_nothrow<otel_sdk_trace::BatchSpanProcessor>(std::move(exporter), options, rt_options);
+		auto consumed = otel::make_shared_nothrow<std::atomic<uint64_t>>(0);
+		std::unique_ptr<otel_counting_span_exporter>        counting_exporter{};
+		std::unique_ptr<otel_sdk_trace::BatchSpanProcessor> inner{};
+
+		if (!OTEL_NULL(consumed))
+			counting_exporter = otel::make_unique_nothrow<otel_counting_span_exporter>(std::move(exporter), consumed);
+		if (!OTEL_NULL(counting_exporter))
+			inner = otel::make_unique_nothrow<otel_sdk_trace::BatchSpanProcessor>(std::move(counting_exporter), options, rt_options);
+		if (!OTEL_NULL(inner))
+			processor_maybe = otel::make_unique_nothrow<otel_counting_span_processor>(std::move(inner), consumed, options.max_queue_size);
 	} else {
 		processor_maybe = otel::make_unique_nothrow<otel_sdk_trace::SimpleSpanProcessor>(std::move(exporter));
 	}
@@ -211,7 +481,16 @@ int otel_logger_processor_create(struct otelc_logger *logger, std::unique_ptr<ot
 				rt_options.thread_instrumentation = thread_instrumentation;
 		}
 
-		processor_maybe = otel::make_unique_nothrow<otel_sdk_logs::BatchLogRecordProcessor>(std::move(exporter), options, rt_options);
+		auto consumed = otel::make_shared_nothrow<std::atomic<uint64_t>>(0);
+		std::unique_ptr<otel_counting_log_exporter>              counting_exporter{};
+		std::unique_ptr<otel_sdk_logs::BatchLogRecordProcessor>  inner{};
+
+		if (!OTEL_NULL(consumed))
+			counting_exporter = otel::make_unique_nothrow<otel_counting_log_exporter>(std::move(exporter), consumed);
+		if (!OTEL_NULL(counting_exporter))
+			inner = otel::make_unique_nothrow<otel_sdk_logs::BatchLogRecordProcessor>(std::move(counting_exporter), options, rt_options);
+		if (!OTEL_NULL(inner))
+			processor_maybe = otel::make_unique_nothrow<otel_counting_log_processor>(std::move(inner), consumed, options.max_queue_size);
 	}
 	else {
 		processor_maybe = otel::make_unique_nothrow<otel_sdk_logs::SimpleLogRecordProcessor>(std::move(exporter));

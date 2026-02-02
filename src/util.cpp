@@ -1488,8 +1488,11 @@ void otelc_statistics(char *buffer, size_t bufsiz)
 	if (OTEL_NULL(buffer) || (bufsiz < 64))
 		OTELC_RETURN();
 
+	const auto cnt_0 = otelc_processor_dropped_count(0);
+	const auto cnt_1 = otelc_processor_dropped_count(1);
+
 #ifdef OTELC_USE_STATIC_HANDLE
-	(void)snprintf(buffer, bufsiz, OTEL_HANDLE_FMT("span:") OTEL_HANDLE_FMT(", context:") OTEL_HANDLE_FMT(", instrument:") OTEL_HANDLE_FMT(", view:"), OTEL_HANDLE_ARGS(otel_span), OTEL_HANDLE_ARGS(otel_span_context), OTEL_HANDLE_ARGS(otel_instrument), OTEL_HANDLE_ARGS(otel_view));
+	(void)snprintf(buffer, bufsiz, OTEL_HANDLE_FMT("span:") OTEL_HANDLE_FMT(", context:") OTEL_HANDLE_FMT(", instrument:") OTEL_HANDLE_FMT(", view:") ", dropped: %" PRId64 " %" PRId64, OTEL_HANDLE_ARGS(otel_span), OTEL_HANDLE_ARGS(otel_span_context), OTEL_HANDLE_ARGS(otel_instrument), OTEL_HANDLE_ARGS(otel_view), cnt_0, cnt_1);
 #else
 	char buffer_span[BUFSIZ] = "{ }", buffer_context[BUFSIZ] = "{ }", buffer_instrument[BUFSIZ] = "{ }", buffer_view[BUFSIZ] = "{ }";
 
@@ -1502,7 +1505,7 @@ void otelc_statistics(char *buffer, size_t bufsiz)
 	if (!OTEL_NULL(otel_view))
 		(void)snprintf(buffer_view, sizeof(buffer_view), OTEL_HANDLE_FMT(""), OTEL_HANDLE_ARGS(otel_view));
 
-	(void)snprintf(buffer, bufsiz, "span:%s, context:%s, instrument:%s, view:%s", buffer_span, buffer_context, buffer_instrument, buffer_view);
+	(void)snprintf(buffer, bufsiz, "span:%s, context:%s, instrument:%s, view:%s, dropped: %" PRId64 " %" PRId64, buffer_span, buffer_context, buffer_instrument, buffer_view, cnt_0, cnt_1);
 #endif /* OTELC_USE_STATIC_HANDLE */
 
 	OTELC_RETURN();

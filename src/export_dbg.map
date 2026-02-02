@@ -27,6 +27,7 @@ global:
 	otelc_kv_new;
 	otelc_kv_add;
 	otelc_kv_dump;
+	otelc_processor_dropped_count;
 	otelc_statistics;
 	otelc_statistics_check;
 	otelc_text_map_add;

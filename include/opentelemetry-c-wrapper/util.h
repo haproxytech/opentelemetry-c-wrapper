@@ -158,6 +158,7 @@ void                   otelc_kv_destroy(struct otelc_kv **kv, size_t n);
 
 int                    otelc_init(const char *cfgfile, char **err);
 void                   otelc_deinit(struct otelc_tracer **tracer, struct otelc_meter **meter, struct otelc_logger **logger);
+int64_t                otelc_processor_dropped_count(int type);
 
 __CPLUSPLUS_DECL_END
 #endif /* OPENTELEMETRY_C_WRAPPER_UTIL_H */
