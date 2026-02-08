@@ -13,12 +13,14 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+#define OTELC_STATIC_ASSERT_UTIL
 #include "include.h"
 
 
 static std::atomic<int> otelc_tid = 0;
 otelc_ext_malloc_t      otelc_ext_malloc = OTELC_DBG_IFDEF(otelc_dbg_malloc, malloc);
 otelc_ext_free_t        otelc_ext_free   = OTELC_DBG_IFDEF(otelc_dbg_free,   free);
+
 
 #ifdef DEBUG
 __thread int otelc_dbg_indent        = 0;
@@ -228,6 +230,209 @@ void otelc_ext_init(otelc_ext_malloc_t func_malloc, otelc_ext_free_t func_free, 
 	otelc_ext_malloc    = OTEL_NULL(func_malloc)    ? OTELC_DBG_IFDEF(otelc_dbg_malloc, malloc) : func_malloc;
 	otelc_ext_free      = OTEL_NULL(func_free)      ? OTELC_DBG_IFDEF(otelc_dbg_free,   free)   : func_free;
 	otelc_ext_thread_id = OTEL_NULL(func_thread_id) ? otelc_thread_id                           : func_thread_id;
+
+	OTELC_RETURN();
+}
+
+
+/***
+ * NAME
+ *   otel_log_handler::Handle - forward SDK log messages to a C callback
+ *
+ * SYNOPSIS
+ *   void otel_log_handler::Handle(otel_sdk_internal_log::LogLevel level, const char *file, int line, const char *msg, const otel_sdk_common::AttributeMap &attributes) noexcept
+ *
+ * ARGUMENTS
+ *   level      - the SDK internal log severity level
+ *   file       - source file name where the log message originated
+ *   line       - source line number where the log message originated
+ *   msg        - log message text
+ *   attributes - key-value attributes associated with the log message
+ *
+ * DESCRIPTION
+ *   Converts SDK internal log attributes from the C++ AttributeMap into an
+ *   array of otelc_kv structures and forwards the log message along with the
+ *   converted attributes to the user-provided C callback.  Scalar attribute
+ *   types (bool, int32_t, uint32_t, int64_t, uint64_t, double, std::string)
+ *   are transferred directly.  Vector types cannot be represented in the
+ *   otelc_kv structure and are skipped with a debug message.
+ *
+ * RETURN VALUE
+ *   This function does not return a value.
+ */
+void otel_log_handler::Handle(otel_sdk_internal_log::LogLevel level, const char *file, int line, const char *msg, const otel_sdk_common::AttributeMap &attributes) noexcept
+{
+	size_t attr_len = 0;
+
+	OTELC_FUNCPP("%d, \"%s\", %d, \"%s\", %zu <attributes>", "otel_log_handler", OTEL_CAST_STATIC(int, level), OTELC_STR_ARG(file), line, OTELC_STR_ARG(msg), attributes.size());
+
+	if (!forward_attr_ || (attributes.size() == 0)) {
+		OTELC_DBG(DEBUG, "no attributes to forward");
+		handler_(OTEL_CAST_STATIC(otelc_log_level_t, level), file, line, msg, NULL, 0, ctx_);
+
+		OTELC_RETURN();
+	}
+
+	auto attr = otelc_kv_new(attributes.size());
+	if (attr == nullptr) {
+		OTELC_DBG(DEBUG, "failed to allocate %zu attributes", attributes.size());
+		handler_(OTEL_CAST_STATIC(otelc_log_level_t, level), file, line, msg, NULL, 0, ctx_);
+
+		OTELC_RETURN();
+	}
+
+	OTELC_DBG(DEBUG, "converting %zu attributes", attributes.size());
+	for (const auto &it : attributes.GetAttributes()) {
+		try {
+			otel_nostd::visit(
+				[&](const auto &arg) {
+					using T = std::decay_t<decltype(arg)>;
+					struct otelc_kv *kv = attr + attr_len;
+
+					kv->key            = OTEL_CAST_CONST(char *, it.first.c_str());
+					kv->key_is_dynamic = false;
+
+					if constexpr (std::is_same_v<T, bool>) {
+						kv->value.u_type      = OTELC_VALUE_BOOL;
+						kv->value.u.value_bool = arg ? true : false;
+					}
+					else if constexpr (std::is_same_v<T, int32_t>) {
+						kv->value.u_type       = OTELC_VALUE_INT32;
+						kv->value.u.value_int32 = arg;
+					}
+					else if constexpr (std::is_same_v<T, uint32_t>) {
+						kv->value.u_type        = OTELC_VALUE_UINT32;
+						kv->value.u.value_uint32 = arg;
+					}
+					else if constexpr (std::is_same_v<T, int64_t>) {
+						kv->value.u_type       = OTELC_VALUE_INT64;
+						kv->value.u.value_int64 = arg;
+					}
+					else if constexpr (std::is_same_v<T, uint64_t>) {
+						kv->value.u_type        = OTELC_VALUE_UINT64;
+						kv->value.u.value_uint64 = arg;
+					}
+					else if constexpr (std::is_same_v<T, double>) {
+						kv->value.u_type        = OTELC_VALUE_DOUBLE;
+						kv->value.u.value_double = arg;
+					}
+					else if constexpr (std::is_same_v<T, std::string>) {
+						kv->value.u_type         = OTELC_VALUE_STRING;
+						kv->value.u.value_string = arg.c_str();
+					}
+					else {
+						const char *type_name = "unknown";
+
+						if constexpr (std::is_same_v<T, std::vector<bool>>)
+							type_name = "vector<bool>";
+						else if constexpr (std::is_same_v<T, std::vector<int32_t>>)
+							type_name = "vector<int32_t>";
+						else if constexpr (std::is_same_v<T, std::vector<uint32_t>>)
+							type_name = "vector<uint32_t>";
+						else if constexpr (std::is_same_v<T, std::vector<int64_t>>)
+							type_name = "vector<int64_t>";
+						else if constexpr (std::is_same_v<T, std::vector<uint64_t>>)
+							type_name = "vector<uint64_t>";
+						else if constexpr (std::is_same_v<T, std::vector<double>>)
+							type_name = "vector<double>";
+						else if constexpr (std::is_same_v<T, std::vector<std::string>>)
+							type_name = "vector<string>";
+						else if constexpr (std::is_same_v<T, std::vector<uint8_t>>)
+							type_name = "vector<uint8_t>";
+
+						OTELC_DBG(DEBUG, "log_handler: attribute '%s' skipped, unsupported type %s", it.first.c_str(), type_name);
+
+						return;
+					}
+
+					attr_len++;
+				},
+				it.second);
+		}
+		catch (...) {
+			OTELC_DBG(DEBUG, "log_handler: attribute '%s' skipped, exception caught", it.first.c_str());
+		}
+	}
+
+	handler_(OTEL_CAST_STATIC(otelc_log_level_t, level), file, line, msg, attr, attr_len, ctx_);
+	otelc_kv_destroy(&attr, attr_len);
+
+	OTELC_RETURN();
+}
+
+
+/***
+ * NAME
+ *   otelc_log_set_handler - installs a custom SDK internal log handler
+ *
+ * SYNOPSIS
+ *   void otelc_log_set_handler(otelc_log_handler_cb_t handler, void *ctx, bool forward_attr)
+ *
+ * ARGUMENTS
+ *   handler      - callback to receive SDK diagnostic messages, or NULL
+ *   ctx          - opaque pointer forwarded to the callback
+ *   forward_attr - whether to convert and forward log attributes to the callback (true) or suppress them (false)
+ *
+ * DESCRIPTION
+ *   Registers a user-provided callback that receives all SDK internal
+ *   diagnostic messages (errors, warnings, info, debug) emitted by the
+ *   OpenTelemetry C++ SDK.  The callback is invoked with the log level, source
+ *   file name, source line number, the formatted message, and the opaque
+ *   context pointer.  If forward_attr is true, SDK log attributes are
+ *   converted to otelc_kv structures and passed to the callback; otherwise
+ *   the attr and attr_len parameters are NULL and zero.  If handler is NULL,
+ *   the default SDK log handler (stderr output) is restored.
+ *
+ * RETURN VALUE
+ *   This function does not return a value.
+ */
+void otelc_log_set_handler(otelc_log_handler_cb_t handler, void *ctx, bool forward_attr)
+{
+	OTELC_FUNC("%p, %p, %hhu", handler, ctx, forward_attr);
+
+	if (OTEL_NULL(handler)) {
+		std::shared_ptr<otel_sdk_internal_log::LogHandler> dfl = otel::make_shared_nothrow<otel_sdk_internal_log::DefaultLogHandler>();
+		if (!OTEL_NULL(dfl))
+			otel_sdk_internal_log::GlobalLogHandler::SetLogHandler(dfl);
+	} else {
+		std::shared_ptr<otel_sdk_internal_log::LogHandler> custom = otel::make_shared_nothrow<otel_log_handler>(handler, ctx, forward_attr == true);
+		if (!OTEL_NULL(custom))
+			otel_sdk_internal_log::GlobalLogHandler::SetLogHandler(custom);
+	}
+
+	OTELC_RETURN();
+}
+
+
+/***
+ * NAME
+ *   otelc_log_set_level - sets the minimum SDK internal log level
+ *
+ * SYNOPSIS
+ *   void otelc_log_set_level(otelc_log_level_t level)
+ *
+ * ARGUMENTS
+ *   level - minimum severity of messages to be delivered
+ *
+ * DESCRIPTION
+ *   Sets the minimum log severity for SDK internal diagnostic messages.
+ *   Messages below this level are suppressed.  The level values are defined
+ *   by the otelc_log_level_t enum (NONE through DEBUG).  This function may be
+ *   called independently of otelc_log_set_handler and affects both the default
+ *   and any custom handler.
+ *
+ * RETURN VALUE
+ *   This function does not return a value.
+ */
+void otelc_log_set_level(otelc_log_level_t level)
+{
+	OTELC_FUNC("%d", level);
+
+	/***
+	 * Direct cast is safe because otelc_log_level_t and LogLevel are
+	 * one-to-one (verified by static_assert).
+	 */
+	otel_sdk_internal_log::GlobalLogHandler::SetLogLevel(OTEL_CAST_STATIC(otel_sdk_internal_log::LogLevel, level));
 
 	OTELC_RETURN();
 }
@@ -1607,10 +1812,11 @@ int otelc_init(const char *cfgfile, char **err)
  *   Destroys the registered tracer, meter, and logger if they are non-NULL,
  *   closes the YAML configuration document, and shuts down the OpenTelemetry
  *   C wrapper library.  Each provider pointer is set to NULL after destruction.
- *   The external callback pointers registered via otelc_ext_init() are reset
- *   so that no references to the caller's code remain after this call.  This
- *   function should be called when the library is no longer needed, typically
- *   at application exit.
+ *   The SDK internal log handler is restored to the default and the external
+ *   callback pointers registered via otelc_ext_init() are reset so that no
+ *   references to the caller's code remain after this call.  This function
+ *   should be called when the library is no longer needed, typically at
+ *   application exit.
  *
  * RETURN VALUE
  *   This function does not return a value.
@@ -1634,6 +1840,7 @@ void otelc_deinit(struct otelc_tracer **tracer, struct otelc_meter **meter, stru
 	if (!OTEL_NULL(tracer) && !OTEL_NULL(*tracer))
 		(*tracer)->destroy(tracer);
 
+	otelc_log_set_handler(nullptr, nullptr, false);
 	otelc_ext_init(nullptr, nullptr, nullptr);
 
 	OTELC_RETURN();

@@ -63,6 +63,32 @@ typedef enum {
 } otelc_value_type_t;
 
 /***
+ * <opentelemetry/sdk/common/global_log_handler.h>
+ */
+#define OTELC_LOG_LEVEL_DEFINES               \
+	OTELC_LOG_LEVEL_DEF(   NONE,    None) \
+	OTELC_LOG_LEVEL_DEF(  ERROR,   Error) \
+	OTELC_LOG_LEVEL_DEF(WARNING, Warning) \
+	OTELC_LOG_LEVEL_DEF(   INFO,    Info) \
+	OTELC_LOG_LEVEL_DEF(  DEBUG,   Debug)
+
+/***
+ * SDK internal log levels matching the OTel C++ SDK LogLevel enum.
+ */
+#define OTELC_LOG_LEVEL_DEF(a,b)   OTELC_LOG_LEVEL_##a,
+typedef enum {
+	OTELC_LOG_LEVEL_DEFINES
+} otelc_log_level_t;
+#undef OTELC_LOG_LEVEL_DEF
+
+struct otelc_kv;
+
+/***
+ * Callback type for receiving SDK internal diagnostic messages.
+ */
+typedef void (*otelc_log_handler_cb_t)(otelc_log_level_t level, const char *file, int line, const char *msg, const struct otelc_kv *attr, size_t attr_len, void *ctx);
+
+/***
  * The structure that represents values of various data types, using a union to
  * store the active value.  Exactly one member of the union u is valid at any
  * time, as indicated by u_type.
@@ -159,6 +185,9 @@ void                   otelc_kv_destroy(struct otelc_kv **kv, size_t n);
 int                    otelc_init(const char *cfgfile, char **err);
 void                   otelc_deinit(struct otelc_tracer **tracer, struct otelc_meter **meter, struct otelc_logger **logger);
 int64_t                otelc_processor_dropped_count(int type);
+
+void                   otelc_log_set_handler(otelc_log_handler_cb_t handler, void *ctx, bool forward_attr);
+void                   otelc_log_set_level(otelc_log_level_t level);
 
 __CPLUSPLUS_DECL_END
 #endif /* OPENTELEMETRY_C_WRAPPER_UTIL_H */

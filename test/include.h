@@ -17,6 +17,7 @@
 #define TEST_INCLUDE_H
 
 #include "config.h"
+#include "compiler.h"
 
 #include <stdio.h>
 #include <errno.h>

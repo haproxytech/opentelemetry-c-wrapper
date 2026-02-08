@@ -125,6 +125,23 @@ decltype(auto) otelc_value_visit(const struct otelc_value *v, F &&f)
 	} while (0)
 
 /***
+ * otel_log_handler - forwards SDK internal log messages to a C callback.
+ */
+class otel_log_handler : public otel_sdk_internal_log::LogHandler
+{
+public:
+	otel_log_handler(otelc_log_handler_cb_t handler, void *ctx, bool forward_attr)
+		: handler_(handler), ctx_(ctx), forward_attr_(forward_attr) {}
+
+	void Handle(otel_sdk_internal_log::LogLevel level, const char *file, int line, const char *msg, const otel_sdk_common::AttributeMap &attributes) noexcept override;
+
+private:
+	otelc_log_handler_cb_t  handler_;
+	void                   *ctx_;
+	bool                    forward_attr_;
+};
+
+/***
  * Safe map lookup that returns a default-constructed value (nullptr for
  * pointers) when the key is not found, instead of throwing std::out_of_range.
  */

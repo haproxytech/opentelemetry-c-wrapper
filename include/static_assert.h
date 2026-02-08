@@ -38,6 +38,15 @@ OTELC_METRIC_AGGREGATION_DEFINES
 #  undef OTELC_METRIC_AGGREGATION_DEF
 #endif
 
+/***
+ * Verify that otelc_log_level_t values match the C++ LogLevel enum.
+ */
+#ifdef OTELC_STATIC_ASSERT_UTIL
+#  define OTELC_LOG_LEVEL_DEF(a,b)   static_assert(OTELC_LOG_LEVEL_##a == OTEL_CAST_STATIC(int, otel_sdk_internal_log::LogLevel::b),    #a " mismatch");
+OTELC_LOG_LEVEL_DEFINES
+#  undef OTELC_LOG_LEVEL_DEF
+#endif
+
 #endif /* _OPENTELEMETRY_C_WRAPPER_STATIC_ASSERT_H_ */
 
 /*

@@ -3,6 +3,8 @@ global:
 	otelc_ext_thread_id;
 
 	otelc_ext_init;
+	otelc_log_set_handler;
+	otelc_log_set_level;
 	otelc_nsleep;
 	otelc_runtime;
 	otelc_sprintf;

@@ -76,6 +76,7 @@ struct worker {
 
 static struct {
 	const char      *name;
+	uint64_t         drop_cnt;
 #ifdef USE_THREADS
 	pthread_t        main_thread;
 	struct worker    worker[8192];
@@ -220,6 +221,41 @@ static int thread_id(void)
 #else
 	return 0;
 #endif /* USE_THREADS */
+}
+
+
+/*
+ * NAME
+ *   log_handler_cb - counts SDK internal diagnostic messages
+ *
+ * SYNOPSIS
+ *   static void log_handler_cb(otelc_log_level_t level, const char *file, int line, const char *msg, const struct otelc_kv *attr, size_t attr_len, void *ctx)
+ *
+ * ARGUMENTS
+ *   level    - severity of the SDK diagnostic message
+ *   file     - source file that emitted the message
+ *   line     - source line number
+ *   msg      - formatted diagnostic message text
+ *   attr     - array of key-value attributes associated with the message
+ *   attr_len - number of entries in the attr array
+ *   ctx      - opaque context pointer (unused)
+ *
+ * DESCRIPTION
+ *   Custom SDK internal log handler registered via otelc_log_set_handler().
+ *   Each invocation atomically increments the prg.drop_cnt counter so the test
+ *   can verify how many SDK diagnostic messages were emitted.  The message
+ *   content is intentionally ignored.
+ *
+ * RETURN VALUE
+ *   This function does not return a value.
+ */
+static void log_handler_cb(otelc_log_level_t level __maybe_unused, const char *file __maybe_unused, int line __maybe_unused, const char *msg __maybe_unused, const struct otelc_kv *attr __maybe_unused, size_t attr_len __maybe_unused, void *ctx __maybe_unused)
+{
+	OTELC_FUNC("%d, \"%s\", %d, \"%s\", %p, %zu, %p", level, OTELC_STR_ARG(file), line, OTELC_STR_ARG(msg), attr, attr_len, ctx);
+
+	__atomic_add_fetch(&prg.drop_cnt, 1, __ATOMIC_RELAXED);
+
+	OTELC_RETURN();
 }
 
 
@@ -777,7 +813,7 @@ static int worker_run(void)
 	otelc_status     |= otelc_statistics_check(3, 1, 1, 0, 0, 0);
 
 	otelc_statistics(otel_infbuf, sizeof(otel_infbuf));
-	OTELC_LOG(stdout, "OpenTelemetry statistics: %s %s", otelc_status ? "ERROR" : "OK", otel_infbuf);
+	OTELC_LOG(stdout, "OpenTelemetry statistics: %s %s (%" PRIu64 ")", otelc_status ? "ERROR" : "OK", otel_infbuf, prg.drop_cnt);
 #endif
 
 	OTELC_RETURN_INT(retval);
@@ -1056,6 +1092,8 @@ int main(int argc, char **argv)
 		retval = EX_SOFTWARE;
 	}
 	else {
+		otelc_log_set_handler(log_handler_cb, NULL, false);
+
 		retval = worker_run();
 	}
 

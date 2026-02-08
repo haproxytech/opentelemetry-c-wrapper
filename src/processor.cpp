@@ -448,15 +448,15 @@ int otel_logger_processor_create(struct otelc_logger *logger, std::unique_ptr<ot
 	if (rc == OTELC_RET_ERROR)
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
 	else if (rc == 0) {
-		if (name)
+		if (name != nullptr)
 			OTEL_LOGGER_ERETURN_INT("'%s': OpenTelemetry logs processor type not specified", name);
 		else
 			OTEL_LOGGER_ERETURN_INT("OpenTelemetry logs processor type not specified");
 	}
 	else if (strcasecmp(type, "batch") == 0)
-		flag_batch = 1;
+		flag_batch = true;
 	else if (strcasecmp(type, "single") == 0)
-		flag_batch = 0;
+		flag_batch = false;
 	else if (*type != '\0')
 		OTEL_LOGGER_ERETURN_INT("'%s': invalid OpenTelemetry logs processor type specified", type);
 
