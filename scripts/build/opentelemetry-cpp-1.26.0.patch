@@ -1,0 +1,40 @@
+diff --color -Nru opentelemetry-cpp-1.26.0-orig/cmake/grpc.cmake opentelemetry-cpp-1.26.0/cmake/grpc.cmake
+--- opentelemetry-cpp-1.26.0-orig/cmake/grpc.cmake	2026-03-20 01:44:08.000000000 +0100
++++ opentelemetry-cpp-1.26.0/cmake/grpc.cmake	2026-03-30 02:17:06.645416836 +0200
+@@ -23,7 +23,6 @@
+           "third_party/abseil-cpp"
+           "third_party/protobuf"
+           "third_party/cares/cares"
+-          "third_party/boringssl-with-bazel"
+       )
+   set(gRPC_PROVIDER "fetch_repository")
+ 
+@@ -38,6 +37,7 @@
+   set(gRPC_BUILD_GRPC_PYTHON_PLUGIN OFF CACHE BOOL "" FORCE)
+   set(gRPC_BUILD_GRPC_RUBY_PLUGIN OFF CACHE BOOL "" FORCE)
+   set(gRPC_BUILD_GRPCPP_OTEL_PLUGIN OFF CACHE BOOL "" FORCE)
++  set(gRPC_SSL_PROVIDER "package" CACHE STRING "" FORCE)
+   set(gRPC_ZLIB_PROVIDER "package" CACHE STRING "" FORCE)
+   set(gRPC_RE2_PROVIDER "module"  CACHE STRING "" FORCE)
+   set(RE2_BUILD_TESTING OFF CACHE BOOL "" FORCE)
+diff --color -Nru opentelemetry-cpp-1.26.0-orig/cmake/templates/config.pc.in opentelemetry-cpp-1.26.0/cmake/templates/config.pc.in
+--- opentelemetry-cpp-1.26.0-orig/cmake/templates/config.pc.in	2026-03-20 01:44:08.000000000 +0100
++++ opentelemetry-cpp-1.26.0/cmake/templates/config.pc.in	2026-03-30 02:17:06.645559765 +0200
+@@ -11,5 +11,5 @@
+ Requires: @OPENTELEMETRY_PC_REQUIRES@
+ Version: @OPENTELEMETRY_VERSION@
+ 
+-Libs: -L${libdir} @OPENTELEMETRY_PC_LIBS@
++Libs: -L${libdir} -Wl,--rpath,${libdir} @OPENTELEMETRY_PC_LIBS@
+ Cflags: -I${includedir} @OPENTELEMETRY_PC_CFLAGS@
+diff --color -Nru opentelemetry-cpp-1.26.0-orig/install/cmake/CMakeLists.txt opentelemetry-cpp-1.26.0/install/cmake/CMakeLists.txt
+--- opentelemetry-cpp-1.26.0-orig/install/cmake/CMakeLists.txt	2026-03-20 01:44:08.000000000 +0100
++++ opentelemetry-cpp-1.26.0/install/cmake/CMakeLists.txt	2026-03-30 02:17:06.645700018 +0200
+@@ -215,7 +215,6 @@
+     GIT_TAG ${grpc_GIT_TAG}
+     GIT_SHALLOW ON
+     GIT_SUBMODULES "third_party/re2" "third_party/cares/cares"
+-                   "third_party/boringssl-with-bazel"
+     PREFIX ${CMAKE_BINARY_DIR}/external/grpc
+     INSTALL_DIR ${CMAKE_INSTALL_PREFIX}
+     CMAKE_ARGS "${CMAKE_OPTIONS}"
