@@ -17,3 +17,4 @@ test -f Makefile && make maintainer-clean
 rm -rf autom4te.cache build config package snippet/build _* */_* */.deps *~
 rm -f autoscan.log configure.scan aclocal.m4 config.* configure Makefile.in */Makefile.in m4/l*
 rm -f include/opentelemetry-c-wrapper/*.tmp include/opentelemetry-c-wrapper/otel_cpp.h src/.build-md5sums
+rm -f scripts/semconv.h scripts/semconv.h.tmp
