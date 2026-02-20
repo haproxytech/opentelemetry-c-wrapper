@@ -924,6 +924,20 @@ static void otel_tracer_destroy(struct otelc_tracer **tracer)
 }
 
 
+/* The tracer operations vtable. */
+const static struct otelc_tracer_ops otel_tracer_ops = {
+	.start_span              = otel_tracer_start_span,              /* lock span and span_context */
+	.start_span_with_options = otel_tracer_start_span_with_options, /* lock span and span_context */
+	.extract_text_map        = otel_tracer_extract_text_map,        /* lock span_context */
+	.extract_http_headers    = otel_tracer_extract_http_headers,    /* lock span_context */
+	.enabled                 = otel_tracer_enabled,                 /* Locking not required. */
+	.force_flush             = otel_tracer_force_flush,             /* Locking not required. */
+	.shutdown                = otel_tracer_shutdown,                /* Locking not required. */
+	.start                   = otel_tracer_start,                   /* Locking not required. */
+	.destroy                 = otel_tracer_destroy,                 /* Locking not required. */
+};
+
+
 /***
  * NAME
  *   otel_tracer_new - creates a new tracer instance in an unstarted state
@@ -944,25 +958,15 @@ static void otel_tracer_destroy(struct otelc_tracer **tracer)
  */
 static struct otelc_tracer *otel_tracer_new(void)
 {
-	const static struct otelc_tracer tracer_init = {
-		.err                     = nullptr,
-		.scope_name              = nullptr,
-		.start_span              = otel_tracer_start_span,              /* lock span and span_context */
-		.start_span_with_options = otel_tracer_start_span_with_options, /* lock span and span_context */
-		.extract_text_map        = otel_tracer_extract_text_map,        /* lock span_context */
-		.extract_http_headers    = otel_tracer_extract_http_headers,    /* lock span_context */
-		.enabled                 = otel_tracer_enabled,                 /* Locking not required. */
-		.force_flush             = otel_tracer_force_flush,             /* Locking not required. */
-		.shutdown                = otel_tracer_shutdown,                /* Locking not required. */
-		.start                   = otel_tracer_start,                   /* Locking not required. */
-		.destroy                 = otel_tracer_destroy,                 /* Locking not required. */
-	};
 	struct otelc_tracer *retptr = nullptr;
 
 	OTELC_FUNC("");
 
-	if (!OTEL_NULL(retptr = OTEL_CAST_TYPEOF(retptr, OTELC_CALLOC(__func__, __LINE__, 1, sizeof(*retptr)))))
-		(void)memcpy(retptr, &tracer_init, sizeof(*retptr));
+	if (!OTEL_NULL(retptr = OTEL_CAST_TYPEOF(retptr, OTELC_CALLOC(__func__, __LINE__, 1, sizeof(*retptr))))) {
+		retptr->err        = nullptr;
+		retptr->scope_name = nullptr;
+		retptr->ops        = &otel_tracer_ops;
+	}
 
 	OTELC_RETURN_PTR(retptr);
 }

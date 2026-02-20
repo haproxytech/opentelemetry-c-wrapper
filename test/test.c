@@ -467,7 +467,7 @@ static void worker_thread(void *data)
 			if (_NULL(*tracer))
 				continue;
 
-			if (_NULL(*span_root = (*tracer)->start_span_with_options(*tracer, "root span", NULL, NULL, &ts_steady, &ts_system, OTELC_SPAN_KIND_SERVER, NULL, 0)))
+			if (_NULL(*span_root = OTELC_OPS(*tracer, start_span_with_options, "root span", NULL, NULL, &ts_steady, &ts_system, OTELC_SPAN_KIND_SERVER, NULL, 0)))
 				break;
 		}
 		else if (worker->otel_state == WORKER_STATE_SPAN_ROOT_SET_BAGGAGE) {
@@ -504,7 +504,7 @@ static void worker_thread(void *data)
 			if (_NULL(*tracer))
 				continue;
 
-			if (_NULL(*span_child = (*tracer)->start_span_with_options(*tracer, "child span", *span_root, NULL, &ts_steady, &ts_system, OTELC_SPAN_KIND_SERVER, NULL, 0)))
+			if (_NULL(*span_child = OTELC_OPS(*tracer, start_span_with_options, "child span", *span_root, NULL, &ts_steady, &ts_system, OTELC_SPAN_KIND_SERVER, NULL, 0)))
 				break;
 		}
 		else if (worker->otel_state == WORKER_STATE_METER_INSTRUMENTS_CREATE) {
@@ -582,7 +582,7 @@ static void worker_thread(void *data)
 				continue;
 
 			if (_nNULL(context = otelc_tracer_extract_text_map(*tracer, &tm_rd, text_map))) {
-				if (_NULL(*span_prop_tm = (*tracer)->start_span_with_options(*tracer, "text map propagation", NULL, context, &ts_steady, &ts_system, OTELC_SPAN_KIND_SERVER, NULL, 0)))
+				if (_NULL(*span_prop_tm = OTELC_OPS(*tracer, start_span_with_options, "text map propagation", NULL, context, &ts_steady, &ts_system, OTELC_SPAN_KIND_SERVER, NULL, 0)))
 					break;
 
 				OTELC_OPSR(context, destroy);
@@ -611,7 +611,7 @@ static void worker_thread(void *data)
 				continue;
 
 			if (_nNULL(context = otelc_tracer_extract_http_headers(*tracer, &hh_rd, text_map))) {
-				if (_NULL(*span_prop_hh = (*tracer)->start_span_with_options(*tracer, "http headers propagation", NULL, context, &ts_steady, &ts_system, OTELC_SPAN_KIND_SERVER, NULL, 0)))
+				if (_NULL(*span_prop_hh = OTELC_OPS(*tracer, start_span_with_options, "http headers propagation", NULL, context, &ts_steady, &ts_system, OTELC_SPAN_KIND_SERVER, NULL, 0)))
 					break;
 
 				OTELC_OPSR(context, destroy);
@@ -696,7 +696,7 @@ static void worker_thread(void *data)
 			if (_NULL(*tracer))
 				continue;
 
-			if (_NULL(*span_linked = (*tracer)->start_span_with_options(*tracer, "linked span", NULL, NULL, &ts_steady, &ts_system, OTELC_SPAN_KIND_SERVER, NULL, 0)))
+			if (_NULL(*span_linked = OTELC_OPS(*tracer, start_span_with_options, "linked span", NULL, NULL, &ts_steady, &ts_system, OTELC_SPAN_KIND_SERVER, NULL, 0)))
 				break;
 			else if (OTELC_OPS(*span_linked, add_link, *span_root, NULL, attr, OTELC_TABLESIZE(attr)) == OTELC_RET_ERROR)
 				break;
@@ -1066,7 +1066,7 @@ int main(int argc, char **argv)
 
 		retval = EX_SOFTWARE;
 	}
-	else if (cfg.otel_tracer->start(cfg.otel_tracer) == OTELC_RET_ERROR) {
+	else if (OTELC_OPS(cfg.otel_tracer, start) == OTELC_RET_ERROR) {
 		OTELC_LOG(stderr, "ERROR: %s", _NULL(cfg.otel_tracer->err) ? "Unable to start traces" : cfg.otel_tracer->err);
 
 		retval = EX_SOFTWARE;

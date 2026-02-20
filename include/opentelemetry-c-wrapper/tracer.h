@@ -23,12 +23,10 @@ __CPLUSPLUS_DECL_BEGIN
 	                 (p)->err, OTELC_STR_ARG((p)->err), (p)->scope_name, OTELC_STR_ARG((p)->scope_name))
 
 /***
- * tracer interface
+ * The tracer operations vtable.
  */
-struct otelc_tracer {
-	char *err;        /* Character array containing the last library error. */
-	char *scope_name; /* Tracer instrumentation scope name. */
-
+struct otelc_tracer;
+struct otelc_tracer_ops {
 	/***
 	 * NAME
 	 *   start_span - starts a new span
@@ -250,6 +248,15 @@ struct otelc_tracer {
 	 */
 	void (*destroy)(struct otelc_tracer **tracer)
 		OTELC_NONNULL_ALL;
+};
+
+/***
+ * The tracer instance data.
+ */
+struct otelc_tracer {
+	char                          *err;        /* Character array containing the last library error. */
+	char                          *scope_name; /* Tracer instrumentation scope name. */
+	const struct otelc_tracer_ops *ops;        /* Pointer to the operations vtable. */
 };
 
 

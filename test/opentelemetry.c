@@ -252,7 +252,7 @@ struct otelc_span_context *otelc_tracer_extract_text_map(struct otelc_tracer *tr
 	if (_nNULL(text_map))
 		(void)memcpy(&(carrier->text_map), text_map, sizeof(carrier->text_map));
 
-	OTELC_RETURN_PTR(tracer->extract_text_map(tracer, carrier));
+	OTELC_RETURN_PTR(OTELC_OPS(tracer, extract_text_map, carrier));
 }
 
 
@@ -290,7 +290,7 @@ struct otelc_span_context *otelc_tracer_extract_http_headers(struct otelc_tracer
 	if (_nNULL(text_map))
 		(void)memcpy(&(carrier->text_map), text_map, sizeof(carrier->text_map));
 
-	OTELC_RETURN_PTR(tracer->extract_http_headers(tracer, carrier));
+	OTELC_RETURN_PTR(OTELC_OPS(tracer, extract_http_headers, carrier));
 }
 
 /*
