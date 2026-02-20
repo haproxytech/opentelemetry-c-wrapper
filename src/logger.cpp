@@ -587,6 +587,18 @@ static void otel_logger_destroy(struct otelc_logger **logger)
 }
 
 
+const static struct otelc_logger_ops otel_logger_ops = {
+	.enabled          = otel_logger_enabled,          /* Locking not required. */
+	.set_min_severity = otel_logger_set_min_severity, /* Locking not required. */
+	.log              = otel_logger_log,              /* Locking not required. */
+	.log_span         = otel_logger_log_span,         /* Locking not required. */
+	.force_flush      = otel_logger_force_flush,      /* Locking not required. */
+	.shutdown         = otel_logger_shutdown,         /* Locking not required. */
+	.start            = otel_logger_start,            /* Locking not required. */
+	.destroy          = otel_logger_destroy,          /* Locking not required. */
+};
+
+
 /***
  * NAME
  *   otel_logger_new - creates a new logger instance in an unstarted state
@@ -609,25 +621,16 @@ static void otel_logger_destroy(struct otelc_logger **logger)
  */
 static struct otelc_logger *otel_logger_new(void)
 {
-	const static struct otelc_logger logger_init = {
-		.err              = nullptr,
-		.scope_name       = nullptr,
-		.min_severity     = OTELC_LOG_SEVERITY_TRACE,
-		.enabled          = otel_logger_enabled,          /* Locking not required. */
-		.set_min_severity = otel_logger_set_min_severity, /* Locking not required. */
-		.log              = otel_logger_log,              /* Locking not required. */
-		.log_span         = otel_logger_log_span,         /* Locking not required. */
-		.force_flush      = otel_logger_force_flush,      /* Locking not required. */
-		.shutdown         = otel_logger_shutdown,         /* Locking not required. */
-		.start            = otel_logger_start,            /* Locking not required. */
-		.destroy          = otel_logger_destroy,          /* Locking not required. */
-	};
 	struct otelc_logger *retptr = nullptr;
 
 	OTELC_FUNC("");
 
-	if (!OTEL_NULL(retptr = OTEL_CAST_TYPEOF(retptr, OTELC_CALLOC(__func__, __LINE__, 1, sizeof(*retptr)))))
-		(void)memcpy(retptr, &logger_init, sizeof(*retptr));
+	if (!OTEL_NULL(retptr = OTEL_CAST_TYPEOF(retptr, OTELC_CALLOC(__func__, __LINE__, 1, sizeof(*retptr))))) {
+		retptr->err          = nullptr;
+		retptr->scope_name   = nullptr;
+		retptr->min_severity = OTELC_LOG_SEVERITY_TRACE;
+		retptr->ops          = &otel_logger_ops;
+	}
 
 	OTELC_RETURN_PTR(retptr);
 }

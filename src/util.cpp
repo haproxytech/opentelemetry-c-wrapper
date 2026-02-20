@@ -1832,7 +1832,7 @@ void otelc_deinit(struct otelc_tracer **tracer, struct otelc_meter **meter, stru
 	}
 
 	if (!OTEL_NULL(logger) && !OTEL_NULL(*logger))
-		(*logger)->destroy(logger);
+		OTELC_OPSR(*logger, destroy);
 
 	if (!OTEL_NULL(meter) && !OTEL_NULL(*meter))
 		OTELC_OPSR(*meter, destroy);

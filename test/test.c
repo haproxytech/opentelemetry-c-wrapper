@@ -497,8 +497,8 @@ static void worker_thread(void *data)
 				continue;
 
 			(void)OTELC_OPS(*span_root, get_id, span_id, sizeof(span_id), trace_id, sizeof(trace_id), &trace_flags);
-			(*logger)->log(*logger, OTELC_LOG_SEVERITY_DEBUG, 0, NULL, span_id, sizeof(span_id), trace_id, sizeof(trace_id), trace_flags, &ts, attr, OTELC_TABLESIZE(attr), "debug log from worker %d (span_root)", worker->id);
-			(*logger)->log_span(*logger, OTELC_LOG_SEVERITY_INFO, 0, NULL, *span_root, &ts, attr, OTELC_TABLESIZE(attr), "info log from worker %d (span_root)", worker->id);
+			OTELC_OPS(*logger, log, OTELC_LOG_SEVERITY_DEBUG, 0, NULL, span_id, sizeof(span_id), trace_id, sizeof(trace_id), trace_flags, &ts, attr, OTELC_TABLESIZE(attr), "debug log from worker %d (span_root)", worker->id);
+			OTELC_OPS(*logger, log_span, OTELC_LOG_SEVERITY_INFO, 0, NULL, *span_root, &ts, attr, OTELC_TABLESIZE(attr), "info log from worker %d (span_root)", worker->id);
 		}
 		else if (worker->otel_state == WORKER_STATE_SPAN_CHILD_START) {
 			if (_NULL(*tracer))
@@ -1086,7 +1086,7 @@ int main(int argc, char **argv)
 
 		retval = EX_SOFTWARE;
 	}
-	else if (cfg.otel_logger->start(cfg.otel_logger) == OTELC_RET_ERROR) {
+	else if (OTELC_OPS(cfg.otel_logger, start) == OTELC_RET_ERROR) {
 		OTELC_LOG(stderr, "ERROR: %s", _NULL(cfg.otel_logger->err) ? "Unable to start logs" : cfg.otel_logger->err);
 
 		retval = EX_SOFTWARE;

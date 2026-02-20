@@ -58,13 +58,10 @@ typedef enum {
 #undef OTELC_LOG_SEVERITY_DEF
 
 /***
- * logger interface
+ * The logger operations vtable.
  */
-struct otelc_logger {
-	char                 *err;          /* Character array containing the last library error. */
-	char                 *scope_name;   /* Logger instrumentation scope name. */
-	otelc_log_severity_t  min_severity; /* Minimum allowed log severity level. */
-
+struct otelc_logger;
+struct otelc_logger_ops {
 	/***
 	 * NAME
 	 *   enabled - checks whether the logger is enabled for a severity level
@@ -275,6 +272,16 @@ struct otelc_logger {
 	 */
 	void (*destroy)(struct otelc_logger **logger)
 		OTELC_NONNULL_ALL;
+};
+
+/***
+ * The logger instance data.
+ */
+struct otelc_logger {
+	char                          *err;          /* Character array containing the last library error. */
+	char                          *scope_name;   /* Logger instrumentation scope name. */
+	otelc_log_severity_t           min_severity; /* Minimum allowed log severity level. */
+	const struct otelc_logger_ops *ops;          /* Pointer to the operations vtable. */
 };
 
 
