@@ -1282,6 +1282,32 @@ static void otel_span_destroy(struct otelc_span **span)
 }
 
 
+/* The span operations vtable. */
+const static struct otelc_span_ops otel_span_ops = {
+	.get_id               = otel_span_get_id,               /* lock span */
+	.is_recording         = otel_span_is_recording,         /* lock span */
+	.end                  = otel_span_end,                  /* lock span */
+	.end_with_options     = otel_span_end_with_options,     /* lock span */
+	.set_operation_name   = otel_span_set_operation_name,   /* lock span */
+	.set_baggage_var      = otel_span_set_baggage_var,      /* lock span */
+	.set_baggage_kv_var   = otel_span_set_baggage_kv_var,   /* lock span */
+	.set_baggage_kv_n     = otel_span_set_baggage_kv_n,     /* lock span */
+	.get_baggage          = otel_span_get_baggage,          /* lock span */
+	.get_baggage_var      = otel_span_get_baggage_var,      /* lock span */
+	.set_attribute_var    = otel_span_set_attribute_var,    /* lock span */
+	.set_attribute_kv_var = otel_span_set_attribute_kv_var, /* lock span */
+	.set_attribute_kv_n   = otel_span_set_attribute_kv_n,   /* lock span */
+	.add_event_var        = otel_span_add_event_var,        /* lock span */
+	.add_event_kv_var     = otel_span_add_event_kv_var,     /* lock span */
+	.add_event_kv_n       = otel_span_add_event_kv_n,       /* lock span */
+	.add_link             = otel_span_add_link,             /* lock span */
+	.set_status           = otel_span_set_status,           /* lock span */
+	.inject_text_map      = otel_span_inject_text_map,      /* lock span */
+	.inject_http_headers  = otel_span_inject_http_headers,  /* lock span */
+	.destroy              = otel_span_destroy,              /* lock span */
+};
+
+
 /***
  * NAME
  *   otel_span_new - creates a new span instance
@@ -1302,31 +1328,6 @@ static void otel_span_destroy(struct otelc_span **span)
  */
 struct otelc_span *otel_span_new(struct otelc_tracer *tracer)
 {
-	const static struct otelc_span span_init = {
-		.idx                  = 0,
-		.tracer               = nullptr,
-		.get_id               = otel_span_get_id,               /* lock span */
-		.is_recording         = otel_span_is_recording,         /* lock span */
-		.end                  = otel_span_end,                  /* lock span */
-		.end_with_options     = otel_span_end_with_options,     /* lock span */
-		.set_operation_name   = otel_span_set_operation_name,   /* lock span */
-		.set_baggage_var      = otel_span_set_baggage_var,      /* lock span */
-		.set_baggage_kv_var   = otel_span_set_baggage_kv_var,   /* lock span */
-		.set_baggage_kv_n     = otel_span_set_baggage_kv_n,     /* lock span */
-		.get_baggage          = otel_span_get_baggage,          /* lock span */
-		.get_baggage_var      = otel_span_get_baggage_var,      /* lock span */
-		.set_attribute_var    = otel_span_set_attribute_var,    /* lock span */
-		.set_attribute_kv_var = otel_span_set_attribute_kv_var, /* lock span */
-		.set_attribute_kv_n   = otel_span_set_attribute_kv_n,   /* lock span */
-		.add_event_var        = otel_span_add_event_var,        /* lock span */
-		.add_event_kv_var     = otel_span_add_event_kv_var,     /* lock span */
-		.add_event_kv_n       = otel_span_add_event_kv_n,       /* lock span */
-		.add_link             = otel_span_add_link,             /* lock span */
-		.set_status           = otel_span_set_status,           /* lock span */
-		.inject_text_map      = otel_span_inject_text_map,      /* lock span */
-		.inject_http_headers  = otel_span_inject_http_headers,  /* lock span */
-		.destroy              = otel_span_destroy,              /* lock span */
-	};
 	struct otelc_span *retptr = nullptr;
 
 	OTELC_FUNC("%p", tracer);
@@ -1335,10 +1336,9 @@ struct otelc_span *otel_span_new(struct otelc_tracer *tracer)
 		OTELC_RETURN_PTR(retptr);
 
 	if (!OTEL_NULL(retptr = OTEL_CAST_TYPEOF(retptr, OTEL_EXT_MALLOC(sizeof(*retptr))))) {
-		(void)memcpy(retptr, &span_init, sizeof(*retptr));
-
-		retptr->tracer = tracer;
 		retptr->idx    = OTEL_HANDLE(otel_span, id++);
+		retptr->tracer = tracer;
+		retptr->ops    = &otel_span_ops;
 	} else {
 		OTEL_HANDLE(otel_span, alloc_fail_cnt++);
 	}

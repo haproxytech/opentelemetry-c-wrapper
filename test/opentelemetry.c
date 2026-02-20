@@ -103,7 +103,7 @@ int otelc_span_inject_text_map(const struct otelc_span *span, struct otelc_text_
 	(void)memset(carrier, 0, sizeof(*carrier));
 	carrier->set = otelc_text_map_writer_set_cb;
 
-	OTELC_RETURN_INT(span->inject_text_map(span, carrier));
+	OTELC_RETURN_INT(OTELC_OPS(span, inject_text_map, carrier));
 }
 
 
@@ -136,7 +136,7 @@ int otelc_span_inject_http_headers(const struct otelc_span *span, struct otelc_h
 	(void)memset(carrier, 0, sizeof(*carrier));
 	carrier->set = otelc_http_headers_writer_set_cb;
 
-	OTELC_RETURN_INT(span->inject_http_headers(span, carrier));
+	OTELC_RETURN_INT(OTELC_OPS(span, inject_http_headers, carrier));
 }
 
 

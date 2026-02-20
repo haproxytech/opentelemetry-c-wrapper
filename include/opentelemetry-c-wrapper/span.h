@@ -344,12 +344,10 @@ struct otelc_span_context {
 };
 
 /***
- * The span interface.
+ * The span operations vtable.
  */
-struct otelc_span {
-	int64_t              idx;    /* The index (key) within the internal otel_span structure. */
-	struct otelc_tracer *tracer; /* Pointer to the tracer to which this span belongs. */
-
+struct otelc_span;
+struct otelc_span_ops {
 	/***
 	 * NAME
 	 *   get_id - retrieves the identifiers associated with a span
@@ -876,6 +874,15 @@ struct otelc_span {
 	 */
 	void (*destroy)(struct otelc_span **span)
 		OTELC_NONNULL_ALL;
+};
+
+/***
+ * The span instance data.
+ */
+struct otelc_span {
+	int64_t                      idx;    /* The index (key) within the internal otel_span structure. */
+	struct otelc_tracer         *tracer; /* Pointer to the tracer to which this span belongs. */
+	const struct otelc_span_ops *ops;    /* Pointer to the operations vtable. */
 };
 
 /***

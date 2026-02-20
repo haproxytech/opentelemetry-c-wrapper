@@ -352,7 +352,7 @@ static int otel_logger_log_span(struct otelc_logger *logger, otelc_log_severity_
 
 	/* If span context retrieval fails, emit the log without correlation. */
 	if (!OTEL_NULL(span))
-		if (span->get_id(span, span_id_buf, sizeof(span_id_buf), trace_id_buf, sizeof(trace_id_buf), &trace_flags) == OTELC_RET_ERROR)
+		if (OTELC_OPS(span, get_id, span_id_buf, sizeof(span_id_buf), trace_id_buf, sizeof(trace_id_buf), &trace_flags) == OTELC_RET_ERROR)
 			OTELC_DBG(DEBUG, "%s", (OTEL_NULL(span->tracer) || OTEL_NULL(span->tracer->err)) ? "Unable to retrieve span context" : span->tracer->err);
 
 	va_start(ap, format);

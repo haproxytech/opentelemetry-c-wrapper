@@ -288,7 +288,7 @@ static void worker_end_all_spans(struct worker *worker)
 
 	for (i = OTELC_TABLESIZE(worker->otelc_span) - 1; i >= 0; i--)
 		if (_nNULL(worker->otelc_span[i]))
-			worker->otelc_span[i]->end_with_options(worker->otelc_span + i, &ts_steady, random() % (OTELC_SPAN_STATUS_ERROR + 1), NULL);
+			OTELC_OPSR(worker->otelc_span[i], end_with_options, &ts_steady, random() % (OTELC_SPAN_STATUS_ERROR + 1), NULL);
 
 	OTELC_RETURN();
 }
@@ -474,7 +474,7 @@ static void worker_thread(void *data)
 			if (_NULL(*span_root))
 				continue;
 
-			(void)(*span_root)->set_baggage_var(*span_root, "root_baggage_1", "value_1", "root_baggage_2", "value_2", NULL);
+			(void)OTELC_OPS(*span_root, set_baggage_var, "root_baggage_1", "value_1", "root_baggage_2", "value_2", NULL);
 		}
 		else if (worker->otel_state == WORKER_STATE_LOG_SPAN_ROOT) {
 			static const struct otelc_kv attr[] = {
@@ -496,7 +496,7 @@ static void worker_thread(void *data)
 			if (_NULL(*span_root) || _NULL(*logger))
 				continue;
 
-			(void)(*span_root)->get_id(*span_root, span_id, sizeof(span_id), trace_id, sizeof(trace_id), &trace_flags);
+			(void)OTELC_OPS(*span_root, get_id, span_id, sizeof(span_id), trace_id, sizeof(trace_id), &trace_flags);
 			(*logger)->log(*logger, OTELC_LOG_SEVERITY_DEBUG, 0, NULL, span_id, sizeof(span_id), trace_id, sizeof(trace_id), trace_flags, &ts, attr, OTELC_TABLESIZE(attr), "debug log from worker %d (span_root)", worker->id);
 			(*logger)->log_span(*logger, OTELC_LOG_SEVERITY_INFO, 0, NULL, *span_root, &ts, attr, OTELC_TABLESIZE(attr), "info log from worker %d (span_root)", worker->id);
 		}
@@ -572,7 +572,7 @@ static void worker_thread(void *data)
 			if (_NULL(*span_child))
 				continue;
 
-			(void)(*span_child)->set_baggage_var(*span_child, "child_baggage_1", "value_3", "child_baggage_2", "value_4", NULL);
+			(void)OTELC_OPS(*span_child, set_baggage_var, "child_baggage_1", "value_3", "child_baggage_2", "value_4", NULL);
 		}
 		else if (worker->otel_state == WORKER_STATE_SPAN_PROP_TM_START) {
 			struct otelc_text_map_reader  tm_rd;
@@ -593,7 +593,7 @@ static void worker_thread(void *data)
 			if (_NULL(*span_child))
 				continue;
 
-			struct otelc_text_map *baggage = (*span_child)->get_baggage_var(*span_child, "root_baggage_1", "root_baggage_2", "child_baggage_1", "child_baggage_2", NULL);
+			struct otelc_text_map *baggage = OTELC_OPS(*span_child, get_baggage_var, "root_baggage_1", "root_baggage_2", "child_baggage_1", "child_baggage_2", NULL);
 
 			otelc_text_map_destroy(&baggage);
 		}
@@ -622,8 +622,8 @@ static void worker_thread(void *data)
 			if (_NULL(*span_prop_tm))
 				continue;
 
-			struct otelc_text_map *baggage = (*span_prop_tm)->get_baggage_var(*span_prop_tm, "root_baggage_1", "root_baggage_2", "child_baggage_1", "child_baggage_2", NULL);
-			char                  *value = (*span_prop_tm)->get_baggage(*span_prop_tm, "root_baggage_1");
+			struct otelc_text_map *baggage = OTELC_OPS(*span_prop_tm, get_baggage_var, "root_baggage_1", "root_baggage_2", "child_baggage_1", "child_baggage_2", NULL);
+			char                  *value = OTELC_OPS(*span_prop_tm, get_baggage, "root_baggage_1");
 			if (_nNULL(value))
 				OTELC_FREE(__func__, __LINE__, value);
 
@@ -633,8 +633,8 @@ static void worker_thread(void *data)
 			if (_NULL(*span_prop_hh))
 				continue;
 
-			struct otelc_text_map *baggage = (*span_prop_hh)->get_baggage_var(*span_prop_hh, "root_baggage_1", "root_baggage_2", "child_baggage_1", "child_baggage_2", NULL);
-			char                  *value = (*span_prop_hh)->get_baggage(*span_prop_hh, "child_baggage_1");
+			struct otelc_text_map *baggage = OTELC_OPS(*span_prop_hh, get_baggage_var, "root_baggage_1", "root_baggage_2", "child_baggage_1", "child_baggage_2", NULL);
+			char                  *value = OTELC_OPS(*span_prop_hh, get_baggage, "child_baggage_1");
 			if (_nNULL(value))
 				OTELC_FREE(__func__, __LINE__, value);
 
@@ -656,9 +656,9 @@ static void worker_thread(void *data)
 			if (_NULL(*span_root))
 				continue;
 
-			(void)(*span_root)->set_attribute_var(*span_root, attr[0].key, &(attr[0].value), attr[1].key, &(attr[1].value), attr[2].key, &(attr[2].value), NULL);
-			(void)(*span_root)->set_attribute_kv_var(*span_root, attr + 3, attr + 4, NULL);
-			(void)(*span_root)->set_attribute_kv_n(*span_root, attr + 5, 4);
+			(void)OTELC_OPS(*span_root, set_attribute_var, attr[0].key, &(attr[0].value), attr[1].key, &(attr[1].value), attr[2].key, &(attr[2].value), NULL);
+			(void)OTELC_OPS(*span_root, set_attribute_kv_var, attr + 3, attr + 4, NULL);
+			(void)OTELC_OPS(*span_root, set_attribute_kv_n, attr + 5, 4);
 		}
 		else if (worker->otel_state == WORKER_STATE_SPAN_PROP_TM_ADD_EVENT) {
 			static const struct otelc_kv event[] = {
@@ -676,9 +676,9 @@ static void worker_thread(void *data)
 			if (_NULL(*span_prop_tm))
 				continue;
 
-			(void)(*span_prop_tm)->add_event_var(*span_prop_tm, "event_1", &ts_system, event[0].key, &(event[0].value), event[1].key, &(event[1].value), event[2].key, &(event[2].value), NULL);
-			(void)(*span_prop_tm)->add_event_kv_var(*span_prop_tm, "event_1", &ts_system, event + 3, event + 4, NULL);
-			(void)(*span_prop_tm)->add_event_kv_n(*span_prop_tm, "event_1", &ts_system, event + 5, 4);
+			(void)OTELC_OPS(*span_prop_tm, add_event_var, "event_1", &ts_system, event[0].key, &(event[0].value), event[1].key, &(event[1].value), event[2].key, &(event[2].value), NULL);
+			(void)OTELC_OPS(*span_prop_tm, add_event_kv_var, "event_1", &ts_system, event + 3, event + 4, NULL);
+			(void)OTELC_OPS(*span_prop_tm, add_event_kv_n, "event_1", &ts_system, event + 5, 4);
 		}
 		else if (worker->otel_state == WORKER_STATE_SPAN_LINKED_START) {
 			static const struct otelc_kv attr[] = {
@@ -698,7 +698,7 @@ static void worker_thread(void *data)
 
 			if (_NULL(*span_linked = (*tracer)->start_span_with_options(*tracer, "linked span", NULL, NULL, &ts_steady, &ts_system, OTELC_SPAN_KIND_SERVER, NULL, 0)))
 				break;
-			else if ((*span_linked)->add_link(*span_linked, *span_root, NULL, attr, OTELC_TABLESIZE(attr)) == OTELC_RET_ERROR)
+			else if (OTELC_OPS(*span_linked, add_link, *span_root, NULL, attr, OTELC_TABLESIZE(attr)) == OTELC_RET_ERROR)
 				break;
 		}
 		else if (worker->otel_state >= WORKER_STATE_LOOP_END) {
