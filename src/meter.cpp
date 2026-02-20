@@ -1049,6 +1049,22 @@ static void otel_meter_destroy(struct otelc_meter **meter)
 }
 
 
+/* The meter operations vtable. */
+const static struct otelc_meter_ops otel_meter_ops = {
+	.create_instrument          = otel_meter_create_instrument,          /* lock otel_instrument */
+	.update_instrument          = otel_meter_update_instrument,          /* lock otel_instrument */
+	.update_instrument_kv_n     = otel_meter_update_instrument_kv_n,     /* lock otel_instrument */
+	.add_instrument_callback    = otel_meter_add_instrument_callback,    /* lock otel_instrument */
+	.remove_instrument_callback = otel_meter_remove_instrument_callback, /* lock otel_instrument */
+	.add_view                   = otel_meter_add_view,                   /* lock otel_view */
+	.enabled                    = otel_meter_enabled,                    /* Locking not required. */
+	.force_flush                = otel_meter_force_flush,                /* Locking not required. */
+	.shutdown                   = otel_meter_shutdown,                   /* Locking not required. */
+	.start                      = otel_meter_start,                      /* Locking not required. */
+	.destroy                    = otel_meter_destroy,                    /* Locking not required. */
+};
+
+
 /***
  * NAME
  *   otel_meter_new - creates a new meter instance in an unstarted state
@@ -1070,27 +1086,15 @@ static void otel_meter_destroy(struct otelc_meter **meter)
  */
 static struct otelc_meter *otel_meter_new(void)
 {
-	const static struct otelc_meter meter_init = {
-		.err                        = nullptr,
-		.scope_name                 = nullptr,
-		.create_instrument          = otel_meter_create_instrument,          /* lock otel_instrument */
-		.update_instrument          = otel_meter_update_instrument,          /* lock otel_instrument */
-		.update_instrument_kv_n     = otel_meter_update_instrument_kv_n,     /* lock otel_instrument */
-		.add_instrument_callback    = otel_meter_add_instrument_callback,    /* lock otel_instrument */
-		.remove_instrument_callback = otel_meter_remove_instrument_callback, /* lock otel_instrument */
-		.add_view                   = otel_meter_add_view,                   /* lock otel_view */
-		.enabled                    = otel_meter_enabled,                    /* Locking not required. */
-		.force_flush                = otel_meter_force_flush,                /* Locking not required. */
-		.shutdown                   = otel_meter_shutdown,                   /* Locking not required. */
-		.start                      = otel_meter_start,                      /* Locking not required. */
-		.destroy                    = otel_meter_destroy,                    /* Locking not required. */
-	};
 	struct otelc_meter *retptr = nullptr;
 
 	OTELC_FUNC("");
 
-	if (!OTEL_NULL(retptr = OTEL_CAST_TYPEOF(retptr, OTELC_CALLOC(__func__, __LINE__, 1, sizeof(*retptr)))))
-		(void)memcpy(retptr, &meter_init, sizeof(*retptr));
+	if (!OTEL_NULL(retptr = OTEL_CAST_TYPEOF(retptr, OTELC_CALLOC(__func__, __LINE__, 1, sizeof(*retptr))))) {
+		retptr->err        = nullptr;
+		retptr->scope_name = nullptr;
+		retptr->ops        = &otel_meter_ops;
+	}
 
 	OTELC_RETURN_PTR(retptr);
 }

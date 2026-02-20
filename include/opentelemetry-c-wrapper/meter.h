@@ -75,12 +75,10 @@ struct otelc_metric_observable_cb {
 };
 
 /***
- * meter interface
+ * The meter operations vtable.
  */
-struct otelc_meter {
-	char *err;        /* Character array containing the last library error. */
-	char *scope_name; /* Meter instrumentation scope name. */
-
+struct otelc_meter;
+struct otelc_meter_ops {
 	/***
 	 * NAME
 	 *   create_instrument - creates a metric instrument
@@ -371,6 +369,15 @@ struct otelc_meter {
 	 */
 	void (*destroy)(struct otelc_meter **meter)
 		OTELC_NONNULL_ALL;
+};
+
+/***
+ * The meter instance data.
+ */
+struct otelc_meter {
+	char                         *err;        /* Character array containing the last library error. */
+	char                         *scope_name; /* Meter instrumentation scope name. */
+	const struct otelc_meter_ops *ops;        /* Pointer to the operations vtable. */
 };
 
 

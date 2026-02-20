@@ -517,13 +517,13 @@ static void worker_thread(void *data)
 			if (_NULL(*meter))
 				continue;
 
-			(*meter)->add_view(*meter, "histogram_double", "", "histogram_double", "", OTELC_METRIC_INSTRUMENT_HISTOGRAM_DOUBLE, OTELC_METRIC_AGGREGATION_HISTOGRAM, bounds, OTELC_TABLESIZE(bounds));
+			OTELC_OPS(*meter, add_view, "histogram_double", "", "histogram_double", "", OTELC_METRIC_INSTRUMENT_HISTOGRAM_DOUBLE, OTELC_METRIC_AGGREGATION_HISTOGRAM, bounds, OTELC_TABLESIZE(bounds));
 
-			meter_instrument[0] = (*meter)->create_instrument(*meter, "counter_uint64", "synchronous counter of type uint64_t", "", OTELC_METRIC_INSTRUMENT_COUNTER_UINT64, NULL);
-			meter_instrument[1] = (*meter)->create_instrument(*meter, "histogram_double", "histogram of double values", "", OTELC_METRIC_INSTRUMENT_HISTOGRAM_DOUBLE, NULL);
-			meter_instrument[2] = (*meter)->create_instrument(*meter, "observable_counter_int64", "asynchronous counter of type int64_t", "", OTELC_METRIC_INSTRUMENT_OBSERVABLE_COUNTER_INT64, cb_data + 0);
-			meter_instrument[3] = (*meter)->create_instrument(*meter, "observable_updowncounter_double", "asynchronous up-down counter of type double", "", OTELC_METRIC_INSTRUMENT_OBSERVABLE_UDCOUNTER_DOUBLE, cb_data + 1);
-			meter_instrument[4] = (*meter)->create_instrument(*meter, "observable_gauge_int64", "asynchronous gauge of type int64_t", "", OTELC_METRIC_INSTRUMENT_OBSERVABLE_GAUGE_INT64, cb_data + 0);
+			meter_instrument[0] = OTELC_OPS(*meter, create_instrument, "counter_uint64", "synchronous counter of type uint64_t", "", OTELC_METRIC_INSTRUMENT_COUNTER_UINT64, NULL);
+			meter_instrument[1] = OTELC_OPS(*meter, create_instrument, "histogram_double", "histogram of double values", "", OTELC_METRIC_INSTRUMENT_HISTOGRAM_DOUBLE, NULL);
+			meter_instrument[2] = OTELC_OPS(*meter, create_instrument, "observable_counter_int64", "asynchronous counter of type int64_t", "", OTELC_METRIC_INSTRUMENT_OBSERVABLE_COUNTER_INT64, cb_data + 0);
+			meter_instrument[3] = OTELC_OPS(*meter, create_instrument, "observable_updowncounter_double", "asynchronous up-down counter of type double", "", OTELC_METRIC_INSTRUMENT_OBSERVABLE_UDCOUNTER_DOUBLE, cb_data + 1);
+			meter_instrument[4] = OTELC_OPS(*meter, create_instrument, "observable_gauge_int64", "asynchronous gauge of type int64_t", "", OTELC_METRIC_INSTRUMENT_OBSERVABLE_GAUGE_INT64, cb_data + 0);
 		}
 		else if (worker->otel_state == WORKER_STATE_METER_INSTRUMENTS_UPDATE) {
 			struct otelc_value value[] = {
@@ -536,11 +536,11 @@ static void worker_thread(void *data)
 			if (_NULL(*meter))
 				continue;
 
-			(*meter)->update_instrument(*meter, meter_instrument[0], value + 0);
-			(*meter)->update_instrument(*meter, meter_instrument[0], value + 1);
+			OTELC_OPS(*meter, update_instrument, meter_instrument[0], value + 0);
+			OTELC_OPS(*meter, update_instrument, meter_instrument[0], value + 1);
 
-			(*meter)->update_instrument(*meter, meter_instrument[1], value + 2);
-			(*meter)->update_instrument(*meter, meter_instrument[1], value + 3);
+			OTELC_OPS(*meter, update_instrument, meter_instrument[1], value + 2);
+			OTELC_OPS(*meter, update_instrument, meter_instrument[1], value + 3);
 		}
 		else if (worker->otel_state == WORKER_STATE_METER_INSTRUMENTS_UPDATE_KV) {
 			static const struct otelc_kv attr_1[] = {
@@ -559,8 +559,8 @@ static void worker_thread(void *data)
 			if (_NULL(*meter))
 				continue;
 
-			(*meter)->update_instrument_kv_n(*meter, meter_instrument[0], value + 0, attr_1, OTELC_TABLESIZE(attr_1));
-			(*meter)->update_instrument_kv_n(*meter, meter_instrument[1], value + 1, attr_2, OTELC_TABLESIZE(attr_2));
+			OTELC_OPS(*meter, update_instrument_kv_n, meter_instrument[0], value + 0, attr_1, OTELC_TABLESIZE(attr_1));
+			OTELC_OPS(*meter, update_instrument_kv_n, meter_instrument[1], value + 1, attr_2, OTELC_TABLESIZE(attr_2));
 		}
 		else if (worker->otel_state == WORKER_STATE_SPAN_CHILD_INJECT_TEXT_MAP) {
 			if (_NULL(*span_child))
@@ -1076,7 +1076,7 @@ int main(int argc, char **argv)
 
 		retval = EX_SOFTWARE;
 	}
-	else if (cfg.otel_meter->start(cfg.otel_meter) == OTELC_RET_ERROR) {
+	else if (OTELC_OPS(cfg.otel_meter, start) == OTELC_RET_ERROR) {
 		OTELC_LOG(stderr, "ERROR: %s", _NULL(cfg.otel_meter->err) ? "Unable to start metrics" : cfg.otel_meter->err);
 
 		retval = EX_SOFTWARE;
