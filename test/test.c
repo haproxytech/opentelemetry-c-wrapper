@@ -585,7 +585,7 @@ static void worker_thread(void *data)
 				if (_NULL(*span_prop_tm = (*tracer)->start_span_with_options(*tracer, "text map propagation", NULL, context, &ts_steady, &ts_system, OTELC_SPAN_KIND_SERVER, NULL, 0)))
 					break;
 
-				context->destroy(&context);
+				OTELC_OPSR(context, destroy);
 			}
 			otelc_text_map_destroy(&text_map);
 		}
@@ -614,7 +614,7 @@ static void worker_thread(void *data)
 				if (_NULL(*span_prop_hh = (*tracer)->start_span_with_options(*tracer, "http headers propagation", NULL, context, &ts_steady, &ts_system, OTELC_SPAN_KIND_SERVER, NULL, 0)))
 					break;
 
-				context->destroy(&context);
+				OTELC_OPSR(context, destroy);
 			}
 			otelc_text_map_destroy(&text_map);
 		}

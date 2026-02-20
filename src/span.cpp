@@ -1892,6 +1892,22 @@ static void otel_span_context_destroy(struct otelc_span_context **context)
 }
 
 
+/* The span context operations vtable. */
+const static struct otelc_span_context_ops otel_span_context_ops = {
+	.is_valid            = otel_span_context_is_valid,            /* lock span_context */
+	.is_sampled          = otel_span_context_is_sampled,          /* lock span_context */
+	.is_remote           = otel_span_context_is_remote,           /* lock span_context */
+	.get_id              = otel_span_context_get_id,              /* lock span_context */
+	.trace_state_get     = otel_span_context_trace_state_get,     /* lock span_context */
+	.trace_state_entries = otel_span_context_trace_state_entries, /* lock span_context */
+	.trace_state_header  = otel_span_context_trace_state_header,  /* lock span_context */
+	.trace_state_empty   = otel_span_context_trace_state_empty,   /* lock span_context */
+	.trace_state_set     = otel_span_context_trace_state_set,     /* lock span_context */
+	.trace_state_delete  = otel_span_context_trace_state_delete,  /* lock span_context */
+	.destroy             = otel_span_context_destroy,             /* lock span_context */
+};
+
+
 /***
  * NAME
  *   otel_span_context_new - creates a new span context instance
@@ -1913,28 +1929,13 @@ static void otel_span_context_destroy(struct otelc_span_context **context)
  */
 struct otelc_span_context *otel_span_context_new(void)
 {
-	const static struct otelc_span_context span_context_init = {
-		.idx                 = 0,
-		.is_valid            = otel_span_context_is_valid,            /* lock span_context */
-		.is_sampled          = otel_span_context_is_sampled,          /* lock span_context */
-		.is_remote           = otel_span_context_is_remote,           /* lock span_context */
-		.get_id              = otel_span_context_get_id,              /* lock span_context */
-		.trace_state_get     = otel_span_context_trace_state_get,     /* lock span_context */
-		.trace_state_entries = otel_span_context_trace_state_entries, /* lock span_context */
-		.trace_state_header  = otel_span_context_trace_state_header,  /* lock span_context */
-		.trace_state_empty   = otel_span_context_trace_state_empty,   /* lock span_context */
-		.trace_state_set     = otel_span_context_trace_state_set,     /* lock span_context */
-		.trace_state_delete  = otel_span_context_trace_state_delete,  /* lock span_context */
-		.destroy             = otel_span_context_destroy,             /* lock span_context */
-	};
 	struct otelc_span_context *retptr = nullptr;
 
 	OTELC_FUNC("");
 
 	if (!OTEL_NULL(retptr = OTEL_CAST_TYPEOF(retptr, OTEL_EXT_MALLOC(sizeof(*retptr))))) {
-		(void)memcpy(retptr, &span_context_init, sizeof(*retptr));
-
 		retptr->idx = OTEL_HANDLE(otel_span_context, id++);
+		retptr->ops = &otel_span_context_ops;
 	} else {
 		OTEL_HANDLE(otel_span_context, alloc_fail_cnt++);
 	}

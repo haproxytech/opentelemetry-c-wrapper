@@ -53,6 +53,16 @@
 #define OTELC_MAX(a,b)             ({ __typeof__(a) _a = (a); __typeof__(b) _b = (b); (_a >= _b) ? _a : _b; })
 #define OTELC_IN_RANGE(v,a,b)      ({ __typeof__(v) _v = (v); __typeof__(a) _a = (a); __typeof__(b) _b = (b); (_v >= _a) && (_v <= _b); })
 
+/***
+ * OTELC_OPS(ptr, func, ...)  - call ptr->ops->func(ptr, ...).
+ * OTELC_OPSR(ptr, func, ...) - call ptr->ops->func(&ptr, ...).
+ *
+ * The "R" (reference) variant passes the address of the handle so the callee
+ * can set it to NULL (e.g. destroy / end operations).
+ */
+#define OTELC_OPSR(p,f, ...)       ({ __typeof__(&(p)) _p = &(p); (*_p)->ops->f(_p, ##__VA_ARGS__); })
+#define OTELC_OPS(p,f, ...)        ({ __typeof__(p) _p = (p); _p->ops->f(_p, ##__VA_ARGS__); })
+
 #define OTELC_ARGS(a, ...)         a, ##__VA_ARGS__
 #define OTELC_DPTR_ARGS(p)         (p), ((p) == NULL) ? NULL : *(p)
 #define OTELC_STR_ARG(s)           ((s) == NULL) ? "(null)" : (s)

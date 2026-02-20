@@ -46,11 +46,10 @@ struct otelc_span_link {
 };
 
 /***
- * The span context interface.
+ * The span context operations vtable.
  */
-struct otelc_span_context {
-	int64_t idx;
-
+struct otelc_span_context;
+struct otelc_span_context_ops {
 	/***
 	 * NAME
 	 *   is_valid - checks whether the span context is valid
@@ -334,6 +333,14 @@ struct otelc_span_context {
 	 */
 	void (*destroy)(struct otelc_span_context **context)
 		OTELC_NONNULL_ALL;
+};
+
+/***
+ * The span context instance data.
+ */
+struct otelc_span_context {
+	int64_t                              idx; /* The index (key) within the internal otel_span_context structure. */
+	const struct otelc_span_context_ops *ops; /* Pointer to the operations vtable. */
 };
 
 /***
