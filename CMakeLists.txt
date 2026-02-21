@@ -620,7 +620,7 @@ add_dependencies(${_lib_name} build-counter)
 set_target_properties(${_lib_name} PROPERTIES
     VERSION   ${_lib_version}
     SOVERSION ${_so_version}
-    LINK_FLAGS "-Wl,--version-script=${_version_map}"
+    LINK_FLAGS "-Wl,--version-script=${_version_map} -Wl,-z,nodelete"
 )
 
 target_include_directories(${_lib_name}

@@ -14,7 +14,7 @@ pkgconfig_DATA  = ../opentelemetry-c-wrapper_dbg.pc
 libopentelemetry_c_wrapper_dbg_la_CPPFLAGS = $(AM_CPPFLAGS)
 libopentelemetry_c_wrapper_dbg_la_CFLAGS   = $(AM_CFLAGS)
 libopentelemetry_c_wrapper_dbg_la_CXXFLAGS = $(AM_CXXFLAGS)
-libopentelemetry_c_wrapper_dbg_la_LDFLAGS  = $(AM_LDFLAGS) -version-info @LIB_VERSION@ -Wl,--version-script=$(srcdir)/export_dbg.map
+libopentelemetry_c_wrapper_dbg_la_LDFLAGS  = $(AM_LDFLAGS) -version-info @LIB_VERSION@ -Wl,--version-script=$(srcdir)/export_dbg.map -Wl,-z,nodelete
 libopentelemetry_c_wrapper_dbg_la_LIBADD   = $(AM_LIBS)
 libopentelemetry_c_wrapper_dbg_la_SOURCES  = \
 	dbg_malloc.cpp \
@@ -40,7 +40,7 @@ pkgconfig_DATA  = ../opentelemetry-c-wrapper.pc
 libopentelemetry_c_wrapper_la_CPPFLAGS = $(AM_CPPFLAGS)
 libopentelemetry_c_wrapper_la_CFLAGS   = $(AM_CFLAGS)
 libopentelemetry_c_wrapper_la_CXXFLAGS = $(AM_CXXFLAGS)
-libopentelemetry_c_wrapper_la_LDFLAGS  = $(AM_LDFLAGS) -version-info @LIB_VERSION@ -Wl,--version-script=$(srcdir)/export.map
+libopentelemetry_c_wrapper_la_LDFLAGS  = $(AM_LDFLAGS) -version-info @LIB_VERSION@ -Wl,--version-script=$(srcdir)/export.map -Wl,-z,nodelete
 libopentelemetry_c_wrapper_la_LIBADD   = $(AM_LIBS)
 libopentelemetry_c_wrapper_la_SOURCES  = \
 	exporter.cpp \
