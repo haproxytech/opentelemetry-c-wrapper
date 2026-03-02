@@ -1201,6 +1201,82 @@ static int otel_span_add_link(const struct otelc_span *span, const struct otelc_
 
 /***
  * NAME
+ *   otel_span_record_exception - records an exception event on the span
+ *
+ * SYNOPSIS
+ *   static int otel_span_record_exception(const struct otelc_span *span, const char *type, const char *message, const char *stacktrace, const struct timespec *ts_system, const struct otelc_kv *kv, size_t kv_len)
+ *
+ * ARGUMENTS
+ *   span       - span instance
+ *   type       - exception type or class name
+ *   message    - exception message, or NULL to omit
+ *   stacktrace - stack trace string, or NULL to omit
+ *   ts_system  - time of the exception, or NULL for now
+ *   kv         - an array of additional key-value attributes
+ *   kv_len     - size of key-value pair array
+ *
+ * DESCRIPTION
+ *   Records an exception as an event on the span, following the OpenTelemetry
+ *   semantic conventions.  The event is named "exception" and carries the
+ *   standard attributes exception.type, exception.message, and
+ *   exception.stacktrace.  Additional attributes can be provided via the kv
+ *   array.
+ *
+ * RETURN VALUE
+ *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR in case of an error.
+ */
+static int otel_span_record_exception(const struct otelc_span *span, const char *type, const char *message, const char *stacktrace, const struct timespec *ts_system, const struct otelc_kv *kv, size_t kv_len)
+{
+	std::map<std::string, otel_attribute_value> attr{};
+	otel_system_timestamp                       timestamp = std::chrono::system_clock::now();
+
+	OTELC_FUNC("%p, \"%s\", \"%s\", \"%s\", %p, %p, %zu", span, OTELC_STR_ARG(type), OTELC_STR_ARG(message), OTELC_STR_ARG(stacktrace), ts_system, kv, kv_len);
+
+	if (OTEL_NULL(span))
+		OTELC_RETURN_INT(OTELC_RET_ERROR);
+	else if (!OTELC_STR_IS_VALID(type))
+		OTEL_SPAN_ERETURN_INT("Invalid exception type");
+
+	OTEL_LOCK_SPAN_HANDLE(_INT, span);
+
+	if (!OTEL_NULL(ts_system))
+		timestamp = otel_system_timestamp(timespec_to_duration(ts_system));
+
+	try {
+		OTEL_DBG_THROW();
+		(void)attr.emplace("exception.type", otel_nostd::string_view{type});
+	}
+	OTEL_CATCH_ERETURN( , OTEL_SPAN_ERETURN_INT, "Unable to add exception type")
+
+	/* Add the exception message attribute if provided. */
+	if (OTELC_STR_IS_VALID(message))
+		try {
+			OTEL_DBG_THROW();
+			(void)attr.emplace("exception.message", otel_nostd::string_view{message});
+		}
+		OTEL_CATCH_ERETURN( , OTEL_SPAN_ERETURN_INT, "Unable to add exception message")
+
+	/* Add the exception stacktrace attribute if provided. */
+	if (OTELC_STR_IS_VALID(stacktrace))
+		try {
+			OTEL_DBG_THROW();
+			(void)attr.emplace("exception.stacktrace", otel_nostd::string_view{stacktrace});
+		}
+		OTEL_CATCH_ERETURN( , OTEL_SPAN_ERETURN_INT, "Unable to add exception stacktrace")
+
+	/* Add any extra user-supplied attributes to the exception event. */
+	if (!OTEL_NULL(kv) && (kv_len > 0))
+		for (size_t i = 0; i < kv_len; i++)
+			OTEL_VALUE_ADD(_INT, attr, emplace, kv[i].key, &(kv[i].value), &(span->tracer->err), "Unable to add exception attribute");
+
+	handle->span->AddEvent(otel_nostd::string_view{"exception"}, timestamp, attr);
+
+	OTELC_RETURN_INT(OTELC_RET_OK);
+}
+
+
+/***
+ * NAME
  *   otel_nolock_span_destroy - destroys all references related to the specified span
  *
  * SYNOPSIS
@@ -1304,6 +1380,7 @@ const static struct otelc_span_ops otel_span_ops = {
 	.set_status           = otel_span_set_status,           /* lock span */
 	.inject_text_map      = otel_span_inject_text_map,      /* lock span */
 	.inject_http_headers  = otel_span_inject_http_headers,  /* lock span */
+	.record_exception     = otel_span_record_exception,     /* lock span */
 	.destroy              = otel_span_destroy,              /* lock span */
 };
 

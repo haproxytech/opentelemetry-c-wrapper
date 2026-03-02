@@ -856,6 +856,36 @@ struct otelc_span_ops {
 
 	/***
 	 * NAME
+	 *   record_exception - records an exception event on the span
+	 *
+	 * SYNOPSIS
+	 *   int (*record_exception)(const struct otelc_span *span, const char *type, const char *message, const char *stacktrace, const struct timespec *ts_system, const struct otelc_kv *kv, size_t kv_len)
+	 *
+	 * ARGUMENTS
+	 *   span       - span instance
+	 *   type       - exception type or class name
+	 *   message    - exception message, or NULL to omit
+	 *   stacktrace - stack trace string, or NULL to omit
+	 *   ts_system  - time of the exception, or NULL for now
+	 *   kv         - an array of additional key-value attributes
+	 *   kv_len     - size of key-value pair array
+	 *
+	 * DESCRIPTION
+	 *   Records an exception as an event on the span, following the
+	 *   OpenTelemetry semantic conventions.  The event is named "exception"
+	 *   and carries standard attributes: exception.type, exception.message,
+	 *   and exception.stacktrace.  Additional attributes can be provided
+	 *   via the kv array.
+	 *
+	 * RETURN VALUE
+	 *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR in case of an
+	 *   error.
+	 */
+	int (*record_exception)(const struct otelc_span *span, const char *type, const char *message, const char *stacktrace, const struct timespec *ts_system, const struct otelc_kv *kv, size_t kv_len)
+		OTELC_NONNULL(1, 2);
+
+	/***
+	 * NAME
 	 *   destroy - destroys all references related to the specified span
 	 *
 	 * SYNOPSIS
