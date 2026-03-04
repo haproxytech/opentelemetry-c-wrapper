@@ -184,6 +184,74 @@ struct otelc_logger_ops {
 
 	/***
 	 * NAME
+	 *   log_body - logs an otelc_value body with explicit trace and span identifiers
+	 *
+	 * SYNOPSIS
+	 *   int (*log_body)(struct otelc_logger *logger, otelc_log_severity_t severity, int64_t event_id, const char *event_name, const uint8_t *span_id, size_t span_id_size, const uint8_t *trace_id, size_t trace_id_size, uint8_t trace_flags, const struct timespec *ts, const struct otelc_kv *attr, size_t attr_len, const struct otelc_value *body)
+	 *
+	 * ARGUMENTS
+	 *   logger        - logger instance
+	 *   severity      - log severity level
+	 *   event_id      - numeric event identifier, or 0 to omit
+	 *   event_name    - event name string, or NULL when event_id is 0
+	 *   span_id       - a pointer to the span identifier associated with this log entry
+	 *   span_id_size  - the size of the span identifier buffer
+	 *   trace_id      - a pointer to the trace identifier associated with this log entry
+	 *   trace_id_size - the size of the trace identifier buffer
+	 *   trace_flags   - trace flags associated with the trace
+	 *   ts            - the timestamp of the log event, or NULL for SDK defaults
+	 *   attr          - a pointer to an array of key-value attributes to attach to the log record
+	 *   attr_len      - the number of elements in the 'attr' array
+	 *   body          - the log body as an otelc_value (int, double, bool, or string)
+	 *
+	 * DESCRIPTION
+	 *   Logs a non-string body value with the specified severity,
+	 *   explicitly associating it with trace and span identifiers and
+	 *   enriching it with timestamp and attributes.  Unlike the log()
+	 *   operation, which formats a printf-style string, this function
+	 *   passes the otelc_value directly to SetBody(), preserving the
+	 *   native type (int64, double, bool, or string).
+	 *
+	 * RETURN VALUE
+	 *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR on error.
+	 */
+	int (*log_body)(struct otelc_logger *logger, otelc_log_severity_t severity, int64_t event_id, const char *event_name, const uint8_t *span_id, size_t span_id_size, const uint8_t *trace_id, size_t trace_id_size, uint8_t trace_flags, const struct timespec *ts, const struct otelc_kv *attr, size_t attr_len, const struct otelc_value *body)
+		OTELC_NONNULL(1, 13);
+
+	/***
+	 * NAME
+	 *   log_body_span - logs an otelc_value body with optional span context
+	 *
+	 * SYNOPSIS
+	 *   int (*log_body_span)(struct otelc_logger *logger, otelc_log_severity_t severity, int64_t event_id, const char *event_name, const struct otelc_span *span, const struct timespec *ts, const struct otelc_kv *attr, size_t attr_len, const struct otelc_value *body)
+	 *
+	 * ARGUMENTS
+	 *   logger     - logger instance
+	 *   severity   - log severity level
+	 *   event_id   - numeric event identifier, or 0 to omit
+	 *   event_name - event name string, or NULL when event_id is 0
+	 *   span       - span associated with this log entry
+	 *   ts         - the timestamp of the log event, or NULL for SDK defaults
+	 *   attr       - a pointer to an array of key-value attributes to attach to the log record
+	 *   attr_len   - the number of elements in the 'attr' array
+	 *   body       - the log body as an otelc_value (int, double, bool, or string)
+	 *
+	 * DESCRIPTION
+	 *   Logs a non-string body value with the specified severity,
+	 *   optionally associated with a span.  If span context retrieval
+	 *   fails, the log is still emitted without trace correlation.  Unlike
+	 *   log_span(), which formats a printf-style string, this function
+	 *   passes the otelc_value directly to SetBody(), preserving the native
+	 *   type.
+	 *
+	 * RETURN VALUE
+	 *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR on error.
+	 */
+	int (*log_body_span)(struct otelc_logger *logger, otelc_log_severity_t severity, int64_t event_id, const char *event_name, const struct otelc_span *span, const struct timespec *ts, const struct otelc_kv *attr, size_t attr_len, const struct otelc_value *body)
+		OTELC_NONNULL(1, 9);
+
+	/***
+	 * NAME
 	 *   force_flush - forces the export of any buffered logs
 	 *
 	 * SYNOPSIS
