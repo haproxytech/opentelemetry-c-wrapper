@@ -587,6 +587,47 @@ static int otel_span_set_baggage_kv_n(const struct otelc_span *span, const struc
 
 /***
  * NAME
+ *   otel_span_set_baggage - sets a single baggage entry
+ *
+ * SYNOPSIS
+ *   static int otel_span_set_baggage(const struct otelc_span *span, const char *key, const char *value)
+ *
+ * ARGUMENTS
+ *   span  - span instance
+ *   key   - baggage name
+ *   value - baggage value
+ *
+ * DESCRIPTION
+ *   Stores a single entry in the baggage key-value store.  Unlike
+ *   set_baggage_var which accepts a NULL-terminated variadic list, this
+ *   function sets exactly one key-value pair per call.
+ *
+ * RETURN VALUE
+ *   Returns the number of saved key-value pairs (1), or OTELC_RET_ERROR in
+ *   case of an error.
+ */
+static int otel_span_set_baggage(const struct otelc_span *span, const char *key, const char *value)
+{
+	OTELC_FUNC("%p, \"%s\", \"%s\"", span, OTELC_STR_ARG(key), OTELC_STR_ARG(value));
+
+	if (OTEL_NULL(span))
+		OTELC_RETURN_INT(OTELC_RET_ERROR);
+	else if (!OTELC_STR_IS_VALID(key))
+		OTEL_SPAN_ERETURN_INT("Invalid baggage name");
+	else if (!OTELC_STR_IS_VALID(value))
+		OTEL_SPAN_ERETURN_INT("Invalid baggage value");
+
+	OTEL_LOCK_SPAN_HANDLE(_INT, span);
+
+	auto baggage = otel_baggage::GetBaggage(*(handle->context));
+	baggage      = baggage->Set(key, value);
+
+	OTEL_SPAN_UPDATE_BAGGAGE(handle, baggage, 1);
+}
+
+
+/***
+ * NAME
  *   otel_span_get_baggage - gets the value associated with the requested baggage name
  *
  * SYNOPSIS
@@ -1368,6 +1409,7 @@ const static struct otelc_span_ops otel_span_ops = {
 	.set_baggage_var      = otel_span_set_baggage_var,      /* lock span */
 	.set_baggage_kv_var   = otel_span_set_baggage_kv_var,   /* lock span */
 	.set_baggage_kv_n     = otel_span_set_baggage_kv_n,     /* lock span */
+	.set_baggage          = otel_span_set_baggage,          /* lock span */
 	.get_baggage          = otel_span_get_baggage,          /* lock span */
 	.get_baggage_var      = otel_span_get_baggage_var,      /* lock span */
 	.set_attribute_var    = otel_span_set_attribute_var,    /* lock span */

@@ -550,6 +550,30 @@ struct otelc_span_ops {
 
 	/***
 	 * NAME
+	 *   set_baggage - sets a single baggage entry
+	 *
+	 * SYNOPSIS
+	 *   int (*set_baggage)(const struct otelc_span *span, const char *key, const char *value)
+	 *
+	 * ARGUMENTS
+	 *   span  - span instance
+	 *   key   - baggage name
+	 *   value - baggage value
+	 *
+	 * DESCRIPTION
+	 *   Stores a single entry in the baggage key-value store.  Unlike
+	 *   set_baggage_var which accepts a NULL-terminated variadic list,
+	 *   this function sets exactly one key-value pair per call.
+	 *
+	 * RETURN VALUE
+	 *   Returns the number of saved key-value pairs (1),
+	 *   or OTELC_RET_ERROR in case of an error.
+	 */
+	int (*set_baggage)(const struct otelc_span *span, const char *key, const char *value)
+		OTELC_NONNULL(1, 2, 3);
+
+	/***
+	 * NAME
 	 *   get_baggage - gets the value associated with the requested baggage name
 	 *
 	 * SYNOPSIS
