@@ -257,6 +257,30 @@ struct otelc_meter_ops {
 
 	/***
 	 * NAME
+	 *   get_instrument - retrieves an instrument ID by name and type
+	 *
+	 * SYNOPSIS
+	 *   int64_t (*get_instrument)(struct otelc_meter *meter, const char *name, otelc_metric_instrument_t type)
+	 *
+	 * ARGUMENTS
+	 *   meter - meter instance
+	 *   name  - name of the instrument to look up (case-insensitive)
+	 *   type  - instrument type to match
+	 *
+	 * DESCRIPTION
+	 *   Searches the internal instrument registry for an instrument with
+	 *   the given name and type.  The name comparison is case-insensitive,
+	 *   consistent with the OpenTelemetry specification.
+	 *
+	 * RETURN VALUE
+	 *   Returns the instrument ID on success, or OTELC_RET_ERROR if no
+	 *   matching instrument is found.
+	 */
+	int64_t (*get_instrument)(struct otelc_meter *meter, const char *name, otelc_metric_instrument_t type)
+		OTELC_NONNULL(1, 2);
+
+	/***
+	 * NAME
 	 *   enabled - checks whether the meter is enabled
 	 *
 	 * SYNOPSIS

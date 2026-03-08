@@ -308,6 +308,57 @@ static int64_t otel_meter_add_view(struct otelc_meter *meter, const char *view_n
 
 /***
  * NAME
+ *   otel_meter_get_instrument - retrieves an instrument ID by name and type
+ *
+ * SYNOPSIS
+ *   static int64_t otel_meter_get_instrument(struct otelc_meter *meter, const char *name, otelc_metric_instrument_t type)
+ *
+ * ARGUMENTS
+ *   meter - meter instance
+ *   name  - name of the instrument to look up (case-insensitive)
+ *   type  - instrument type to match
+ *
+ * DESCRIPTION
+ *   Searches the internal instrument registry for an instrument with the given
+ *   name and type.  The name comparison is case-insensitive, consistent with
+ *   the OpenTelemetry specification.
+ *
+ * RETURN VALUE
+ *   Returns the instrument ID on success, or OTELC_RET_ERROR if no matching
+ *   instrument is found.
+ */
+static int64_t otel_meter_get_instrument(struct otelc_meter *meter, const char *name, otelc_metric_instrument_t type)
+{
+	OTELC_FUNC("%p, \"%s\", %d", meter, OTELC_STR_ARG(name), type);
+
+	if (OTEL_NULL(meter))
+		OTELC_RETURN_INT(OTELC_RET_ERROR);
+	else if (OTEL_NULL(name))
+		OTEL_METER_ERETURN_INT("Invalid instrument name");
+
+	OTEL_LOCK_METER(instrument);
+
+	/* Search for an existing instrument by name and type. */
+	const auto instrument = std::find_if(
+		OTEL_HANDLE(otel_instrument, shards[0].map).begin(),
+		OTEL_HANDLE(otel_instrument, shards[0].map).end(),
+		[&](const auto &it) {
+			return otel_sdk_metrics::InstrumentDescriptorUtil::CaseInsensitiveAsciiEquals(it.second->name, name) && (it.second->type == type);
+		}
+	);
+
+	if (instrument != OTEL_HANDLE(otel_instrument, shards[0].map).end()) {
+		OTELC_DBG(OTEL, "instrument found: %" PRId64, instrument->first);
+
+		OTELC_RETURN_INT(instrument->first);
+	}
+
+	OTEL_METER_ERETURN_EX(_INT, OTELC_RET_ERROR, "Instrument not found: \"%s\" type %d", name, type);
+}
+
+
+/***
+ * NAME
  *   otel_nolock_meter_add_instrument_callback - registers a callback for an observable instrument
  *
  * SYNOPSIS
@@ -1057,6 +1108,7 @@ const static struct otelc_meter_ops otel_meter_ops = {
 	.add_instrument_callback    = otel_meter_add_instrument_callback,    /* lock otel_instrument */
 	.remove_instrument_callback = otel_meter_remove_instrument_callback, /* lock otel_instrument */
 	.add_view                   = otel_meter_add_view,                   /* lock otel_view */
+	.get_instrument             = otel_meter_get_instrument,             /* lock otel_instrument */
 	.enabled                    = otel_meter_enabled,                    /* Locking not required. */
 	.force_flush                = otel_meter_force_flush,                /* Locking not required. */
 	.shutdown                   = otel_meter_shutdown,                   /* Locking not required. */
