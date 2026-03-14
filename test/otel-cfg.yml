@@ -166,8 +166,13 @@ exporters:
 readers:
   reader_metrics:
     thread_name:     "reader metr"
-    export_interval: 10000
-    export_timeout:  5000
+    export_interval: 20000
+    export_timeout:  10000
+
+  reader_metrics_fast:
+    thread_name:     "reader fast"
+    export_interval: 2000
+    export_timeout:  1000
 
 samplers:
   sampler_traces:
@@ -239,8 +244,12 @@ signals:
 
   metrics:
     scope_name: "OTEL C wrapper - metrics"
-    exporters:  exporter_metrics_ostream
-    readers:    reader_metrics
+    exporters:
+      - exporter_metrics_ostream
+      - exporter_metrics_otlp_file
+    readers:
+      - reader_metrics
+      - reader_metrics_fast
     providers:  provider_metrics
 
   logs:

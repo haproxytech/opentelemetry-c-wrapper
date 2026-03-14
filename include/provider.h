@@ -24,7 +24,8 @@
 int  otel_tracer_provider_create(struct otelc_tracer *tracer, std::vector<std::unique_ptr<otel_sdk_trace::SpanProcessor>> &processors, std::unique_ptr<otel_sdk_trace::Sampler> &sampler, std::unique_ptr<otel_trace::TracerProvider> &provider);
 int  otel_tracer_provider_get(struct otelc_tracer *tracer, otel_nostd::shared_ptr<otel_trace::TracerProvider> &provider);
 void otel_tracer_provider_destroy(void);
-int  otel_meter_provider_create(struct otelc_meter *meter, std::unique_ptr<otel_sdk_metrics::PushMetricExporter> &exporter, std::shared_ptr<otel_metrics::MeterProvider> &provider);
+int  otel_meter_reader_create(struct otelc_meter *meter, std::unique_ptr<otel_sdk_metrics::PushMetricExporter> &exporter, std::unique_ptr<otel_sdk_metrics::PeriodicExportingMetricReader> &reader, const char *name = nullptr);
+int  otel_meter_provider_create(struct otelc_meter *meter, std::vector<std::unique_ptr<otel_sdk_metrics::PeriodicExportingMetricReader>> &readers, std::shared_ptr<otel_metrics::MeterProvider> &provider);
 void otel_meter_provider_destroy(void);
 int  otel_logger_provider_create(struct otelc_logger *logger, std::vector<std::unique_ptr<otel_sdk_logs::LogRecordProcessor>> &processors, std::shared_ptr<otel_logs::LoggerProvider> &provider);
 void otel_logger_provider_destroy(void);

@@ -50,7 +50,7 @@
 
 int  otel_tracer_exporter_create(struct otelc_tracer *tracer, std::unique_ptr<otel_sdk_trace::SpanExporter> &exporter, const char *name = nullptr);
 void otel_tracer_exporter_destroy(void);
-int  otel_meter_exporter_create(struct otelc_meter *meter, std::unique_ptr<otel_sdk_metrics::PushMetricExporter> &exporter);
+int  otel_meter_exporter_create(struct otelc_meter *meter, std::unique_ptr<otel_sdk_metrics::PushMetricExporter> &exporter, const char *name = nullptr);
 void otel_meter_exporter_destroy(void);
 int  otel_logger_exporter_create(struct otelc_logger *logger, std::unique_ptr<otel_sdk_logs::LogRecordExporter> &exporter, const char *name = nullptr);
 void otel_logger_exporter_destroy(void);

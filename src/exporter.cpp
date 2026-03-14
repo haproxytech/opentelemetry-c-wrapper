@@ -640,11 +640,12 @@ void otel_tracer_exporter_destroy(void)
  *   otel_meter_exporter_create - creates a new metric exporter
  *
  * SYNOPSIS
- *   int otel_meter_exporter_create(struct otelc_meter *meter, std::unique_ptr<otel_sdk_metrics::PushMetricExporter> &exporter)
+ *   int otel_meter_exporter_create(struct otelc_meter *meter, std::unique_ptr<otel_sdk_metrics::PushMetricExporter> &exporter, const char *name)
  *
  * ARGUMENTS
  *   meter    - meter instance
  *   exporter - unique pointer to store the created metric exporter
+ *   name     - name of the exporter configuration node, or nullptr for default
  *
  * DESCRIPTION
  *   Creates a new metric exporter based on the configuration provided in the
@@ -654,18 +655,18 @@ void otel_tracer_exporter_destroy(void)
  * RETURN VALUE
  *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR in case of an error.
  */
-int otel_meter_exporter_create(struct otelc_meter *meter, std::unique_ptr<otel_sdk_metrics::PushMetricExporter> &exporter)
+int otel_meter_exporter_create(struct otelc_meter *meter, std::unique_ptr<otel_sdk_metrics::PushMetricExporter> &exporter, const char *name)
 {
 	std::unique_ptr<otel_sdk_metrics::PushMetricExporter> exporter_maybe{};
 	char                                                  type[OTEL_YAML_BUFSIZ] = "";
 	int                                                   rc;
 
-	OTELC_FUNC("%p, <exporter>", meter);
+	OTELC_FUNC("%p, <exporter>, \"%s\"", meter, OTELC_STR_ARG(name));
 
 	if (OTEL_NULL(meter))
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
 
-	rc = yaml_get_node(otelc_fyd, &(meter->err), 1, OTEL_METER_EXPORTER_DESC, OTEL_YAML_METER_PREFIX OTEL_YAML_EXPORTERS, nullptr,
+	rc = yaml_get_node(otelc_fyd, &(meter->err), 1, OTEL_METER_EXPORTER_DESC, OTEL_YAML_METER_PREFIX OTEL_YAML_EXPORTERS, name,
 	                   OTEL_YAML_ARG_STR(1, EXPORTERS, type),
 	                   OTEL_YAML_END);
 	if (rc == OTELC_RET_ERROR)
@@ -679,7 +680,7 @@ int otel_meter_exporter_create(struct otelc_meter *meter, std::unique_ptr<otel_s
 		/* <opentelemetry/exporters/memory/in_memory_metric_data.h> */
 		int64_t buffer_size = otel_exporter_memory::MAX_BUFFER_SIZE;
 
-		rc = yaml_get_node(otelc_fyd, &(meter->err), 1, OTEL_METER_EXPORTER_DESC, OTEL_YAML_METER_PREFIX OTEL_YAML_EXPORTERS, nullptr,
+		rc = yaml_get_node(otelc_fyd, &(meter->err), 1, OTEL_METER_EXPORTER_DESC, OTEL_YAML_METER_PREFIX OTEL_YAML_EXPORTERS, name,
 		                   OTEL_YAML_ARG_INT64(0, EXPORTERS, buffer_size, 16, 65536),
 		                   OTEL_YAML_END);
 		if (rc == OTELC_RET_ERROR)
@@ -697,7 +698,7 @@ int otel_meter_exporter_create(struct otelc_meter *meter, std::unique_ptr<otel_s
 	}
 	else if (strcasecmp(type, OTEL_EXPORTER_OSTREAM) == 0) {
 #ifdef HAVE_OTEL_EXPORTER_OSTREAM
-		if (otel_exporter_set_ostream_options<otel_exporter_metrics::OStreamMetricExporter>(OTEL_METER_EXPORTER_DESC, OTEL_YAML_METER_PREFIX OTEL_YAML_EXPORTERS, otel_meter_logfile, exporter_maybe, &(meter->err)) == OTELC_RET_ERROR)
+		if (otel_exporter_set_ostream_options<otel_exporter_metrics::OStreamMetricExporter>(OTEL_METER_EXPORTER_DESC, OTEL_YAML_METER_PREFIX OTEL_YAML_EXPORTERS, otel_meter_logfile, exporter_maybe, &(meter->err), name) == OTELC_RET_ERROR)
 			OTELC_RETURN_INT(OTELC_RET_ERROR);
 #else
 		OTEL_METER_ERROR(OTEL_METER_EXPORTER_NOT_SUPPORTED("ostream"));
@@ -708,7 +709,7 @@ int otel_meter_exporter_create(struct otelc_meter *meter, std::unique_ptr<otel_s
 		otel_exporter_otlp::OtlpFileMetricExporterOptions        options{};
 		otel_exporter_otlp::OtlpFileMetricExporterRuntimeOptions rt_options{};
 
-		if (otel_exporter_set_otlp_file_options(OTEL_METER_EXPORTER_DESC, OTEL_YAML_METER_PREFIX OTEL_YAML_EXPORTERS, options, rt_options, &(meter->err)) == OTELC_RET_ERROR)
+		if (otel_exporter_set_otlp_file_options(OTEL_METER_EXPORTER_DESC, OTEL_YAML_METER_PREFIX OTEL_YAML_EXPORTERS, options, rt_options, &(meter->err), name) == OTELC_RET_ERROR)
 			OTELC_RETURN_INT(OTELC_RET_ERROR);
 
 		exporter_maybe = otel::make_unique_nothrow<otel_exporter_otlp::OtlpFileMetricExporter>(options, rt_options);
@@ -723,7 +724,7 @@ int otel_meter_exporter_create(struct otelc_meter *meter, std::unique_ptr<otel_s
 		otel_exporter_otlp::OtlpGrpcMetricExporterOptions options{};
 		char                                              endpoint[OTEL_YAML_BUFSIZ] = OTEL_METER_EXPORTER_OTLP_GRPC_ENDPOINT;
 
-		if (otel_exporter_set_otlp_grpc_options(OTEL_METER_EXPORTER_DESC, OTEL_YAML_METER_PREFIX OTEL_YAML_EXPORTERS, endpoint, options, &(meter->err)) == OTELC_RET_ERROR)
+		if (otel_exporter_set_otlp_grpc_options(OTEL_METER_EXPORTER_DESC, OTEL_YAML_METER_PREFIX OTEL_YAML_EXPORTERS, endpoint, options, &(meter->err), name) == OTELC_RET_ERROR)
 			OTELC_RETURN_INT(OTELC_RET_ERROR);
 
 		exporter_maybe = otel::make_unique_nothrow<otel_exporter_otlp::OtlpGrpcMetricExporter>(options);
@@ -739,7 +740,7 @@ int otel_meter_exporter_create(struct otelc_meter *meter, std::unique_ptr<otel_s
 		otel_exporter_otlp::OtlpHttpMetricExporterRuntimeOptions rt_options{};
 		char                                                     endpoint[OTEL_YAML_BUFSIZ] = OTEL_METER_EXPORTER_OTLP_HTTP_ENDPOINT;
 
-		if (otel_exporter_set_otlp_http_options(OTEL_METER_EXPORTER_DESC, OTEL_YAML_METER_PREFIX OTEL_YAML_EXPORTERS, endpoint, options, rt_options, &(meter->err)) == OTELC_RET_ERROR)
+		if (otel_exporter_set_otlp_http_options(OTEL_METER_EXPORTER_DESC, OTEL_YAML_METER_PREFIX OTEL_YAML_EXPORTERS, endpoint, options, rt_options, &(meter->err), name) == OTELC_RET_ERROR)
 			OTELC_RETURN_INT(OTELC_RET_ERROR);
 
 		exporter_maybe = otel::make_unique_nothrow<otel_exporter_otlp::OtlpHttpMetricExporter>(options, rt_options);

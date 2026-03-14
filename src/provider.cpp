@@ -143,12 +143,13 @@ void otel_tracer_provider_destroy(void)
  *   otel_meter_reader_create - creates a new periodic exporting metric reader
  *
  * SYNOPSIS
- *   static int otel_meter_reader_create(struct otelc_meter *meter, std::unique_ptr<otel_sdk_metrics::PushMetricExporter> &exporter, std::unique_ptr<otel_sdk_metrics::PeriodicExportingMetricReader> &reader)
+ *   static int otel_meter_reader_create(struct otelc_meter *meter, std::unique_ptr<otel_sdk_metrics::PushMetricExporter> &exporter, std::unique_ptr<otel_sdk_metrics::PeriodicExportingMetricReader> &reader, const char *name)
  *
  * ARGUMENTS
  *   meter    - meter instance
  *   exporter - the metric exporter to be used by the reader
  *   reader   - unique pointer to store the created metric reader
+ *   name     - name of the reader configuration node, or nullptr for default
  *
  * DESCRIPTION
  *   Creates a new periodic exporting metric reader with the specified exporter.
@@ -158,7 +159,7 @@ void otel_tracer_provider_destroy(void)
  * RETURN VALUE
  *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR in case of an error.
  */
-static int otel_meter_reader_create(struct otelc_meter *meter, std::unique_ptr<otel_sdk_metrics::PushMetricExporter> &exporter, std::unique_ptr<otel_sdk_metrics::PeriodicExportingMetricReader> &reader)
+int otel_meter_reader_create(struct otelc_meter *meter, std::unique_ptr<otel_sdk_metrics::PushMetricExporter> &exporter, std::unique_ptr<otel_sdk_metrics::PeriodicExportingMetricReader> &reader, const char *name)
 {
 	/***
 	 * The default values of export_interval and export_timeout are defined
@@ -176,7 +177,7 @@ static int otel_meter_reader_create(struct otelc_meter *meter, std::unique_ptr<o
 	if (OTEL_NULL(meter))
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
 
-	rc = yaml_get_node(otelc_fyd, &(meter->err), 0, "OpenTelemetry meter reader", OTEL_YAML_METER_PREFIX OTEL_YAML_READERS, nullptr,
+	rc = yaml_get_node(otelc_fyd, &(meter->err), 0, "OpenTelemetry meter reader", OTEL_YAML_METER_PREFIX OTEL_YAML_READERS, name,
 	                   OTEL_YAML_ARG_STR(0, READERS, thread_name),
 	                   OTEL_YAML_ARG_INT64(0, READERS, export_interval, 100, 3600000),
 	                   OTEL_YAML_ARG_INT64(0, READERS, export_timeout, 100, 3600000),
@@ -211,27 +212,26 @@ static int otel_meter_reader_create(struct otelc_meter *meter, std::unique_ptr<o
  *   otel_meter_provider_create - creates a new meter provider
  *
  * SYNOPSIS
- *   int otel_meter_provider_create(struct otelc_meter *meter, std::unique_ptr<otel_sdk_metrics::PushMetricExporter> &exporter, std::shared_ptr<otel_metrics::MeterProvider> &provider)
+ *   int otel_meter_provider_create(struct otelc_meter *meter, std::vector<std::unique_ptr<otel_sdk_metrics::PeriodicExportingMetricReader>> &readers, std::shared_ptr<otel_metrics::MeterProvider> &provider)
  *
  * ARGUMENTS
  *   meter    - meter instance
- *   exporter - the metric exporter to be used by the provider
+ *   readers  - vector of metric readers to attach to the provider
  *   provider - shared pointer to store the created meter provider
  *
  * DESCRIPTION
- *   Creates a new meter provider with the specified metric exporter.  The
- *   provider is responsible for creating and managing meter instances, and it
- *   is configured with resource attributes and views from the YAML file.
+ *   Creates a new meter provider and attaches one or more metric readers.
+ *   The provider is responsible for creating and managing meter instances, and
+ *   it is configured with resource attributes and views from the YAML file.
  *
  * RETURN VALUE
  *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR in case of an error.
  */
-int otel_meter_provider_create(struct otelc_meter *meter, std::unique_ptr<otel_sdk_metrics::PushMetricExporter> &exporter, std::shared_ptr<otel_metrics::MeterProvider> &provider)
+int otel_meter_provider_create(struct otelc_meter *meter, std::vector<std::unique_ptr<otel_sdk_metrics::PeriodicExportingMetricReader>> &readers, std::shared_ptr<otel_metrics::MeterProvider> &provider)
 {
-	otel_sdk_resource::Resource                                      resource{};
-	std::unique_ptr<otel_sdk_metrics::PeriodicExportingMetricReader> reader;
+	otel_sdk_resource::Resource resource{};
 
-	OTELC_FUNC("%p, <exporter>, <provider>", meter);
+	OTELC_FUNC("%p, <readers:%zu>, <provider>", meter, readers.size());
 
 	if (OTEL_NULL(meter))
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
@@ -246,11 +246,10 @@ int otel_meter_provider_create(struct otelc_meter *meter, std::unique_ptr<otel_s
 	if (OTEL_NULL(provider_maybe))
 		OTEL_METER_ERETURN_INT("Unable to create OpenTelemetry meter provider");
 
-	if (otel_meter_reader_create(meter, exporter, reader) == OTELC_RET_ERROR)
-		OTELC_RETURN_INT(OTELC_RET_ERROR);
-
 	const auto provider_sdk = OTEL_CAST_STATIC_PTR(otel_sdk_metrics::MeterProvider, provider_maybe);
-	provider_sdk->AddMetricReader(std::move(reader));
+
+	for (auto &reader : readers)
+		provider_sdk->AddMetricReader(std::move(reader));
 
 	provider = std::move(provider_maybe);
 

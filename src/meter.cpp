@@ -951,18 +951,20 @@ static int otel_meter_shutdown(struct otelc_meter *meter, const struct timespec 
  *   The meter whose configuration is specified in the OpenTelemetry YAML
  *   configuration file (set by the previous call to the otelc_init() function)
  *   is started.  The function initializes the meter in such a way that the
- *   following components are initialized individually: exporter and finally
- *   provider.
+ *   following components are initialized individually: one or more
+ *   exporter-reader pairs, and finally provider.  When the YAML configuration
+ *   specifies a sequence of exporters (and optionally a matching sequence of
+ *   readers), each pair is created and passed to the provider.
  *
  * RETURN VALUE
  *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR in case of an error.
  */
 static int otel_meter_start(struct otelc_meter *meter)
 {
-	std::unique_ptr<otel_sdk_metrics::PushMetricExporter> exporter;
-	std::shared_ptr<otel_metrics::MeterProvider>          provider;
-	char                                                  scope_name[OTEL_YAML_BUFSIZ];
-	int                                                   retval = OTELC_RET_ERROR;
+	std::vector<std::unique_ptr<otel_sdk_metrics::PeriodicExportingMetricReader>> readers;
+	std::shared_ptr<otel_metrics::MeterProvider>                                  provider;
+	char                                                                          scope_name[OTEL_YAML_BUFSIZ];
+	int                                                                           retval = OTELC_RET_ERROR;
 
 	OTELC_FUNC("%p", meter);
 
@@ -977,9 +979,66 @@ static int otel_meter_start(struct otelc_meter *meter)
 	if (OTEL_NULL(meter->scope_name))
 		OTEL_METER_ERETURN_INT(OTEL_ERROR_MSG_ENOMEM("scope name"));
 
-	if ((retval = otel_meter_exporter_create(meter, exporter)) == OTELC_RET_ERROR)
-		/* Do nothing. */;
-	else if ((retval = otel_meter_provider_create(meter, exporter, provider)) != OTELC_RET_ERROR) {
+	/* Build exporters and readers from YAML configuration. */
+	if (yaml_is_sequence(otelc_fyd, OTEL_YAML_METER_PREFIX OTEL_YAML_EXPORTERS)) {
+		const int count = yaml_get_sequence_len(otelc_fyd, &(meter->err), OTEL_YAML_METER_PREFIX OTEL_YAML_EXPORTERS);
+		if (count < 0)
+			OTELC_RETURN_INT(OTELC_RET_ERROR);
+
+		int count_readers = yaml_get_sequence_len(otelc_fyd, &(meter->err), OTEL_YAML_METER_PREFIX OTEL_YAML_READERS);
+		if (count_readers < 0)
+			count_readers = 0;
+
+		for (int i = 0; i < count; i++) {
+			std::unique_ptr<otel_sdk_metrics::PushMetricExporter>            exporter;
+			std::unique_ptr<otel_sdk_metrics::PeriodicExportingMetricReader> reader;
+			char                                                             exporter_name[OTEL_YAML_BUFSIZ], reader_name[OTEL_YAML_BUFSIZ] = "";
+
+			if (yaml_get_sequence_value(otelc_fyd, &(meter->err), OTEL_YAML_METER_PREFIX OTEL_YAML_EXPORTERS, i, exporter_name, sizeof(exporter_name)) != 1)
+				OTELC_RETURN_INT(OTELC_RET_ERROR);
+
+			if (!yaml_is_sequence(otelc_fyd, OTEL_YAML_METER_PREFIX OTEL_YAML_READERS)) {
+				/* Do nothing. */
+			}
+			else if (i < count_readers) {
+				if (yaml_get_sequence_value(otelc_fyd, &(meter->err), OTEL_YAML_METER_PREFIX OTEL_YAML_READERS, i, reader_name, sizeof(reader_name)) != 1)
+					OTELC_RETURN_INT(OTELC_RET_ERROR);
+			}
+			else if (count_readers > 0) {
+				if (yaml_get_sequence_value(otelc_fyd, &(meter->err), OTEL_YAML_METER_PREFIX OTEL_YAML_READERS, count_readers - 1, reader_name, sizeof(reader_name)) != 1)
+					OTELC_RETURN_INT(OTELC_RET_ERROR);
+			}
+
+			if (otel_meter_exporter_create(meter, exporter, exporter_name) != OTELC_RET_OK)
+				OTELC_RETURN_INT(OTELC_RET_ERROR);
+			else if (otel_meter_reader_create(meter, exporter, reader, (*reader_name != '\0') ? reader_name : nullptr) != OTELC_RET_OK)
+				OTELC_RETURN_INT(OTELC_RET_ERROR);
+
+			try {
+				OTEL_DBG_THROW();
+				readers.push_back(std::move(reader));
+			}
+			OTEL_CATCH_ERETURN( , OTEL_METER_ERETURN_INT, "Unable to add metric reader")
+		}
+	} else {
+		std::unique_ptr<otel_sdk_metrics::PushMetricExporter>            exporter;
+		std::unique_ptr<otel_sdk_metrics::PeriodicExportingMetricReader> reader;
+
+		/* Use default exporter and reader when no sequence is defined. */
+		if ((retval = otel_meter_exporter_create(meter, exporter)) == OTELC_RET_ERROR)
+			OTELC_RETURN_INT(retval);
+		else if ((retval = otel_meter_reader_create(meter, exporter, reader)) == OTELC_RET_ERROR)
+			OTELC_RETURN_INT(retval);
+
+		try {
+			OTEL_DBG_THROW();
+			readers.push_back(std::move(reader));
+		}
+		OTEL_CATCH_ERETURN( , OTEL_METER_ERETURN_INT, "Unable to add metric reader")
+	}
+
+	/* Create the provider and meter, then install them as globals. */
+	if ((retval = otel_meter_provider_create(meter, readers, provider)) != OTELC_RET_ERROR) {
 		otel_nostd::shared_ptr<otel_metrics::Meter> meter_maybe{};
 
 		meter_maybe = provider->GetMeter(meter->scope_name, OTELC_SCOPE_VERSION, OTELC_SCOPE_SCHEMA_URL);
