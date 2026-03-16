@@ -18,6 +18,8 @@ otel_cpp.h
 package
 stamp-h1
 test/otel-c-wrapper-test*
+test/test-*
+!test/test-*.*
 version.h
 .build-md5sums
 .deps/
