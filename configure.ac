@@ -104,6 +104,7 @@ dnl Checks for libraries.
 dnl
 AX_WITH_LIBFYAML
 AX_WITH_RAPIDYAML
+AX_WITH_ABSEIL
 AX_WITH_OPENTELEMETRY
 
 dnl Checks for library functions.

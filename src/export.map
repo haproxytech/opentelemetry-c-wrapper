@@ -36,5 +36,9 @@ global:
 	otelc_logger_create;
 	otelc_logger_severity_parse;
 
+	extern "C++" {
+		yaml_*;
+	};
+
 local:	*;
 };

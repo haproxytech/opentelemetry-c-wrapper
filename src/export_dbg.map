@@ -54,5 +54,9 @@ global:
 	otelc_dbg_strdup;
 	otelc_dbg_strndup;
 
+	extern "C++" {
+		yaml_*;
+	};
+
 local:	*;
 };

@@ -77,3 +77,25 @@ AC_DEFUN([AX_WITH_RAPIDYAML], [
 		[AC_MSG_NOTICE([Rapid YAML not used])]
 	)
 ])
+
+AC_DEFUN([AX_WITH_ABSEIL], [
+	ABSL_LIBS=
+
+	AS_IF(
+		[test "${with_rapidyaml}" != "no"],
+		[
+			AC_MSG_CHECKING([for absl_log_internal_check_op])
+			AS_IF(
+				[PKG_CONFIG_PATH=${PKG_CONFIG_PATH} pkg-config --exists absl_log_internal_check_op 2>/dev/null],
+				[
+					ABSL_LIBS="-labsl_log_internal_check_op"
+					AC_MSG_RESULT([yes])
+				],
+				[AC_MSG_RESULT([no])]
+			)
+		],
+		[]
+	)
+
+	AC_SUBST([ABSL_LIBS])
+])
