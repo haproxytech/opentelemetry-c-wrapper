@@ -1,0 +1,1920 @@
+OpenTelemetry C++ Multithreading, Context, and Spans
+====================================================
+
+The OpenTelemetry C++ API follows a specific concurrency model that differs from
+traditional shared-state multithreading.  Understanding this model is critical
+for correct usage and avoiding common pitfalls.
+
+
+------------------------------------------------------------------------
+1. Design Philosophy
+------------------------------------------------------------------------
+
+OpenTelemetry C++ avoids shared mutable state.  The API is built on four
+principles:
+
+Immutability:
+  Core types (Context, SpanContext) cannot be modified after creation.  Any
+  "change" produces a new object.  No defensive copying needed, no read/write
+  races possible.
+
+Thread-local activation:
+  The "current span" concept exists per-thread, not globally.  Each thread
+  maintains its own activation stack via thread_local storage.  Creating a Scope
+  object activates a span only for the calling thread.
+
+Explicit propagation:
+  Context does not automatically flow between threads.  When spawning a worker
+  thread or async task, the parent thread must explicitly pass Context or
+  extract it for injection into RPC headers.  No implicit inheritance.
+
+Internally synchronized recording:
+  Span recording operations (SetAttribute, AddEvent, End) are internally
+  mutex-protected by the SDK.  Multiple threads can safely record to the same
+  span instance without external synchronization.
+
+
+------------------------------------------------------------------------
+2. Spans
+------------------------------------------------------------------------
+
+Spans represent units of work in a distributed trace.  They record timing,
+attributes, events, and status.
+
+Conceptual model:
+
+  Spans are write-only sinks for telemetry data.  The API provides methods to
+  add information (SetAttribute, AddEvent, SetStatus, End) but intentionally
+  omits methods to read that information back.
+
+  A span is not a data structure queried during program execution.  It is an
+  append-only log that gets flushed to a backend.
+
+Thread safety guarantees:
+
+  Recording operations are safe from multiple threads:
+    thread_1: span->SetAttribute("key1", value1);
+    thread_2: span->SetAttribute("key2", value2);
+    thread_3: span->End();
+
+  The SDK internally synchronizes these calls (typically with a mutex protecting
+  the span's attribute map and event list).  No external locking required.
+
+What is NOT guaranteed:
+
+  Reading span state during execution.  The C++ API has no GetAttribute or
+  GetStatus methods.  Even if the underlying implementation exposes such
+  methods, using them is incorrect:
+
+    if (span->GetStatus() == StatusCode::kError) { ... }  // WRONG
+
+  No happens-before relationship exists between span operations and application
+  logic.  Span recording is asynchronous side-effect.
+
+Common misuse patterns:
+
+  Using spans as IPC mechanism:
+    thread_1: span->SetAttribute("ready", true);
+    thread_2: while (!span->GetAttribute("ready")) { sleep(); }
+
+    This is fundamentally wrong.  Use proper synchronization primitives
+    (condition variables, atomic flags).
+
+  Treating spans as feature flags:
+    if (current_span != nullptr) {
+      enable_special_mode();
+    }
+
+    Observability should not alter program behavior.
+
+  Assuming synchronous export:
+    span->End();
+    // span data NOT guaranteed to be exported yet
+
+    Spans are typically batched and exported asynchronously.  Use explicit
+    Flush() if needed (but rarely required in practice).
+
+
+------------------------------------------------------------------------
+3. Context
+------------------------------------------------------------------------
+
+Context is an immutable key-value map that carries cross-cutting concerns
+(active span, baggage, correlation data) through the call stack and across
+process boundaries.
+
+Implementation characteristics:
+
+  Immutability:
+    Context ctx1 = Context::GetCurrent();
+    Context ctx2 = ctx1.SetValue(key, value);
+    // ctx1 unchanged, ctx2 is new Context with added key
+
+  Structural sharing (copy-on-write):
+    Context uses persistent data structure techniques (hash-array mapped tries
+    or similar).  Copying a Context is O(1), not O(n).  "Modification" creates
+    a new root node pointing to shared subtrees.
+
+  No hidden mutable state:
+    No reference counting that could race, no lazy initialization that requires
+    locking.  Pure value type.
+
+Thread safety by construction:
+
+  Context can be freely copied between threads:
+    std::thread worker([ctx]() {
+      // ctx is a copy, completely independent
+    });
+
+  No synchronization needed because no mutation exists.  This is different from
+  "thread-safe mutable object" (which requires locking).
+
+Usage patterns:
+
+  Propagation within a thread:
+    auto ctx = Context::GetCurrent();
+    auto span = tracer->StartSpan("operation");
+    auto scope = tracer->WithActiveSpan(span);  // modifies thread-local
+    // Context::GetCurrent() now returns different context
+
+  Propagation across threads:
+    auto ctx = Context::GetCurrent();
+    std::thread worker([ctx]() {
+      // Must explicitly attach
+      auto scope = RuntimeContext::Attach(ctx);
+      // Now this thread's GetCurrent() returns ctx
+    });
+
+  Propagation across processes (HTTP):
+    auto ctx = Context::GetCurrent();
+    TextMapPropagator->Inject(carrier, ctx);
+    // carrier now contains "traceparent" header
+    // Receiving side: Extract(carrier) reconstructs Context
+
+Why immutability matters:
+
+  Without immutability, Context would need locking:
+    Context ctx;  // hypothetically mutable
+    thread_1: ctx.Set("key1", val1);  // would need mutex
+    thread_2: ctx.Get("key2");        // would need mutex
+
+  Or would need thread-local-only usage (no sharing).  Immutability allows both
+  free sharing AND zero synchronization cost.
+
+
+------------------------------------------------------------------------
+4. Scope
+------------------------------------------------------------------------
+
+Scope is an RAII object that manages the thread-local "current context" stack.
+Creating a Scope pushes a Context onto the stack, destroying it pops that
+Context off.
+
+How it works:
+
+  auto scope = RuntimeContext::Attach(ctx);
+  // Context::GetCurrent() now returns ctx
+  // When scope destructs, previous context is restored
+
+  Typical usage with spans:
+  {
+    auto span = tracer->StartSpan("operation");
+    auto scope = tracer->WithActiveSpan(span);
+    // span is now "current"
+    do_work();  // nested spans will be children
+  } // scope destructs here, span no longer current
+
+Thread-local nature:
+
+  Scope uses thread_local storage internally (or equivalent).  Each thread has
+  its own independent context stack:
+
+    thread_1:
+      auto scope1 = RuntimeContext::Attach(ctx_A);
+      // GetCurrent() returns ctx_A in thread_1
+
+    thread_2:
+      auto scope2 = RuntimeContext::Attach(ctx_B);
+      // GetCurrent() returns ctx_B in thread_2
+
+  Neither thread affects the other.  No global "current span".
+
+Critical pitfall: Scope does not cross thread boundaries:
+
+  WRONG:
+    auto span = tracer->StartSpan("parent");
+    auto scope = tracer->WithActiveSpan(span);
+    std::thread worker([&]() {
+      // GetCurrent() does NOT return span here!
+      // New thread has empty context stack.
+    });
+
+  CORRECT:
+    auto span = tracer->StartSpan("parent");
+    auto ctx = Context::GetCurrent();  // capture before thread creation
+    std::thread worker([ctx, &tracer]() {
+      auto scope = RuntimeContext::Attach(ctx);  // explicit attach
+      auto child_span = tracer->StartSpan("child");  // now has parent
+    });
+
+Why this design:
+
+  Automatic context inheritance across threads would require:
+  - Hooking thread creation (not portable)
+  - Deciding what to inherit (active span? all baggage? custom keys?)
+  - Managing lifetime (when is the inherited context still valid?)
+
+  Explicit propagation is more predictable and works with any threading model
+  (std::thread, thread pools, async/await, fibers).
+
+
+------------------------------------------------------------------------
+5. Multithreading Model
+------------------------------------------------------------------------
+
+Common concurrency patterns and how OpenTelemetry handles them.
+
+Pattern 1: Worker thread pool
+
+  Main thread creates a span, dispatches work to pool:
+
+    auto span = tracer->StartSpan("request");
+    auto ctx = Context::GetCurrent();
+
+    thread_pool.submit([ctx, &tracer, span]() {
+      auto scope = RuntimeContext::Attach(ctx);
+      auto worker_span = tracer->StartSpan("worker");
+      // worker_span is child of span
+
+      process_data();
+
+      worker_span->End();
+      span->SetAttribute("processed", true);  // safe, internal lock
+    });
+
+    span->End();  // can end before or after worker
+
+  Key points:
+  - Context captured before dispatch
+  - Worker explicitly attaches context
+  - Both threads can record to parent span safely
+  - Parent span can be ended from any thread
+
+Pattern 2: Fork-join parallelism
+
+  Parent span, multiple child spans on worker threads:
+
+    auto parent = tracer->StartSpan("parallel_operation");
+    auto ctx = Context::GetCurrent();
+
+    std::vector<std::future<void>> futures;
+    for (int i = 0; i < N; ++i) {
+      futures.push_back(std::async([ctx, i, &tracer]() {
+        auto scope = RuntimeContext::Attach(ctx);
+        auto child = tracer->StartSpan("parallel_" + std::to_string(i));
+        do_work(i);
+        child->End();
+      }));
+    }
+
+    for (auto &f : futures) f.wait();
+    parent->End();
+
+Pattern 3: Long-lived background thread
+
+  Background thread maintains its own trace context:
+
+    void background_loop() {
+      while (running) {
+        auto span = tracer->StartSpan("background_iteration");
+        auto scope = tracer->WithActiveSpan(span);
+
+        process_queue();
+
+        span->End();
+      }
+    }
+
+  Each iteration is independent trace root (no parent).  If processing work
+  items that came from other threads, those items should carry Context
+  explicitly:
+
+    struct WorkItem {
+      Context ctx;  // captured when enqueued
+      Data data;
+    };
+
+    void background_loop() {
+      while (running) {
+        WorkItem item = queue.pop();
+        auto scope = RuntimeContext::Attach(item.ctx);
+        auto span = tracer->StartSpan("process_item");
+        // span is child of whatever was current when item was enqueued
+        process(item.data);
+        span->End();
+      }
+    }
+
+What does NOT work:
+
+  Assuming implicit propagation:
+    void func() {
+      auto span = tracer->StartSpan("parent");
+      auto scope = tracer->WithActiveSpan(span);
+      std::thread worker([]() {
+        auto current = trace::GetSpan(Context::GetCurrent());
+        // current is INVALID span, not parent!
+      });
+    }
+
+  Relying on span state for synchronization:
+    thread_1: span->SetAttribute("done", true);
+    thread_2: poll until span has "done" attribute
+
+    No mechanism exists to query span state, and even if it did, span API is not
+    a synchronization primitive.
+
+Core principle:
+
+  Context propagation is a data flow problem, not a control flow problem.  Treat
+  Context like any other value passed to functions or threads.
+
+
+------------------------------------------------------------------------
+6. Read and Write Locking Expectations
+------------------------------------------------------------------------
+
+Traditional concurrent data structures provide reader-writer locks: multiple
+readers OR single writer.  OpenTelemetry uses different strategies.
+
+Context: no locking needed
+
+  Context is immutable (copy-on-write).  No read/write distinction exists
+  because no writes exist.  All operations return new Context instances.  Zero
+  synchronization cost.
+
+Spans: write-only, internal locking
+
+  Span recording operations (SetAttribute, AddEvent, End) are writes.  No read
+  operations exposed by API.  SDK implementation typically uses mutex per span:
+
+    void Span::SetAttribute(string_view key, AttributeValue value) {
+      std::lock_guard<std::mutex> lock(mu_);
+      attributes_[key] = value;
+    }
+
+  Multiple threads writing to same span serialize on this mutex.  This is
+  acceptable because:
+  - Span writes are infrequent relative to actual work
+  - Contention is low (different threads usually record to different spans)
+  - Simplicity outweighs lock-free complexity
+
+Providers/Tracers: immutable after initialization
+
+  TracerProvider, MeterProvider, LoggerProvider are initialized once at startup,
+  then treated as immutable:
+
+    auto provider = MakeTracerProvider();  // initialization
+    trace::Provider::SetTracerProvider(provider);  // publish
+    // No further modification allowed
+
+  Tracer and Meter instances obtained from providers are thread-safe for all
+  operations (StartSpan, CreateCounter, etc.) because they only read immutable
+  configuration.
+
+Instruments (metrics): lock per instrument
+
+  Counter/Histogram/Gauge recording:
+
+    counter->Add(1, labels);
+
+  SDK maintains per-instrument aggregation state protected by mutex.  Similar to
+  span recording, contention is acceptable for typical workloads.
+
+When locks are NOT used:
+
+  Thread-local context stack:
+    No mutex needed because each thread has independent storage.
+
+  Atomic reference counting:
+    shared_ptr uses atomic operations, not mutexes.
+
+  Batching exporters:
+    Use lock-free queues or mutexes depending on implementation.  Not exposed to
+    API users.
+
+Design principle:
+
+  Prefer immutability and internal synchronization over exposing locking
+  requirements to users.  Users should not need to think about mutexes when
+  instrumenting code.
+
+
+------------------------------------------------------------------------
+7. Correct Mental Model
+------------------------------------------------------------------------
+
+Mental model comparison:
+
+CORRECT mental model:
+
+  OpenTelemetry is structured logging with distributed context.
+
+  Context is like function parameters:
+    - Passed explicitly down the call stack
+    - Copied when creating threads
+    - Immutable values
+
+  Spans are like log statements:
+    - Fire and forget
+    - Buffered and flushed asynchronously
+    - No readback mechanism
+
+  Scope is like RAII resource management:
+    - Constructor acquires (activates context)
+    - Destructor releases (restores previous context)
+    - Strictly lexical scoping
+
+INCORRECT mental model:
+
+  OpenTelemetry is NOT a global variable system:
+    - No "current span" accessible from anywhere
+    - Thread-local storage requires explicit setup per thread
+
+  OpenTelemetry is NOT a coordination mechanism:
+    - Cannot use spans to signal between threads
+    - Cannot poll span state to make decisions
+
+  OpenTelemetry is NOT synchronous:
+    - Span data may not be exported immediately
+    - No guarantee of happens-before between span operations
+      and external observable effects
+
+Analogies to other systems:
+
+  Like errno (thread-local state):
+    - Each thread has independent errno value
+    - Setting errno in one thread doesn't affect others
+    - Similar to Context being thread-local
+
+  Like cout (write-only sink):
+    - You write to cout, but don't read back what you wrote
+    - Output may be buffered, not immediately visible
+    - Similar to span recording
+
+  Like std::optional (value semantics):
+    - Context behaves like value type, not reference type
+    - Copying is cheap and creates independent instance
+    - No hidden aliasing
+
+What this means in practice:
+
+  If code relies on "current span" being set:
+    void instrumented_function() {
+      auto span = trace::GetSpan(Context::GetCurrent());
+      if (span->IsValid()) {
+        // only instrument if called in traced context
+      }
+    }
+
+  This is fragile.  Better approach:
+    void instrumented_function() {
+      auto span = tracer->StartSpan("operation");
+      auto scope = tracer->WithActiveSpan(span);
+      // always create span, let sampling decide
+    }
+
+  If code tries to use spans for control flow:
+    span->SetAttribute("phase", "started");
+    background_thread.notify();  // WRONG
+
+  Use proper primitives:
+    std::atomic<bool> phase_started{false};
+    phase_started.store(true, std::memory_order_release);
+    background_thread.notify();
+    span->SetAttribute("phase", "started");  // informational only
+
+
+------------------------------------------------------------------------
+8. Common Mistakes
+------------------------------------------------------------------------
+
+Mistake 1: Not propagating context to new threads
+
+  void handle_request() {
+    auto span = tracer->StartSpan("request");
+    auto scope = tracer->WithActiveSpan(span);
+
+    std::thread worker([]() {
+      // BUG: no context here, new span will be root
+      auto span = tracer->StartSpan("work");
+    });
+  }
+
+  Fix:
+    auto ctx = Context::GetCurrent();
+    std::thread worker([ctx]() {
+      auto scope = RuntimeContext::Attach(ctx);
+      auto span = tracer->StartSpan("work");
+    });
+
+Mistake 2: Ending span in wrong scope
+
+  void process() {
+    auto span = tracer->StartSpan("process");
+    auto scope = tracer->WithActiveSpan(span);
+    do_work();
+    // BUG: span not ended, leaks until scope destructs
+  }
+
+  Fix:
+    auto span = tracer->StartSpan("process");
+    auto scope = tracer->WithActiveSpan(span);
+    do_work();
+    span->End();  // explicit end before scope destructs
+
+  Or rely on RAII:
+    {
+      auto span = tracer->StartSpan("process");
+      auto scope = tracer->WithActiveSpan(span);
+      do_work();
+    } // scope destructs, but span->End() must be called explicitly
+
+  Actually, spans typically need explicit End() call.  Check SDK documentation
+  for whether automatic ending is supported.
+
+Mistake 3: Capturing span by reference in async lambda
+
+  void async_operation() {
+    auto span = tracer->StartSpan("operation");
+    thread_pool.submit([&span]() {  // BUG: reference to stack variable
+      span->SetAttribute("key", value);  // may dangle
+    });
+  }
+
+  Fix (copy shared_ptr):
+    auto span = tracer->StartSpan("operation");
+    thread_pool.submit([span]() {  // copy shared_ptr
+      span->SetAttribute("key", value);
+    });
+
+Mistake 4: Forgetting to create scope
+
+  void nested_operations() {
+    auto parent = tracer->StartSpan("parent");
+    // BUG: no scope, so parent not current
+
+    auto child = tracer->StartSpan("child");
+    // child is sibling of parent, not child
+  }
+
+  Fix:
+    auto parent = tracer->StartSpan("parent");
+    auto scope = tracer->WithActiveSpan(parent);
+
+    auto child = tracer->StartSpan("child");
+    // child correctly parented
+
+Mistake 5: Assuming span data is queryable
+
+  void conditionally_instrument() {
+    auto span = trace::GetSpan(Context::GetCurrent());
+    if (span->GetAttribute("debug_mode")) {  // NO SUCH METHOD
+      enable_verbose_logging();
+    }
+  }
+
+  Application state should not be stored in spans.  Use separate
+  variables:
+    bool debug_mode = get_debug_flag();
+    if (debug_mode) {
+      enable_verbose_logging();
+    }
+    span->SetAttribute("debug_mode", debug_mode);  // informational
+
+Mistake 6: Race condition on span end
+
+  void parallel_work() {
+    auto span = tracer->StartSpan("parallel");
+
+    std::thread t1([span]() { work1(); span->End(); });
+    std::thread t2([span]() { work2(); span->End(); });
+
+    // BUG: span->End() called twice
+  }
+
+  Fix (coordinator pattern):
+    auto span = tracer->StartSpan("parallel");
+
+    std::thread t1([span]() { work1(); });
+    std::thread t2([span]() { work2(); });
+
+    t1.join();
+    t2.join();
+    span->End();  // main thread ends after join
+
+Mistake 7: Not handling exceptions with spans
+
+  void risky_operation() {
+    auto span = tracer->StartSpan("risky");
+    auto scope = tracer->WithActiveSpan(span);
+
+    might_throw();  // BUG: span not ended on exception
+
+    span->End();
+  }
+
+  Fix (RAII or explicit exception handling):
+    auto span = tracer->StartSpan("risky");
+    auto scope = tracer->WithActiveSpan(span);
+
+    try {
+      might_throw();
+      span->End();
+    } catch (...) {
+      span->SetStatus(StatusCode::kError);
+      span->End();
+      throw;
+    }
+
+  Better: use defer/finally pattern or scope guard to ensure End() is always
+  called.
+
+Mistake 8: Creating too many spans
+
+  void loop_with_spans() {
+    for (int i = 0; i < 1000000; ++i) {
+      auto span = tracer->StartSpan("iteration");  // wasteful
+      process(i);
+      span->End();
+    }
+  }
+
+  Spans have overhead (allocation, locking, export).  Batch work:
+    auto span = tracer->StartSpan("loop");
+    for (int i = 0; i < 1000000; ++i) {
+      process(i);
+    }
+    span->SetAttribute("iterations", 1000000);
+    span->End();
+
+  Or span only significant iterations:
+    for (int i = 0; i < 1000000; ++i) {
+      if (is_significant(i)) {
+        auto span = tracer->StartSpan("iteration_" + std::to_string(i));
+        process(i);
+        span->End();
+      } else {
+        process(i);
+      }
+    }
+
+
+------------------------------------------------------------------------
+9. Rule of Thumb
+------------------------------------------------------------------------
+
+Design principles summary:
+
+  Immutability over locking:
+    Context is immutable.  No locks needed.  Compare to alternative design where
+    Context is mutable and requires reader-writer lock on every access.
+
+  Thread-local over global:
+    Each thread maintains independent activation stack.  No contention.  Compare
+    to global "current span" that would require atomic operations or thread-safe
+    stack.
+
+  Internal synchronization over exposed locking:
+    Span recording methods are internally mutex-protected.  API users never see
+    locks.  Compare to API that returns "lock span before modifying"
+    requirements.
+
+  Explicit over implicit:
+    Context passed explicitly to threads.  No magic.  Compare to automatic
+    inheritance that breaks with thread pools or async/await.
+
+  Write-only over read-write:
+    Spans are append-only.  No need for consistent snapshots or versioning.
+    Compare to queryable span state that would need consistent read protocols.
+
+When to apply these principles to wrapper code:
+
+  The C wrapper (this codebase) must preserve these semantics.  If exposing
+  OpenTelemetry to C:
+
+  - Do NOT create global "current span" C APIs
+  - Do NOT expose span reading functions (even if C++ SDK has them)
+  - Do require explicit context passing in C APIs for thread boundaries
+  - Do use opaque handles (IDs) rather than raw pointers for safety
+
+  The sharded map implementation (section 10) follows these principles:
+  - Handles are write-heavy (create, destroy), rarely read after creation
+  - Per-shard locking avoids global contention
+  - Single-threaded mode has zero locking overhead
+  - Template-based approach = no runtime configuration overhead
+
+OpenTelemetry avoids concurrency problems by design, not by solving them with
+sophisticated locking.  The wrapper should maintain this philosophy.
+
+
+------------------------------------------------------------------------
+10. Sharded Map Implementation
+------------------------------------------------------------------------
+
+The C wrapper maintains handle maps (otel_handle<T>) that translate integer IDs
+to C++ OpenTelemetry objects (spans, contexts, instruments, views).  A sharded
+hash map implementation reduces contention in multi-threaded workloads while
+maintaining single-threaded performance.
+
+Access pattern analysis:
+
+  Span and span_context handles:
+    - Created and destroyed frequently (per-request in HTTP servers)
+    - High concurrent access from multiple worker threads
+    - Short-lived (milliseconds to seconds)
+    - Configured with 64 shards
+
+  Instrument and view handles:
+    - Created once during initialization
+    - Rarely accessed after creation (cached by application)
+    - Long-lived (process lifetime)
+    - Configured with 1 shard (degenerates to single map)
+
+Key implementation details:
+
+  Template-based shard count:
+    template<typename T, size_t num_shards = 64>
+    struct otel_handle { ... };
+
+    Compile-time configuration.  Different handle types instantiate with
+    different shard counts.  static_assert ensures num_shards is a power of 2.
+
+  Storage: std::array not std::vector:
+    std::array<struct shard, num_shards> shards;
+
+    Stack allocation, not heap.  No malloc on handle manager creation.  No
+    pointer indirection on shard access.  std::vector required heap allocation
+    and added measurable overhead in single-threaded benchmarks.
+
+  Shard selection: bitwise AND not modulo:
+    size_t get_shard_index(int64_t key) const noexcept {
+        return static_cast<size_t>(key) & (num_shards - 1);
+    }
+
+    On x86-64: single AND instruction vs IDIV (20-80 cycles).
+    When num_shards=1: (key & 0) = 0, dead code eliminated by optimizer.
+    Requires power-of-2 shard count (enforced by static_assert).
+
+Per-operation locking strategy:
+
+  Single-key operations (find/emplace/erase):
+    Per-shard std::mutex under OTELC_USE_THREAD_SHARED_HANDLE.  Lock only the
+    target shard.  Other threads access other shards in parallel.  In
+    single-threaded mode, no mutex exists (not just unlocked, but compiled out
+    entirely).
+
+  Cross-shard operations (find_if/for_each):
+    Global std::shared_mutex for consistent view across all shards.  Shared lock
+    allows multiple concurrent readers.  Exclusive lock for modifications.
+
+  Atomic find-or-insert (find_or_emplace):
+    Prevents duplicate entries when multiple threads try to create the same
+    instrument simultaneously.  Two-phase:
+
+    Phase 1 (optimistic):
+      Acquire shared lock, search all shards.  If found, return existing.  Most
+      calls succeed here (instrument already exists).
+
+    Phase 2 (pessimistic):
+      Release shared lock, acquire exclusive lock.  Search again (another
+      thread may have inserted while upgrading).  If still not found, insert.
+      Guarantees exactly one entry per unique predicate.
+
+    Single-threaded version skips all locking, uses plain id++ instead of
+    id.fetch_add(1).
+
+Why other approaches were rejected:
+
+  Initial attempt: global mutex serializing all operations.
+    Result: worse than unsharded map.  Sharding added overhead without
+    parallelism benefit.  Per-shard locking is mandatory.
+
+  Lock-free hash map (libcds, junction, etc):
+    More complex, harder to debug.  Per-shard locking is sufficient for observed
+    workloads.  Lock-free helps when lock acquisition overhead dominates, but
+    handle lookups are infrequent relative to actual span recording operations.
+
+  std::shared_mutex for per-shard locks:
+    Overkill.  Single-key operations are short (hash lookup, insert).
+    Shared/exclusive distinction only helps find_or_emplace, which already uses
+    global shared_mutex.
+
+  Runtime-configurable shard count:
+    Every shard access pays indirect lookup cost.  Template specialization at
+    compile time is zero-cost abstraction.
+
+  Larger shard counts (128, 256):
+    Diminishing returns.  64 shards sufficient for observed thread counts
+    (typically 8-32 worker threads).  More shards = more memory (each shard
+    preallocates buckets), worse cache locality.
+
+Measured behavior:
+
+  Multi-threaded with OTELC_USE_THREAD_SHARED_HANDLE:
+    Scaling is sub-linear (2x threads != 2x throughput) due to:
+    - Occasional cross-shard operations (find_or_emplace)
+    - Cache line bouncing on atomic id counter
+    - Lock acquisition overhead
+    Acceptable for production use.
+
+  Single-threaded without OTELC_USE_THREAD_SHARED_HANDLE:
+    Performance matches non-sharded std::unordered_map baseline.
+    std::array + bitwise AND + no mutexes = near-zero sharding cost.
+    When num_shards=1, optimizer produces identical code to direct map access.
+
+
+------------------------------------------------------------------------
+11. Initialization and Deinitialization Architecture
+------------------------------------------------------------------------
+
+The library follows a layered initialization model.  A single global entry point
+opens the YAML configuration, then per-component factory functions build the
+provider/exporter/processor stack from that configuration.  Deinitialization
+tears everything down in reverse.
+
+Global entry points:
+
+  otelc_init (src/util.cpp):
+    Opens the YAML configuration file.  Must be called before any component is
+    created.
+
+  otelc_deinit (src/util.cpp):
+    Destroys tracer, meter, and logger (if provided), closes the YAML
+    configuration document, and resets external callbacks and log handlers.
+
+  otelc_ext_init (include/opentelemetry-c-wrapper/util.h):
+    Registers external malloc, free, and thread-ID callbacks.  Called from
+    otelc_deinit to reset them.
+
+Per-component lifecycle:
+
+  Each component (tracer, meter, logger) follows an identical pattern: a public
+  create function calls an internal factory, which allocates via OTELC_CALLOC,
+  zeroes the err and scope_name fields, and wires the ops vtable.
+
+  Component    Public create            Factory          Destroy
+  ---------    ---------------          ----------       ----------
+  Tracer       otelc_tracer_create      otel_tracer_new  otel_tracer_destroy
+  Meter        otelc_meter_create       otel_meter_new   otel_meter_destroy
+  Logger       otelc_logger_create      otel_logger_new  otel_logger_destroy
+
+  Structures returned to callers:
+
+    otelc_tracer  (tracer.h)  -- err, scope_name, ops
+    otelc_meter   (meter.h)   -- err, scope_name, ops
+    otelc_logger  (logger.h)  -- err, scope_name, min_severity, ops
+
+  The ops field in each structure is a vtable pointer that dispatches all
+  subsequent operations through indirect function calls.
+
+Handle initialization:
+
+  Tracer initialization creates two handle maps:
+    - otel_span handle (otel_handle<otel_span_handle *>)
+    - otel_span_context handle (otel_handle<otel_span_context_handle *>)
+    Both use OTEL_HANDLE_MAP_SHARDS (64) for concurrent access.
+
+  Meter initialization creates two handle maps:
+    - otel_instrument handle (otel_handle<otel_instrument_handle *>)
+    - otel_view handle (otel_handle<otel_view_handle *>)
+    Both use 1 shard (instruments are long-lived, low contention).
+
+  Logger does not use handle maps.
+
+  When OTELC_USE_THREAD_SHARED_HANDLE is defined, handles are shared across
+  threads with per-shard mutexes.  Otherwise, handles are thread-local with
+  no locking overhead.
+
+Span and span context lifecycle:
+
+  otel_span_new (src/span.cpp):
+    Allocates via OTEL_EXT_MALLOC, assigns a monotonically increasing index
+    from the otel_span handle, and wires the span ops vtable.  Increments
+    alloc_fail_cnt on allocation failure.
+
+  otel_span_destroy / otel_nolock_span_destroy (src/span.cpp):
+    Ends the span and erases it from the handle map.  The nolock variant skips
+    lock acquisition for use inside already-locked contexts.
+
+  otelc_span_context_create / otel_span_context_new (src/span.cpp):
+    Constructs an otel_trace::SpanContext from trace/span IDs and trace flags,
+    wraps it in a DefaultSpan and Context, then emplaces into the
+    otel_span_context handle map.
+
+  otel_span_context_destroy / otel_nolock_span_context_destroy:
+    Erases the span context from the handle map.
+
+Provider/exporter/processor stack:
+
+  Each component internally creates a provider backed by one or more exporters
+  and processors.  The stack is built bottom-up:
+
+    1. otel_*_exporter_create (src/exporter.cpp)
+       Creates an exporter from YAML config.  Tracer supports: InMemory,
+       OStream, OTLP File, OTLP gRPC, OTLP HTTP, Zipkin, Elasticsearch.
+       Meter and logger support similar variants.
+
+    2. otel_tracer_processor_create / otel_logger_processor_create
+       (src/processor.cpp)
+       Wraps the exporter in a Batch or Simple processor.  Batch mode
+       is configured via max_queue_size, schedule_delay, export_timeout,
+       and max_export_batch_size.  Wraps with counting_exporter and
+       counting_span_processor for dropped-span tracking.
+
+    3. otel_sampler_create (src/sampler.cpp)
+       Tracer-only.  Creates AlwaysOn, AlwaysOff, TraceIdRatioBased, or
+       ParentBased sampler from YAML config.
+
+    4. otel_*_provider_create (src/provider.cpp)
+       Builds a Resource from environment and YAML attributes via
+       otel_resource_create (src/resource.cpp), then constructs the provider
+       with processors (and sampler for tracer, metric reader for meter).
+
+  Destruction reverses this stack:
+
+    1. otel_*_destroy clears the global atomic pointer, preventing new
+       operations.
+    2. Force-flushes the provider with a 5-second timeout.
+    3. Resets the global provider via Set*Provider(nullptr).
+    4. Frees err and scope_name strings.
+
+  For the tracer, otel_tracer_destroy additionally:
+    - Ends all remaining spans in the handle map.
+    - Destroys span and span context handles.
+    - Clears the global text map propagator.
+
+Global state:
+
+  Each component maintains two global variables:
+    - otel_nostd::shared_ptr<T> *_owner (reference-counted ownership)
+    - std::atomic<T *> *_ptr (lock-free access for hot paths)
+
+  The atomic pointer is cleared first during destruction, acting as a gate that
+  causes in-flight operations to see nullptr and bail out before the provider
+  is torn down.
+
+Library constructor/destructor (debug builds only):
+
+  otelc_lib_constructor (src/util.cpp):
+    __attribute__((constructor)), currently a no-op.
+
+  otelc_lib_destructor (src/util.cpp):
+    __attribute__((destructor)), currently a no-op.
+
+Overall initialization flow:
+
+  otelc_init
+    |
+    +-- opens YAML configuration
+    |
+    +-- otelc_*_create  (one per component)
+          |
+          +-- otel_*_new  (allocate struct, wire vtable)
+          |
+          +-- handle map initialization  (tracer, meter only)
+          |
+          +-- otel_*_exporter_create
+          +-- otel_*_processor_create
+          +-- otel_sampler_create         (tracer only)
+          +-- otel_meter_reader_create    (meter only)
+          +-- otel_*_provider_create
+
+Overall deinitialization flow:
+
+  otelc_deinit
+    |
+    +-- otel_*_destroy  (one per component, via ops vtable)
+          |
+          +-- clear atomic pointer
+          +-- end remaining spans          (tracer only)
+          +-- destroy handle maps          (tracer, meter only)
+          +-- clear text map propagator    (tracer only)
+          +-- force-flush provider
+          +-- reset global provider
+          +-- free err, scope_name
+    |
+    +-- close YAML configuration
+    +-- reset external callbacks and log handlers
+
+
+------------------------------------------------------------------------
+12. Tracer/Span C++ API/SDK Wrapping Strategy
+------------------------------------------------------------------------
+
+The wrapper bridges the C++ OpenTelemetry API to C callers through opaque
+handles and vtable-based dispatch.  Each public C struct (otelc_tracer,
+otelc_span, otelc_span_context) carries an ops pointer to a function table,
+giving C code a virtual-dispatch-like interface without exposing any C++ types.
+
+Tracer global state:
+
+  Two variables govern the tracer's availability:
+
+    static otel_nostd::shared_ptr<otel_trace::Tracer> otel_tracer_owner;
+    static std::atomic<otel_trace::Tracer *>          otel_tracer;
+
+  The shared_ptr owns the lifetime.  The atomic raw pointer enables lock-free
+  access on the hot path (span creation).  During shutdown the atomic is nulled
+  first, gating out concurrent callers before the shared_ptr is released.
+
+Tracer startup (otel_tracer_start):
+
+  The function builds the provider stack bottom-up from YAML configuration:
+
+    1. Read scope name from YAML.
+    2. Create sampler (AlwaysOn, AlwaysOff, TraceIdRatioBased, or ParentBased).
+    3. Create exporter-processor pairs.  YAML sequences allow multiple pairs;
+       otherwise a single pair is created.
+    4. Build TracerProvider, call provider->GetTracer(scope_name,
+       OTELC_SCOPE_VERSION, OTELC_SCOPE_SCHEMA_URL).
+    5. Set up propagator: either CompositePropagator (HttpTraceContext
+       + BaggagePropagator) or HttpTraceContext alone.
+    6. Store tracer globally via atomic store, register the global
+       TracerProvider and GlobalTextMapPropagator.
+
+Span creation (otel_tracer_start_span_with_options):
+
+  Receives C parameters and translates them into C++ API calls:
+
+    otel_trace::StartSpanOptions span_options{};
+    span_options.start_system_time  = ...;
+    span_options.start_steady_time  = ...;
+    span_options.kind               = span_kind_map[kind];
+    span_options.parent             = *parent_context;
+
+    /* Without links: */
+    auto span = tracer_ptr->StartSpan(operation_name, span_options);
+
+    /* With links: */
+    SpanContextKeyValueIterableView<...> links_view(links_vec);
+    auto span = tracer_ptr->StartSpan(
+        operation_name, {}, links_view, span_options);
+
+  The C enum otelc_span_kind_t maps to otel_trace::SpanKind via a
+  constexpr lookup table:
+
+    OTELC_SPAN_KIND_UNSPECIFIED -> SpanKind::kInternal
+    OTELC_SPAN_KIND_INTERNAL    -> SpanKind::kInternal
+    OTELC_SPAN_KIND_SERVER      -> SpanKind::kServer
+    OTELC_SPAN_KIND_CLIENT      -> SpanKind::kClient
+    OTELC_SPAN_KIND_PRODUCER    -> SpanKind::kProducer
+    OTELC_SPAN_KIND_CONSUMER    -> SpanKind::kConsumer
+
+  Parent resolution follows a priority order:
+    - If parent_span is provided, extract context from its handle.
+    - If parent_context is provided, extract context from its handle.
+    - Otherwise, use RuntimeContext::GetCurrent() (or empty Context when runtime
+      context is disabled).
+
+  After StartSpan succeeds, the result is wrapped in an
+  otel_span_handle that bundles:
+    - otel_nostd::shared_ptr<otel_trace::Span>      (the span)
+    - otel_nostd::shared_ptr<otel_context::Context> (propagation ctx)
+    - otel_nostd::shared_ptr<otel_trace::Scope>     (RAII activation, only when
+      OTELC_USE_RUNTIME_CONTEXT is defined)
+
+  The handle is emplaced into the thread-local sharded handle map.
+  On any allocation failure, the span is ended immediately via
+  span->End(EndSpanOptions{}) before cleanup, ensuring no leaked spans
+  reach the processor pipeline.
+
+  When span links are provided (via the links/links_len parameters), the
+  function builds a vector of (SpanContext, attributes) pairs before allocating
+  the span, so that link resolution errors do not require span cleanup.  The
+  vector is wrapped in a SpanContextKeyValueIterableView and passed to the
+  extended StartSpan(name, attributes, links, options) overload.  When no links
+  are provided, the original StartSpan(name, options) overload is used.
+
+  Unlike AddLink (which requires ABI version 2), links at creation time are
+  supported by all ABI versions.
+
+Span operations and their C++ API counterparts:
+
+  C Wrapper Function                 C++ API Call
+  ----------------------------------+------------------------------------
+  otel_span_get_id                   span->GetContext(), then
+                                     span_id().CopyBytesTo(),
+                                     trace_id().CopyBytesTo(),
+                                     trace_flags().CopyBytesTo()
+  otel_span_is_recording             span->IsRecording()
+  otel_span_set_status               span->SetStatus(StatusCode, desc)
+  otel_span_set_operation_name       span->UpdateName(name)
+  otel_span_set_one_attribute        span->SetAttribute(key, val) via
+                                     otelc_value_visit visitor
+  otel_span_add_event_*              span->AddEvent(name, ts, attr_map)
+  otel_span_add_link                 span->AddLink(SpanContext, attr)
+                                     (ABI v2+ only)
+  otel_span_record_exception          span->AddEvent("exception", ts,
+                                     {exception.type, .message,
+                                      .stacktrace, ...})
+  otel_span_end_with_options         span->SetStatus() then
+                                     span->End(EndSpanOptions)
+  otel_span_inject_carrier           propagator->Inject(carrier, ctx)
+
+Value dispatch (otelc_value_visit):
+
+  The C wrapper uses a discriminated union (otelc_value with u_type tag) to
+  represent polymorphic attribute values.  The otelc_value_visit template
+  dispatches on u_type and invokes a callable with the correct C++ type:
+
+    otelc_value_visit(value, [&](auto val) {
+        span->SetAttribute(key, val);
+    });
+
+  Supported types: bool, int32, int64, uint32, uint64, double, string, and raw
+  data (cast to const char *).  Null values map to empty strings.
+
+Baggage propagation:
+
+  Baggage is managed through the span's stored Context object:
+
+    auto baggage = otel_baggage::GetBaggage(*(handle->context));
+    baggage = baggage->Set(key, value);
+    // ... update context with new baggage via SetBaggage()
+
+  The get/set operations use the Baggage API (GetValue, Set, ToHeader) and
+  rebuild the Context immutably on each modification.
+
+Context propagation (inject/extract):
+
+  Injection (otel_span_inject_carrier):
+    Populates a std::map<string,string> via
+    propagator->Inject(carrier, context), then copies entries to the C-level
+    carrier structure.  When composite propagator is not used, baggage is
+    injected separately via baggage->ToHeader().
+
+  Extraction (otel_tracer_extract_carrier):
+    Populates a std::map from C carrier callbacks, then calls
+    propagator->Extract(map_carrier, rt_context).  When composite propagator is
+    not used, baggage is extracted separately via BaggagePropagator::Extract().
+
+ABI version awareness:
+
+  AddLink is gated on OPENTELEMETRY_ABI_VERSION_NO >= 2.  Older ABI versions
+  return an error message.  start_span_with_options provides an alternative
+  that works on all ABI versions by passing links at span creation time.
+  Tracer::Enabled() is similarly gated; when unavailable, the wrapper returns
+  true unconditionally.
+
+Exception handling discipline:
+
+  The wrapper follows the rule that the OpenTelemetry C++ API does not throw
+  exceptions.  try/catch blocks guard only STL operations (std::map::emplace,
+  std::vector::push_back, std::string allocations) and external carrier
+  callbacks.  OpenTelemetry API calls are never wrapped in try/catch.
+
+Allocation failure handling:
+
+  All heap allocations use std::nothrow or make_shared_nothrow.  Every
+  allocation is checked for null.  On failure, the wrapper sets an error message
+  on the tracer/span err field and returns OTELC_RET_ERROR (or nullptr for
+  pointer-returning functions).  No unguarded new exists in the codebase.
+
+Thread safety model:
+
+  When OTELC_USE_THREAD_SHARED_HANDLE is defined, the sharded handle map
+  provides per-shard mutexes.  The OTEL_LOCK_SPAN_HANDLE macro acquires the
+  shard lock and resolves the handle in one step:
+
+    OTEL_LOCK_SPAN_HANDLE(_INT, span);
+    // 'handle' variable is now available, shard mutex held
+
+  Every span operation acquires the appropriate shard lock before accessing
+  the C++ span object.  In single-threaded mode (without
+  OTELC_USE_THREAD_SHARED_HANDLE), locking compiles to a no-op.
+
+Tracer shutdown (otel_tracer_destroy):
+
+  Shutdown is ordered to prevent use-after-free:
+
+    1. Atomically null otel_tracer to gate out concurrent callers.
+    2. Release otel_tracer_owner (shared_ptr).
+    3. Iterate all remaining spans in the handle map, calling
+       handle->span->End(end_options) on each.
+    4. Clear span context handles.
+    5. Clear the global text map propagator.
+    6. Destroy the provider and exporter.
+    7. Free err and scope_name strings.
+
+
+------------------------------------------------------------------------
+13. Meter/Metrics C++ API/SDK Wrapping Strategy
+------------------------------------------------------------------------
+
+The meter wrapper follows the same opaque-handle + vtable pattern as the tracer.
+The otelc_meter struct carries an ops pointer dispatching through
+otelc_meter_ops.  Unlike the tracer (which uses 64-shard maps for high-churn
+span handles), instrument and view handle maps use 1 shard because instruments
+are long-lived, created once at startup.
+
+Meter global state:
+
+  Two variables govern the meter's availability:
+
+    static otel_nostd::shared_ptr<otel_metrics::Meter> otel_meter_owner;
+    static std::atomic<otel_metrics::Meter *>          otel_meter;
+
+  Same dual-pointer pattern as the tracer: shared_ptr owns lifetime, atomic raw
+  pointer provides lock-free access.
+
+Meter startup (otel_meter_start):
+
+  The function builds the provider stack from YAML configuration:
+
+    1. Read scope name from YAML (/signals/metrics/scope_name).
+    2. Create one or more exporter-reader pairs.  When the YAML exporters key
+       is a sequence, each entry is resolved by name and paired with a matching
+       reader (or the last reader if fewer readers than exporters are specified).
+       When it is a single value, one exporter-reader pair is created.
+    3. Create provider via otel_meter_provider_create(), which attaches each
+       reader via AddMetricReader().
+    4. Get meter: provider->GetMeter(scope_name, OTELC_SCOPE_VERSION,
+       OTELC_SCOPE_SCHEMA_URL).
+    5. Store globally: otel_meter_owner = meter, otel_meter.store(owner.get()),
+       Provider::SetMeterProvider(provider).
+
+  This mirrors the multi-pipeline pattern already used by the tracer
+  (processors/exporters) and logger (processors/exporters).
+
+Instrument types (14 total):
+
+  Synchronous instruments -- the C wrapper calls Add() or Record() directly on
+  the C++ instrument:
+
+    C Enum                   C++ Create Call            Recording
+    -----------------------+---------------------------+-----------
+    COUNTER_UINT64           CreateUInt64Counter(...)    Add(val)
+    COUNTER_DOUBLE           CreateDoubleCounter(...)    Add(val)
+    HISTOGRAM_UINT64         CreateUInt64Histogram(...)  Record(val)
+    HISTOGRAM_DOUBLE         CreateDoubleHistogram(...)  Record(val)
+    UDCOUNTER_INT64          CreateInt64UpDownCounter    Add(val)
+    UDCOUNTER_DOUBLE         CreateDoubleUpDownCounter   Add(val)
+    GAUGE_INT64  (ABI v2+)   CreateInt64Gauge(...)       Record(val)
+    GAUGE_DOUBLE (ABI v2+)   CreateDoubleGauge(...)      Record(val)
+
+  Observable instruments -- the SDK invokes a callback during collection:
+
+    C Enum                        C++ Create Call
+    ----------------------------+---------------------------------
+    OBSERVABLE_COUNTER_INT64      CreateInt64ObservableCounter
+    OBSERVABLE_COUNTER_DOUBLE     CreateDoubleObservableCounter
+    OBSERVABLE_GAUGE_INT64        CreateInt64ObservableGauge
+    OBSERVABLE_GAUGE_DOUBLE       CreateDoubleObservableGauge
+    OBSERVABLE_UDCOUNTER_INT64    CreateInt64ObservableUpDownCounter
+    OBSERVABLE_UDCOUNTER_DOUBLE   CreateDoubleObservableUpDownCounter
+
+  Observable instruments use one of two callback adapters:
+  otel_meter_observable_int64_cb or otel_meter_observable_double_cb.
+
+Instrument handle structure (otel_instrument_handle):
+
+  Each handle holds all instrument pointer fields simultaneously (only one is
+  non-null at a time), selected by the type discriminant:
+
+    unique_ptr<Counter<uint64_t>>      counter_uint64
+    unique_ptr<Counter<double>>        counter_double
+    unique_ptr<Histogram<uint64_t>>    histogram_uint64
+    unique_ptr<Histogram<double>>      histogram_double
+    unique_ptr<UpDownCounter<int64_t>> udcounter_int64
+    unique_ptr<UpDownCounter<double>>  udcounter_double
+    shared_ptr<ObservableInstrument>   observable
+    unique_ptr<Gauge<int64_t>>         gauge_int64     (ABI v2+)
+    unique_ptr<Gauge<double>>          gauge_double    (ABI v2+)
+
+  The T_CONSTRUCTOR macro generates a separate constructor per instrument type,
+  each moving the instrument pointer and recording name/type.
+  ObservableInstrument uses shared_ptr because the SDK retains a reference for
+  callback invocation.
+
+Observable callback mechanism:
+
+  The OTEL_METER_OBSERVABLE_CB macro bridges C and C++ callback interfaces:
+
+    1. SDK calls otel_meter_observable_int64_cb(observer, state) during
+       collection.
+    2. The adapter creates a temporary otelc_value on the stack, initialised
+       to zero.
+    3. Invokes the user's C callback (data->func(data)) which populates
+       data->value.
+    4. Reads back the value and calls observer->Observe(value) on the C++
+       ObserverResult.
+
+  AddCallback / RemoveCallback are dispatched via OTEL_METER_OBSERVABLE_DISPATCH,
+  which maps each observable instrument type to the correct callback adapter.
+  Synchronous instruments are no-ops in this dispatch.
+
+Instrument creation (otel_meter_create_instrument):
+
+  Creates and registers a metric instrument:
+
+    1. Validate name, description, unit (optionally via
+       InstrumentMetaDataValidator when OTELC_USE_INSTRUMENT_VALIDATOR
+       is defined).
+    2. Duplicate detection: case-insensitive name + type match via std::find_if
+       with InstrumentDescriptorUtil::CaseInsensitiveAsciiEquals.  Returns
+       existing ID if found.
+    3. Dispatch to the appropriate meter_ptr->Create*() call based on type.
+    4. Wrap result in otel_instrument_handle, emplace into the otel_instrument
+       handle map.
+    5. For observable instruments, automatically register the callback via
+       otel_nolock_meter_add_instrument_callback.
+    6. On any failure after emplacement, roll back by erasing from the map and
+       deleting the handle.
+
+Value recording:
+
+  Two variants: without attributes (update_instrument) and with attributes
+  (update_instrument_kv_n).
+
+  Both:
+    - Validate the value type against the instrument type via
+      otel_meter_instrument_value_type.
+    - Allow int64 -> uint64 coercion for uint64 instruments if the value is
+      non-negative.
+    - Obtain context: either empty Context{} or RuntimeContext::GetCurrent().
+    - Dispatch to Add() (counters/updown) or Record() (histograms/gauges) with
+      value, optional attributes map, and context.
+    - Observable instruments are no-ops (values come from callbacks).
+
+  C++ API calls invoked per instrument type:
+
+    Instrument Type          C++ API Call
+    -----------------------+-------------------------------------
+    counter_uint64           counter->Add(uint64_val, [attr], ctx)
+    counter_double           counter->Add(double_val, [attr], ctx)
+    histogram_uint64         histogram->Record(uint64_val, [attr], ctx)
+    histogram_double         histogram->Record(double_val, [attr], ctx)
+    udcounter_int64          udcounter->Add(int64_val, [attr], ctx)
+    udcounter_double         udcounter->Add(double_val, [attr], ctx)
+    gauge_int64 (ABI v2+)    gauge->Record(int64_val, [attr], ctx)
+    gauge_double (ABI v2+)   gauge->Record(double_val, [attr], ctx)
+
+View support (otel_meter_add_view):
+
+  Creates and registers metrics views for custom aggregation:
+
+    1. Create InstrumentSelector(type, name, unit) to match instruments.
+    2. Create MeterSelector(scope_name, version, schema_url) to match meters.
+    3. Create View(name, desc, aggregation_type, config) with optional
+       HistogramAggregationConfig for custom bucket boundaries.
+    4. Register via provider_sdk->AddView(instrument_selector, meter_selector,
+       view).
+    5. Track in internal otel_view handle map.
+    6. Duplicate views (by name, case-insensitive) return the existing ID
+       without re-registration.
+
+  Views must be registered before instruments are created, because the
+  OpenTelemetry C++ SDK does not dynamically apply views to existing instruments.
+
+  Supported aggregation types:
+
+    C Enum                               C++ AggregationType
+    -----------------------------------+-------------------------
+    OTELC_METRIC_AGGREGATION_DROP        kDrop
+    OTELC_METRIC_AGGREGATION_HISTOGRAM   kHistogram
+    OTELC_METRIC_AGGREGATION_LAST_VALUE  kLastValue
+    OTELC_METRIC_AGGREGATION_SUM         kSum
+    OTELC_METRIC_AGGREGATION_DEFAULT     kDefault
+    OTELC_METRIC_AGGREGATION_BASE2_EXP.. kBase2ExponentialHistogram
+
+  The otelc_meter_aggr_parse() function provides case-insensitive lookup from
+  string names ("drop", "histogram", "last_value", "sum", "default",
+  "exp_histogram") to the enum values.
+
+Meter enabled check:
+
+  The C++ SDK does not provide a Meter::Enabled() method (unlike
+  Tracer::Enabled() in ABI v2).  The wrapper returns true whenever the atomic
+  meter pointer is non-null.
+
+Meter shutdown (otel_meter_destroy):
+
+  Shutdown is ordered to prevent use-after-free:
+
+    1. Atomically null otel_meter to gate out concurrent callers.
+    2. Release otel_meter_owner (shared_ptr).
+    3. Destroy provider and exporter.
+    4. Clear instrument and view handle maps (deleting all handles).
+    5. Free err and scope_name strings.
+
+Key differences from tracer:
+
+  Handle maps use 1 shard (instruments are long-lived, low contention) vs 64
+  shards for spans.
+
+  No per-thread handle storage -- instruments are global, shared across threads.
+
+  No "end" operation -- instruments live for the process lifetime.
+
+  Observable instruments invert control: the SDK calls into user code via
+  callback adapters, rather than the user calling into the SDK.
+
+  ABI version gates: Gauge<int64_t> and Gauge<double> require
+  OPENTELEMETRY_ABI_VERSION_NO >= 2.  All other instrument types are available
+  in ABI v1.
+
+
+------------------------------------------------------------------------
+14. Logger/Logs C++ API/SDK Wrapping Strategy
+------------------------------------------------------------------------
+
+The logger wrapper follows the same opaque-handle + vtable pattern as the tracer
+and meter.  The otelc_logger struct carries an ops pointer dispatching through
+otelc_logger_ops.  The logger is the simplest of the three signal components:
+it has no handle maps (log records are transient, created and emitted in a
+single call) and requires no explicit locking (all vtable operations are marked
+"Locking not required").
+
+Logger global state:
+
+  Two variables govern the logger's availability:
+
+    static otel_nostd::shared_ptr<otel_logs::Logger> otel_logger_owner;
+    static std::atomic<otel_logs::Logger *>          otel_logger;
+
+  Same dual-pointer pattern as the tracer and meter: shared_ptr owns lifetime,
+  atomic raw pointer provides lock-free access on the hot path.
+
+Logger instance structure:
+
+  Unlike the tracer and meter, the logger struct carries an additional field:
+
+    struct otelc_logger {
+        char                          *err;
+        char                          *scope_name;
+        otelc_log_severity_t           min_severity;
+        const struct otelc_logger_ops *ops;
+    };
+
+  The min_severity field defaults to OTELC_LOG_SEVERITY_TRACE (all levels
+  allowed) and can be overridden via YAML configuration or changed at runtime
+  through set_min_severity().
+
+Severity levels (24 total):
+
+  The wrapper defines 24 severity levels matching the OpenTelemetry C++ SDK
+  otel_logs::Severity enum, generated from OTELC_LOG_SEVERITY_DEFINES:
+
+    C Enum                       C++ Severity
+    ---------------------------+--------------
+    OTELC_LOG_SEVERITY_INVALID   kInvalid
+    OTELC_LOG_SEVERITY_TRACE     kTrace
+    OTELC_LOG_SEVERITY_TRACE2    kTrace2
+    OTELC_LOG_SEVERITY_TRACE3    kTrace3
+    OTELC_LOG_SEVERITY_TRACE4    kTrace4
+    OTELC_LOG_SEVERITY_DEBUG     kDebug
+    OTELC_LOG_SEVERITY_DEBUG2    kDebug2
+    OTELC_LOG_SEVERITY_DEBUG3    kDebug3
+    OTELC_LOG_SEVERITY_DEBUG4    kDebug4
+    OTELC_LOG_SEVERITY_INFO      kInfo
+    OTELC_LOG_SEVERITY_INFO2     kInfo2
+    OTELC_LOG_SEVERITY_INFO3     kInfo3
+    OTELC_LOG_SEVERITY_INFO4     kInfo4
+    OTELC_LOG_SEVERITY_WARN      kWarn
+    OTELC_LOG_SEVERITY_WARN2     kWarn2
+    OTELC_LOG_SEVERITY_WARN3     kWarn3
+    OTELC_LOG_SEVERITY_WARN4     kWarn4
+    OTELC_LOG_SEVERITY_ERROR     kError
+    OTELC_LOG_SEVERITY_ERROR2    kError2
+    OTELC_LOG_SEVERITY_ERROR3    kError3
+    OTELC_LOG_SEVERITY_ERROR4    kError4
+    OTELC_LOG_SEVERITY_FATAL     kFatal
+    OTELC_LOG_SEVERITY_FATAL2    kFatal2
+    OTELC_LOG_SEVERITY_FATAL3    kFatal3
+    OTELC_LOG_SEVERITY_FATAL4    kFatal4
+
+  The otelc_logger_severity_parse() function provides case-insensitive lookup
+  from string names ("TRACE", "DEBUG2", "INFO", "WARN4", "ERROR", "FATAL3",
+  etc.) to the enum values.
+
+  The internal otel_logger_severity() function maps C enum values to C++
+  otel_logs::Severity via a static lookup table built from the same
+  OTELC_LOG_SEVERITY_DEFINES macro.
+
+Logger startup (otel_logger_start):
+
+  The function builds the provider stack from YAML configuration:
+
+    1. Read scope name from YAML (/signals/logs/scope_name).
+    2. Read optional min_severity from YAML (/signals/logs/min_severity) and
+       parse via otelc_logger_severity_parse().
+    3. Create exporter-processor pairs.  YAML sequences allow multiple pairs;
+       otherwise a single pair is created.
+    4. Create LoggerProvider with processors via otel_logger_provider_create().
+    5. Get logger: provider->GetLogger(scope_name, "", OTELC_SCOPE_VERSION,
+       OTELC_SCOPE_SCHEMA_URL).
+    6. Set minimum severity on the obtained logger via
+       SetMinimumSeverity(uint8_t).
+    7. Store globally: otel_logger_owner = logger,
+       otel_logger.store(owner.get()),
+       otel_logs::Provider::SetLoggerProvider(provider).
+
+  The SetMinimumSeverity() method is protected in the C++ Logger base class.
+  The wrapper accesses it through a helper struct:
+
+    struct otel_logs_logger : public otel_logs::Logger {
+        using otel_logs::Logger::SetMinimumSeverity;
+    };
+
+  A static_cast to otel_logs_logger* exposes the method without violating the
+  class hierarchy.
+
+Logger enabled check (otel_logger_enabled):
+
+  Unlike the meter (which always returns true), the logger delegates to the
+  C++ SDK:
+
+    logger_ptr->Enabled(log_severity)
+
+  This allows callers to skip expensive log message construction when the
+  logger would discard the record.
+
+Log record creation and emission (otel_logger_log_v):
+
+  This is the core function.  It creates a log record, populates it, and emits
+  it in a single call:
+
+    1. Validate logger pointer and format string.
+    2. Load atomic logger pointer.
+    3. Convert severity to C++ enum via otel_logger_severity().
+    4. Early exit if logger_ptr->Enabled(log_severity) is false.
+    5. Copy span_id (8 bytes) and trace_id (16 bytes) to fixed-size stack
+       buffers, zero-filled if not provided.
+    6. Create log record: logger_ptr->CreateLogRecord().
+    7. Populate the record:
+       - log_record->SetSeverity(log_severity)
+       - log_record->SetSpanId(SpanId{span_id_buf})
+       - log_record->SetTraceId(TraceId{trace_id_buf})
+       - log_record->SetTraceFlags(TraceFlags{trace_flags})
+    8. If timestamp provided:
+       - log_record->SetTimestamp(timestamp)
+       - log_record->SetObservedTimestamp(timestamp)
+    9. If event_id > 0:
+       - log_record->SetEventId(event_id, event_name)
+   10. For each attribute:
+       - log_record->SetAttribute(key, value) via OTEL_VALUE_ADD
+   11. Format body: vasprintf(&ptr, format, ap).
+   12. log_record->SetBody(ptr).
+   13. logger_ptr->EmitLogRecord(std::move(log_record)).
+   14. free(ptr).
+   15. Return character count.
+
+  C++ API calls used per log record:
+
+    C++ API Call                         Purpose
+    -----------------------------------+----------------------------
+    logger->CreateLogRecord()            allocate new record
+    log_record->SetSeverity()            severity level
+    log_record->SetSpanId()              trace correlation
+    log_record->SetTraceId()             trace correlation
+    log_record->SetTraceFlags()          sampling flags
+    log_record->SetTimestamp()           event time
+    log_record->SetObservedTimestamp()   receipt time
+    log_record->SetEventId()             structured event marker
+    log_record->SetAttribute()           key-value metadata
+    log_record->SetBody()                formatted message
+    logger->EmitLogRecord()              send to pipeline
+
+Log entry points:
+
+  Two public variants map to the same internal otel_logger_log_v():
+
+  log() -- takes explicit span_id, trace_id, and trace_flags as raw byte
+  buffers.  The variadic arguments are forwarded via va_list.
+
+  log_span() -- takes an otelc_span pointer instead.  Extracts span_id,
+  trace_id, and trace_flags by calling span->tracer->ops->get_id() on the span,
+  then delegates to otel_logger_log_v().  Handles NULL span gracefully by using
+  zeroed buffers.
+
+Runtime severity change (otel_logger_set_min_severity):
+
+  Changes the minimum severity threshold at runtime:
+
+    1. Convert severity to C++ enum.
+    2. Cast logger_ptr to otel_logs_logger* to access
+       SetMinimumSeverity(uint8_t).
+    3. Update logger->min_severity field.
+
+  After this call, the C++ SDK's Enabled() check will reflect the new threshold.
+
+Logger shutdown (otel_logger_destroy):
+
+  Shutdown is ordered to prevent use-after-free:
+
+    1. Atomically null otel_logger to gate out concurrent callers.
+    2. Release otel_logger_owner (shared_ptr).
+    3. Destroy provider and exporter.
+    4. Free err and scope_name strings.
+
+Key differences from tracer and meter:
+
+  No handle maps -- log records are transient, created and emitted in a single
+  function call.  There is no equivalent of a span handle or instrument handle
+  that persists across calls.
+
+  No locking required -- all operations either use the atomic logger pointer or
+  operate on function-local data (the log record).  The vtable comments confirm
+  "Locking not required" for every operation.
+
+  Severity filtering -- the logger has a min_severity threshold that is both
+  configurable at startup via YAML and changeable at runtime via
+  set_min_severity().  The C++ SDK's Enabled() method enforces the threshold,
+  allowing the wrapper to skip record creation for filtered levels.
+
+  Body formatting -- unlike span attributes and metric values which use the
+  otelc_value union, the log body is a printf-style formatted string produced
+  by vasprintf().  The body is set as a plain string via SetBody().
+
+  Trace correlation -- log records can be associated with distributed traces
+  either by providing raw span/trace IDs (log()) or by passing an otelc_span
+  pointer (log_span()) from which the IDs are extracted automatically.
+
+  Event identification -- log records support SetEventId(int64_t, str) for
+  structured event tagging, a feature not present in span or metric APIs.
+
+
+------------------------------------------------------------------------
+15. Memory Allocation and Deallocation
+------------------------------------------------------------------------
+
+The project implements a layered memory management system designed for
+integration into applications (such as HAProxy) that may require custom
+allocators.
+
+Allocation infrastructure:
+
+  Debug tracking layer (dbg_malloc.h/cpp) -- wraps every allocation with source
+  location (function name, line number) tracking, enabled via the DEBUG or
+  DEBUG_OTEL compile flag.  This allows leak detection at runtime without
+  external tools.
+
+  External allocator interface (otelc_ext_init) -- allows callers to register
+  custom malloc/free function pointers.  The OTEL_EXT_MALLOC and
+  OTEL_EXT_FREE_CLEAR macros dispatch through these pointers.  Passing NULL
+  resets to the default (debug-tracked or libc).
+
+  Safe free macros -- OTELC_SFREE (NULL-safe free), OTELC_SFREE_CLEAR (NULL-safe
+  free that also sets the pointer to NULL), and OTEL_EXT_FREE_CLEAR (external
+  allocator variant that sets to nullptr).
+
+  C++ nothrow wrappers (std.h) -- make_unique_nothrow and make_shared_nothrow
+  handle both new(std::nothrow) failure and shared_ptr control block allocation
+  failure.  In make_shared_nothrow, the raw pointer is declared outside the try
+  block so the catch clause can delete it if the shared_ptr constructor throws
+  std::bad_alloc.
+
+  Deferred cleanup (OTELC_DEFER) -- provides RAII-style scope cleanup in C via
+  GCC __attribute__((cleanup)).
+
+Allocation patterns by signal:
+
+  Tracer -- the otelc_tracer struct is allocated with OTELC_CALLOC in
+  otel_tracer_new() and freed with OTELC_SFREE_CLEAR in otel_tracer_destroy().
+  String members (err, scope_name) are allocated with OTELC_STRDUP and freed
+  with OTELC_SFREE.  Span and span context C handles are allocated with
+  OTEL_EXT_MALLOC and freed with OTEL_EXT_FREE_CLEAR.  C++ handle objects
+  (otel_span_handle, otel_span_context_handle) are allocated with
+  new(std::nothrow) and deleted via the handle map's clear_locked() in destroy,
+  or explicitly in error paths before map insertion.
+
+  Meter -- same struct pattern as tracer.  Instrument and view handles are
+  allocated with new(std::nothrow) and tracked in single-shard handle maps.
+  Cleanup via clear_locked() in otel_meter_destroy().
+
+  Logger -- same struct pattern as tracer.  No handle maps; log records are
+  transient, created by the C++ SDK's CreateLogRecord() and emitted in the same
+  call.  The log body is formatted with vasprintf() which allocates via malloc;
+  the result is freed with free() immediately after SetBody().
+
+Text map memory management:
+
+  otelc_text_map_new() allocates the struct (if dynamic) and three parallel
+  arrays (flags, key, value) with OTELC_CALLOC.  otelc_text_map_add() grows
+  these arrays with OTELC_REALLOC when capacity is exceeded.  Key and value
+  strings are optionally duplicated (OTELC_TEXT_MAP_DUP_KEY/VALUE) and freed
+  according to ownership flags (OTELC_TEXT_MAP_FREE_KEY/VALUE).
+
+  The standard flag OTELC_TEXT_MAP_AUTO (used by every caller in the codebase)
+  sets DUP|FREE for both key and value, ensuring ownership is always transferred.
+
+  The sequential realloc pattern (flags, then key, then value) does not leak
+  on partial failure.  When a later realloc fails, earlier arrays may be
+  over-allocated relative to text_map->size (which is only updated after all
+  three succeed), but all memory remains reachable through the struct and is
+  freed during text_map cleanup.
+
+Error path cleanup in span creation:
+
+  otel_tracer_start_span_with_options() has four distinct failure points after
+  otel_span_new() returns.  Each calls span->End() to prevent SDK-level resource
+  leaks (the SDK may have already started export timers), followed by
+  otel_nolock_span_destroy() to clean up the C handle.  A copy of the span
+  shared_ptr (span_end) is kept before moving it into the handle, ensuring End()
+  can still be called if handle construction fails.
+
+Orphaned span cleanup:
+
+  otel_tracer_destroy() iterates all remaining span handles via
+  for_each_locked() and calls span->End() before tearing down the provider,
+  ensuring orphaned spans are still exported.  Span context handles are cleared
+  first since they do not require End().
+
+Global teardown order:
+
+  otelc_deinit() closes the YAML document first, then destroys logger, meter,
+  and tracer (reverse of typical startup order), then resets the external
+  callback pointers via otelc_ext_init(NULL, NULL, NULL).
+
+  Each signal's destroy function clears its atomic pointer before provider
+  teardown, preventing concurrent callers from accessing a half-destroyed signal.
+
+otelc_sprintf() ownership transfer:
+
+  otelc_sprintf() (used by the OTEL_*_ERROR macros to set the err member) frees
+  the old *ret string before assigning the new one from vasprintf().  If
+  vasprintf() fails, *ret is freed and left NULL.
+
+
+------------------------------------------------------------------------
+16. YAML Configuration Parsing
+------------------------------------------------------------------------
+
+The YAML module provides a dual-backend configuration parser that supports two
+YAML libraries selected at compile time via the HAVE_LIBFYAML_H preprocessor
+flag:
+
+  libfyaml -- a C library accessed through the fy_document_* API.  Uses
+  fy_document_scanf() for value extraction with a dynamically constructed format
+  string.
+
+  rapidyaml (default) -- a C++ library accessed through ryml::Tree with a custom
+  ryml_get_node_by_path() traversal function that handles both map keys and
+  numeric sequence indices.
+
+Every function has parallel implementations for both backends with identical
+semantics.  The OTEL_YAML_DOC typedef abstracts the document type.
+
+Path traversal (rapidyaml backend):
+
+  ryml_get_node_by_path() splits a slash-separated path and walks the tree node
+  by node.  For map nodes it calls has_child(part); for sequence nodes it parses
+  the numeric index character by character and validates bounds against
+  num_children().  The edge cases of empty path (returns root), leading slash,
+  and empty path segments are handled explicitly.
+
+Error handling:
+
+  ryml_throw_error() is registered as the rapidyaml error callback.  It throws
+  std::runtime_error, which is caught by the OTEL_CATCH_ERETURN macro that wraps
+  every try block in the YAML module.
+
+  yaml_open() wraps tree allocation and parsing in a single try block.  On
+  success the unique_ptr is released to transfer ownership to the caller.
+
+  yaml_read() uses OTEL_DEFER(yaml_close(&fyd)) for automatic document cleanup
+  regardless of the exit path.
+
+Value extraction:
+
+  yaml_find() retrieves a scalar value by path.  The libfyaml path constructs
+  a scanf format string with OTEL_YAML_BUFLEN ("4095") as the field width to
+  prevent buffer overflow.  The rapidyaml path uses otelc_strlcpy() which is
+  length-safe.
+
+  yaml_get_node_v() is the variadic core that parses typed properties (STR,
+  BOOL, INT64, DOUBLE, MAP) from a named YAML node.  Integer parsing uses
+  strtoll with proper errno/endptr validation.  Double parsing uses strtod with
+  the same.  The %s substitution in path templates is format-safe because the
+  templates are compile-time strings with a single %s placeholder.
+
+  The PRAGMA_DIAG_IGNORE/PRAGMA_DIAG_RESTORE pairs around format-nonliteral
+  warnings are correctly scoped to the snprintf/scanf calls that use non-literal
+  format strings.
+
+Sequence operations:
+
+  yaml_get_sequence() extracts key-value pairs from a sequence of mappings into
+  an otelc_text_map.  The text map is allocated on first use.  Both backends
+  iterate children and populate the map with OTELC_TEXT_MAP_AUTO (DUP|FREE)
+  flags.
+
+  yaml_get_sequence_len() returns the child count.  yaml_get_sequence_value()
+  retrieves a scalar at a given index with bounds checking.  yaml_is_sequence()
+  tests whether a path points to a sequence node.
+
+  yaml_find_sequence() resolves a sequence name via yaml_find() then calls
+  yaml_get_sequence() on the resolved path.  This function is currently unused
+  but tested and retained for potential future use.
+
+Library lifecycle:
+
+  yaml_open() opens and parses a YAML file.  yaml_close() releases the document
+  and sets the pointer to nullptr.  The global otelc_fyd pointer holds the
+  active configuration document, set by otelc_init() and cleared by
+  otelc_deinit().
+
+  otelc_init() rejects double initialization (returns error if otelc_fyd is
+  already non-null).  otelc_deinit() closes the document, destroys all signals,
+  and resets external callback pointers.  Reinitialization after deinit is
+  supported.
+
+
+------------------------------------------------------------------------
+17. Locking Mechanism
+------------------------------------------------------------------------
+
+The project supports two threading models selected at compile time via
+OTELC_USE_THREAD_SHARED_HANDLE (default: enabled).
+
+Threading models:
+
+  Shared-handle model (default) -- span and span_context handles live in global
+  structures.  OTEL_LOCK_TRACER(type, idx) acquires a per-shard std::mutex via
+  lock_guard.  The shard is selected by idx & (num_shards - 1), giving 64
+  independent locks for spans.  THREAD_LOCAL expands to nothing;
+  OTEL_HANDLE_SHARED is true.
+
+  Thread-local model -- handles are thread_local.  OTEL_LOCK_TRACER(...)
+  compiles to while(0) (no-op).  No contention possible since each thread has
+  its own map.  THREAD_LOCAL expands to the thread_local keyword;
+  OTEL_HANDLE_SHARED is false.
+
+  Meter handles (otel_instrument, otel_view) are always global (not thread-local)
+  and always locked via OTEL_LOCK_METER(type) which locks shard[0].mutex --
+  single shard, single lock.  This is correct because instruments are long-lived,
+  created once at startup, so creation contention is negligible.
+
+Handle structure (otel_handle<T, shared>):
+
+  Each handle contains a vector of shards, where each shard holds an
+  unordered_map and a std::mutex.  The constructor validates that num_shards
+  is a power of two (required for the bitmask in get_shard_index).
+
+  Atomic members (id, peak_size, alloc_fail_cnt, erase_cnt, destroy_cnt) use
+  std::atomic and require no lock.  The id counter uses operator++ which is
+  sequentially consistent by default, making ID generation race-free even in
+  the shared-handle model.
+
+  Peak size tracking uses a compare_exchange_weak retry loop to atomically
+  update the high-water mark without a lock.
+
+Lock acquisition patterns:
+
+  Single-lock operations -- functions like otel_span_get_id,
+  otel_span_set_status, otel_span_set_attribute_*, and otel_span_add_event_*
+  each acquire exactly one shard lock via OTEL_LOCK_SPAN_HANDLE, do their work,
+  and return.  The lock_guard scope covers the entire operation.
+
+  Multi-lock operations -- otel_span_add_link and
+  otel_tracer_start_span_with_options access multiple handles
+  (link target + span, or parent + new span).  In both cases, the first lock is
+  released before the second is acquired: the lock_guard goes out of scope at
+  the end of an if/else block or loop iteration, and the next lock is acquired
+  in a subsequent block.  At no point are two shard locks held simultaneously.
+  No deadlock is possible.
+
+  Manual locking -- otel_span_get_baggage_var uses OTEL_LOCK_TRACER directly
+  instead of OTEL_LOCK_SPAN_HANDLE because it needs custom error handling
+  (destroying the text map before returning on failure).
+
+Guard variable naming:
+
+  The guard_##a naming convention means OTEL_LOCK_TRACER(span, idx1) creates
+  guard_span.  A second OTEL_LOCK_TRACER(span, idx2) in the same scope would
+  cause a redefinition error, providing a compile-time safety net against
+  accidental double-locking of the same handle type.  Functions that need
+  multiple locks use separate scoped blocks.
+
+Meter locking:
+
+  All meter operations lock shard[0].mutex via OTEL_LOCK_METER(instrument) or
+  OTEL_LOCK_METER(view).  Since instruments and views are separate handle
+  structures, guard_instrument and guard_view are different mutex instances.
+  otel_meter_create_instrument holds the instrument lock for the entire
+  creation + optional callback registration path.
+  otel_nolock_meter_add_instrument_callback is called while the instrument lock
+  is already held (hence "nolock" in the name).
+
+Teardown locking:
+
+  for_each_locked() iterates all shards sequentially, locking each shard's mutex
+  before clearing.  The if constexpr (shared) branch only acquires the lock when
+  OTEL_HANDLE_SHARED is true.  In the thread-local model, no locking is needed
+  during teardown.
+
+  Each signal's destroy function clears its atomic pointer before provider
+  teardown (e.g. otel_tracer.store(nullptr) before otel_tracer_owner = {}),
+  ensuring any concurrent caller sees nullptr before the owned object is
+  destroyed.

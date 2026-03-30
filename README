@@ -1,0 +1,679 @@
+      -----------------------------------------------------------------
+       C wrapper for the C++ OpenTelemetry API, enabling C integration
+      -----------------------------------------------------------------
+
+
+Summary
+------------------------------------------------------------------------------
+
+   1. Introduction
+   2. Build instructions
+     2.1. Prerequisites for building the OTel C wrapper library
+     2.2. Compiling and installing the OTel C++ client
+     2.3. Compiling and installing the OTel C wrapper library
+   3. Testing the operation of the library
+   4. Basic concepts of OpenTelemetry
+   5. Library API overview
+   6. YAML configuration
+   7. Tracing example
+   8. Metrics example
+   9. Logging example
+  10. Thread safety
+  11. Known bugs and limitations
+
+
+1. Introduction
+------------------------------------------------------------------------------
+
+This document will not cover the internal structure of OpenTelemetry (often
+abbreviated as OTel) or the environment that led to the need for an
+observability framework.  Those interested can find detailed reasons for its use
+and relevant documentation in many sources, especially on the official OTel
+website https://opentelemetry.io/ .
+
+The OTel C wrapper library was primarily developed for use in the HAProxy OTel
+filter to enable effective observation - specifically, exporting telemetry data
+to simplify the analysis of software performance and behavior.
+
+This library is a C wrapper for the official OTel C++ client, with the source
+repository available at https://github.com/open-telemetry/opentelemetry-cpp .
+
+
+2. Build instructions
+------------------------------------------------------------------------------
+
+2.1. Prerequisites for building the OTel C wrapper library
+------------------------------------------------------------------------------
+
+To simplify the process of compiling all the libraries required by the OTel C
+wrapper, several shell scripts have been created and are available in the
+scripts/build directory.  All scripts have been tested on the following Linux
+distributions for the amd64 architecture:
+
+  * debian 11 / 12 / 13
+  * ubuntu 20.04.6 / 22.04.5 / 24.04.3
+  * tuxedo 24.04.3
+  * rhel 8.10 / 9.5 / 10.0
+  * rocky 9.5
+  * opensuse-leap 15.5 / 15.6
+
+Linux distributions for other architectures, as well as other operating systems
+supported by the OTel C++ client (such as BSD, macOS, and Windows), have not
+been tested.
+
+To install all the required packages for compiling and installing the OTel C
+wrapper library, execute the linux-update.sh script located in the scripts/build
+directory:
+
+  # cd scripts/build
+  # ./linux-update.sh
+
+Note: the '%' prompt indicates that the command is being executed by a non-
+      privileged user, whereas the '#' prompt indicates that the command is
+      being executed by the root user.
+
+The script linux-update.sh does not accept any arguments.
+
+To summarize, the script installs the necessary packages for compiling and
+setting up all required libraries, with the most important ones being:
+
+  * GNU GCC Compiler and Development Environment
+  * GNU autoconf / automake / libtool / make
+  * Kitware CMake
+  * various developer packages of the system libraries (libc, curl, ssl, zlib,
+    lzma, systemd)
+  * various utilities for downloading source code repositories (git, wget, curl)
+
+
+2.2. Compiling and installing the OTel C++ client
+------------------------------------------------------------------------------
+
+Installing all the prerequisite libraries can be quite demanding, which is why
+several installation scripts have been created to simplify the process.  Each
+prerequisite library has its own dedicated installation script, but it is not
+recommended to run them separately.  Instead, it's advised to use one of the
+following two scripts:
+
+  * build.sh - each prerequisite library is compiled and installed individually,
+    following a predefined order
+  * build-bundle.sh - the OTel C++ client is compiled in such a way that it
+    automatically downloads and compiles all the necessary prerequisite
+    libraries
+
+Whichever script is used, the result should be the same.  However, it is
+recommended to use the build-bundle.sh script for this task.
+
+Example of how to run an installation script:
+
+  # cd scripts/build
+  # ./build-bundle.sh
+
+Both scripts accept multiple input arguments.  The first argument specifies the
+destination directory where packages will be installed, and the second argument
+defines the location of the root directory for installation.  However, it is not
+recommended to set the 'install-dir' argument, as it is intended solely for
+debugging purposes.
+
+  # ./build-bundle.sh [ prefix-dir [ install-dir ] ]
+
+By default, libraries are installed in the /opt directory (prefix = '/opt').
+
+Finally, the installation script will verify that all library dependencies for
+programs in the <prefix>/bin directory and libraries in the <prefix>/lib
+directory are met, which is done by running the ldd utility.
+
+Note: it is possible that some prerequisite libraries are already installed on
+      the system (as part of the operating system).  This can lead to errors
+      when compiling the OTel C++ client.  For this reason, it is recommended to
+      use the provided script for installation and to install it in a non-system
+      directory, such as /opt, /usr/local, or any other non-system directory of
+      your choice.
+
+If one prefers not to use the AWS-LC cryptographic library and instead opts for
+the system-installed OpenSSL, the building of the first two packages (AWS-LC and
+curl) can be commented out in the installation scripts.
+
+List of (almost) all dependencies for the OTel C++ client package:
+
+  * AWS libcrypto (AWS-LC)
+    https://github.com/aws/aws-lc
+  * curl - a command-line tool for transferring data from or to a server using
+    URLs
+    https://github.com/curl/curl
+  * Abseil - C++ Common Libraries
+    https://github.com/abseil/abseil-cpp
+  * c-ares - a modern DNS (stub) resolver library
+    https://github.com/c-ares/c-ares
+  * RE2, a regular expression library
+    https://github.com/google/re2
+  * Protocol Buffers - Google's data interchange format
+    https://github.com/protocolbuffers/protobuf
+  * JSON for Modern C++
+    https://github.com/nlohmann/json
+  * GoogleTest - Google's C++ test framework
+    https://github.com/google/googletest
+  * Benchmark - a library to benchmark code snippets, similar to unit tests
+    https://github.com/google/benchmark
+  * gRPC - an RPC library and framework
+    https://github.com/grpc/grpc
+  * Rapid YAML - a C++ library to parse and emit YAML
+    https://github.com/biojppm/rapidyaml
+  * OpenTelemetry C++ - the C++ OpenTelemetry client
+    https://github.com/open-telemetry/opentelemetry-cpp
+
+This is not a complete list of dependencies; other libraries present on the
+operating system, such as libidn, libpsl, libunistring, zlib, and libzstd, are
+also required.
+
+Additional information on this topic can be found at:
+https://github.com/open-telemetry/opentelemetry-cpp/blob/main/docs/dependencies.md
+
+
+2.3. Compiling and installing the OTel C wrapper library
+------------------------------------------------------------------------------
+
+Along with the OTel C++ client, the OTel C wrapper library depends on a YAML
+parsing library.  By default, rapidyaml (ryml) is used, and this is the
+recommended configuration.  Since rapidyaml is already built and installed as
+part of the OTel C++ client dependencies, no additional steps are required.
+
+Alternatively, libfyaml can be used instead by explicitly specifying the
+--with-libfyaml option (autotools) or -DWITH_LIBFYAML=ON (CMake).  Both
+options cannot be used at the same time.
+
+  * Rapid YAML - a C++ library to parse and emit YAML
+    https://github.com/biojppm/rapidyaml
+  * libfyaml - a fully-featured YAML 1.2 and JSON parser/writer
+    https://github.com/pantoniou/libfyaml
+
+Once the OTel C++ client is installed, the OTel C wrapper library can be
+compiled and installed.  It can also be built in debug mode, which enables
+detailed logging of the library's operations, such as internal function
+calls.
+
+In this example, we will install two versions of the library: the release
+version first, followed by the debug version.  Both versions will be installed
+in the /opt directory.
+
+  % git clone https://github.com/haproxytech/opentelemetry-c-wrapper.git
+  % cd opentelemetry-c-wrapper
+  % ./scripts/bootstrap
+  % ./configure --prefix=/opt --with-opentelemetry=/opt
+  % make
+  # make install
+
+  % ./scripts/distclean
+  % ./scripts/bootstrap
+  % ./configure --prefix=/opt --with-opentelemetry=/opt --enable-debug
+  % make
+  # make install
+
+Alternatively, the library can be compiled using CMake:
+
+  % mkdir build && cd build
+  % cmake -DCMAKE_INSTALL_PREFIX=/opt -DOPENTELEMETRY_DIR=/opt ..
+  % make
+  # make install
+
+To build the debug version, add the -DENABLE_DEBUG=ON option to the cmake
+command above.
+
+
+3. Testing the operation of the library
+------------------------------------------------------------------------------
+
+The library includes a test suite located in the test/ directory.  Test
+programs are not compiled during the regular build; use 'make test' to compile
+them.  The main test program simulates a worker process that generates traces,
+metrics, and logs.
+
+  % make test
+  % cd test
+  % ./otel-c-wrapper-test --help
+  % ./otel-c-wrapper-test --runcount=10 --threads=8
+
+The test program uses otel-cfg.yml as its library configuration file.
+
+When built with the debug option, the test binary is named
+otel-c-wrapper-test_dbg.  If present at install time, the test binary is
+installed into the <prefix>/bin directory by 'make install'.
+
+For integration testing with an OpenTelemetry Collector and a backend (like
+Elasticsearch/Kibana or ClickHouse), you can use the Docker Compose setup
+provided in `test/elastic-apm/`.
+
+A reference OpenTelemetry Collector configuration is provided in test/otelcol/.
+The OpenTelemetry Collector source is available at
+https://github.com/open-telemetry/opentelemetry-collector .  The configuration
+collects all three signals (traces, metrics, and logs) over OTLP/gRPC and
+OTLP/HTTP, and exports traces to a Jaeger instance reachable at a local IP
+address via OTLP/HTTP.
+
+  % cd test/elastic-apm
+  % docker compose up -d
+
+Ensure that the `otel-cfg.yml` configuration file is correctly set up to point
+to the collector's endpoint.
+
+
+4. Basic concepts of OpenTelemetry
+------------------------------------------------------------------------------
+
+OpenTelemetry (OTel) is an observability framework for cloud-native software.
+It provides a standardized, vendor-neutral way to create and collect telemetry
+data (traces, metrics, and logs).  Understanding its core concepts is key to
+using this wrapper library effectively.
+
+The main components of OTel are:
+
+  * Signals: OTel classifies telemetry data into several categories, known as
+    signals.  The three primary signals are traces, metrics, and logs.  This
+    library currently supports traces, metrics, and logs.
+
+  * API (Application Programming Interface): This is a set of interfaces that
+    you use to instrument your code.  For example, you use the API to get a
+    tracer, start a span, or record a metric.  The API is decoupled from the
+    implementation.
+
+  * SDK (Software Development Kit): This is the official implementation of the
+    API.  The SDK provides the configuration and logic for processing telemetry
+    data.  It allows you to configure exporters, processors, and samplers.
+
+  * Exporter: An exporter is a component that sends telemetry data to a specific
+    backend or collector.  For example, you might use an OTLP (OpenTelemetry
+    Protocol) exporter to send data to an OTel Collector, or a Jaeger exporter
+    to send data directly to a Jaeger instance.
+
+  * Collector: The OTel Collector is a standalone service that can receive,
+    process, and export telemetry data.  It acts as a flexible pipeline,
+    allowing you to transform and filter data before it reaches your
+    observability backend.
+
+Key concepts related to tracing:
+
+  * Trace: A trace represents the entire journey of a request as it moves
+    through all the services in a distributed system.  A single trace is
+    composed of one or more spans.
+
+  * Span: A span represents a single unit of work or operation within a trace,
+    such as an HTTP request, a database query, or a function call.  Spans have
+    a start time, an end time, attributes (key-value pairs), events (timestamped
+    log messages), links (references to related spans in other traces), and a
+    status.
+
+  * Context Propagation: This is the mechanism that allows OTel to correlate
+    spans across different services.  When a service makes a call to another
+    service, context (which includes the current trace ID and span ID) is
+    injected into the request (e.g., as HTTP headers).  The receiving service
+    extracts this context to create a new child span, linking it to the parent
+    span in the calling service.
+
+For a more in-depth understanding, it is highly recommended to review the
+official OpenTelemetry documentation: https://opentelemetry.io/docs/concepts/
+
+
+5. Library API overview
+------------------------------------------------------------------------------
+
+The library provides a pure C API on top of the OpenTelemetry C++ SDK.  The API
+is organized around instance structs that each carry a pointer to an
+operations vtable (a struct of function pointers), one pair per telemetry
+signal:
+
+  * struct otelc_tracer - creates trace spans and propagates context
+  * struct otelc_meter  - creates and records metric instruments
+  * struct otelc_logger - emits structured log records
+
+Every instance struct carries an 'err' member (a character pointer holding the
+last error message), a 'scope_name' member (the instrumentation scope name read
+from the YAML configuration), and an 'ops' pointer to the operations vtable.
+Operations are invoked through the ops pointer:
+
+  tracer->ops->start_span(tracer, "name")
+
+The header <opentelemetry-c-wrapper/define.h> provides the convenience macros
+OTELC_OPS() and OTELC_OPSR() (the latter passes &ptr so the callee can set the
+pointer to NULL on destroy/end):
+
+  OTELC_OPS(tracer, start_span, "name")
+  OTELC_OPSR(span, end)
+
+The typical usage follows this lifecycle:
+
+  1. otelc_init(cfgfile, &err)      - parse the YAML configuration file
+  2. otelc_*_create(&err)           - allocate a signal instance
+  3. instance->ops->start(instance) - start the signal pipeline
+  4. (use the signal)               - create spans, record metrics, logs
+  5. otelc_deinit(...)              - shut down all signals, free memory
+
+The otelc_deinit() function accepts pointers to all three signal types and
+destroys whichever ones are non-NULL:
+
+  otelc_deinit(&tracer, &meter, &logger);
+
+Functions that can fail return OTELC_RET_OK (0) on success or OTELC_RET_ERROR
+(-1) on failure.  Functions that create resources return a pointer on success or
+NULL on failure.
+
+The library also provides several utility types for passing structured data to
+the API:
+
+  * struct otelc_value    - a tagged union for bool, integer, double, and
+                            string values
+  * struct otelc_kv       - a key-value pair (key string + otelc_value)
+  * struct otelc_text_map - a dynamic array of key-value string pairs
+
+Additional utility functions complete the public API:
+
+  * otelc_ext_init()                - register custom malloc/free/thread-ID
+  * otelc_log_set_handler()         - install an SDK diagnostic log callback
+  * otelc_log_set_level()           - set the SDK internal log level
+  * otelc_processor_dropped_count() - query dropped span/log counts
+  * otelc_span_context_create()     - construct a span context from raw IDs
+
+All public headers reside under include/opentelemetry-c-wrapper/.  Including
+<opentelemetry-c-wrapper/include.h> pulls in all of them.
+
+
+6. YAML configuration
+------------------------------------------------------------------------------
+
+The library is configured through a YAML file whose path is passed to the
+otelc_init() function.  The file contains the following top-level sections:
+
+  * exporters  - define where telemetry data is sent (OTLP file, gRPC, HTTP,
+                 ostream, memory, Zipkin, Elasticsearch)
+  * readers    - configure periodic metric collection intervals
+  * samplers   - control trace sampling strategy (always_on, always_off,
+                 trace_id_ratio_based, parent_based)
+  * processors - define how telemetry is batched before export (batch or single)
+  * providers  - set resource attributes (service name, version, namespace)
+  * signals    - tie the above components together per signal type
+
+The 'signals' section is the central binding point.  Each signal -- traces,
+metrics, or logs -- references the components it needs.  Traces use exporters,
+samplers, processors, and a provider.  Metrics use exporters, readers, and a
+provider.  Logs use exporters, processors, and a provider.  For all three
+signals, exporters (and processors/readers) accept either a single name or a
+YAML list of names; when a list is given, each pair forms a separate pipeline
+within the same provider.
+
+Here is a minimal configuration that exports traces to stdout:
+
+  exporters:
+    my_exporter:
+      type:     ostream
+      filename: /dev/stdout
+
+  processors:
+    my_processor:
+      type: single
+
+  samplers:
+    my_sampler:
+      type: always_on
+
+  providers:
+    my_provider:
+      resources:
+        - service.name: "my-service"
+
+  signals:
+    traces:
+      scope_name: "my-application"
+      exporters:  my_exporter
+      samplers:   my_sampler
+      processors: my_processor
+      providers:  my_provider
+
+A complete configuration covering all three signals and multiple exporter types
+can be found in the file test/otel-cfg.yml.
+
+
+7. Tracing example
+------------------------------------------------------------------------------
+
+Here is a simple example demonstrating how to use the C wrapper library to
+create a tracer, start a span, and export it.
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <opentelemetry-c-wrapper/include.h>
+
+int main(int argc, char **argv)
+{
+    struct otelc_tracer *tracer;
+    struct otelc_span   *span;
+    char                *err = NULL;
+
+    /* Initialize the library */
+    if (otelc_init("otel-cfg.yml", &err) != OTELC_RET_OK) {
+        fprintf(stderr, "Failed to init: %s\n", err);
+        free(err);
+        return 1;
+    }
+
+    /* Create and start a tracer */
+    tracer = otelc_tracer_create(&err);
+    if (tracer == NULL) {
+        fprintf(stderr, "Failed to create tracer: %s\n", err);
+        free(err);
+        otelc_deinit(NULL, NULL, NULL);
+        return 1;
+    }
+
+    if (tracer->ops->start(tracer) != OTELC_RET_OK) {
+        fprintf(stderr, "Failed to start tracer\n");
+        otelc_deinit(&tracer, NULL, NULL);
+        return 1;
+    }
+
+    /* Start a new span */
+    span = tracer->ops->start_span(tracer, "my-operation");
+    if (span == NULL) {
+        fprintf(stderr, "Failed to start span\n");
+        otelc_deinit(&tracer, NULL, NULL);
+        return 1;
+    }
+
+    /* ... perform work ... */
+
+    /* End the span */
+    span->ops->end(&span);
+
+    /* Clean up */
+    otelc_deinit(&tracer, NULL, NULL);
+
+    return 0;
+}
+```
+
+
+8. Metrics example
+------------------------------------------------------------------------------
+
+Here is an example showing how to create a counter instrument and record a
+measurement.
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <opentelemetry-c-wrapper/include.h>
+
+int main(int argc, char **argv)
+{
+    struct otelc_meter *meter;
+    struct otelc_value  value;
+    char               *err = NULL;
+    int64_t             counter_id;
+
+    /* Initialize the library */
+    if (otelc_init("otel-cfg.yml", &err) != OTELC_RET_OK) {
+        fprintf(stderr, "Failed to init: %s\n", err);
+        free(err);
+        return 1;
+    }
+
+    /* Create and start a meter */
+    meter = otelc_meter_create(&err);
+    if (meter == NULL) {
+        fprintf(stderr, "Failed to create meter: %s\n", err);
+        free(err);
+        otelc_deinit(NULL, NULL, NULL);
+        return 1;
+    }
+
+    if (meter->ops->start(meter) != OTELC_RET_OK) {
+        fprintf(stderr, "Failed to start meter\n");
+        otelc_deinit(NULL, &meter, NULL);
+        return 1;
+    }
+
+    /* Create a counter instrument */
+    counter_id = meter->ops->create_instrument(meter,
+        "requests", "Total request count", "1",
+        OTELC_METRIC_INSTRUMENT_COUNTER_UINT64, NULL);
+    if (counter_id == OTELC_RET_ERROR) {
+        fprintf(stderr, "Failed to create instrument\n");
+        otelc_deinit(NULL, &meter, NULL);
+        return 1;
+    }
+
+    /* Record a measurement */
+    value.u_type         = OTELC_VALUE_UINT64;
+    value.u.value_uint64 = 1;
+    meter->ops->update_instrument(meter, counter_id, &value);
+
+    /* Clean up */
+    otelc_deinit(NULL, &meter, NULL);
+
+    return 0;
+}
+```
+
+
+9. Logging example
+------------------------------------------------------------------------------
+
+Here is an example showing how to emit a structured log record.
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <opentelemetry-c-wrapper/include.h>
+
+int main(int argc, char **argv)
+{
+    struct otelc_logger *logger;
+    char                *err = NULL;
+
+    /* Initialize the library */
+    if (otelc_init("otel-cfg.yml", &err) != OTELC_RET_OK) {
+        fprintf(stderr, "Failed to init: %s\n", err);
+        free(err);
+        return 1;
+    }
+
+    /* Create and start a logger */
+    logger = otelc_logger_create(&err);
+    if (logger == NULL) {
+        fprintf(stderr, "Failed to create logger: %s\n", err);
+        free(err);
+        otelc_deinit(NULL, NULL, NULL);
+        return 1;
+    }
+
+    if (logger->ops->start(logger) != OTELC_RET_OK) {
+        fprintf(stderr, "Failed to start logger\n");
+        otelc_deinit(NULL, NULL, &logger);
+        return 1;
+    }
+
+    /* Emit a log record */
+    logger->ops->log_span(logger, OTELC_LOG_SEVERITY_INFO,
+        0, NULL, NULL, NULL, NULL, 0,
+        "Application started successfully");
+
+    /* Clean up */
+    otelc_deinit(NULL, NULL, &logger);
+
+    return 0;
+}
+```
+
+
+10. Thread safety
+------------------------------------------------------------------------------
+
+The library is designed for multi-threaded use.  All data-plane operations
+(creating spans, recording metrics, emitting logs) are thread-safe and can be
+called concurrently from any number of threads.
+
+Spans are stored in a sharded map with 64 independently-locked shards,
+distributing contention across threads.  Metric instrument operations are
+serialized through a single lock, as the instrument set is typically small and
+rarely modified after startup.
+
+Lifecycle operations -- otelc_init(), otelc_*_create(), start(), destroy(), and
+otelc_deinit() -- must be called from a single thread, typically the main
+thread.  These are intended to run during program startup and shutdown, not
+concurrently with data-plane operations.
+
+Each thread is identified internally by a numeric ID.  Applications can provide
+a custom thread-ID function via otelc_ext_init() before calling otelc_init();
+otherwise, the library uses its own internal assignment.
+
+
+11. Known bugs and limitations
+------------------------------------------------------------------------------
+
+Currently, not all categories of telemetry (referred to as 'signals' in OTel
+terminology) are supported by this library.  Baggage, traces, metrics, and logs
+are supported at the moment.  Span events are supported as part of the traces
+signal.  As for profiles, the signal is still experimental in the OTel
+specification and is not supported by this library.
+
+The OTel C++ SDK batch processors (BatchSpanProcessor for traces and
+BatchLogRecordProcessor for logs) use bounded, lock-free circular buffers to
+queue telemetry data for export.  When the application produces spans or log
+records faster than the export thread can drain them, the buffer fills up and
+subsequent items are silently dropped.  Several factors influence whether drops
+occur:
+
+  * Production rate vs. export throughput: High-concurrency workloads with
+    many threads generating telemetry can overwhelm the export thread,
+    especially when the exporter involves network I/O (OTLP/gRPC, OTLP/HTTP)
+    rather than a local sink.
+
+  * Batch processor configuration: The max_queue_size parameter controls the
+    circular buffer capacity (default 2048).  Larger values absorb longer
+    bursts but consume more memory.  The schedule_delay parameter controls
+    how frequently the export thread wakes up to drain the buffer; shorter
+    intervals reduce the chance of overflow but increase CPU overhead.
+
+  * Export latency: Slow or unreachable collectors stall the export thread,
+    preventing it from freeing buffer slots.  Under sustained load this
+    quickly leads to drops.
+
+Drops are an expected part of the SDK's back-pressure mechanism -- they keep the
+application from blocking or running out of memory.  The wrapper library exposes
+otelc_processor_dropped_count(type) (type 0 for traces, 1 for logs) so that
+callers can monitor drop rates and adjust batch processor settings or collector
+capacity accordingly.
+
+Additional limitations:
+  * Span lifecycle: Spans are stored in a shared map accessible from any thread.
+    It is the caller's responsibility to end all spans before destroying the
+    tracer.  If any spans remain when the tracer is destroyed, they are ended
+    implicitly.
+  * ABI compatibility: Some features (like `AddLink`) depend on the specific
+    ABI version of the underlying C++ OpenTelemetry library.  The
+    `start_span_with_options` operation provides an alternative for establishing
+    span links at creation time that works on all ABI versions.
+  * Drop reporting asymmetry in the C++ SDK: The BatchSpanProcessor logs a
+    warning to stderr ("BatchSpanProcessor queue is full - dropping span.")
+    when a span is dropped, but the BatchLogRecordProcessor silently
+    discards log records without any diagnostic output.  The wrapper library
+    provides otelc_processor_dropped_count() to query drop counts for both
+    signal types uniformly.

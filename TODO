@@ -1,0 +1,78 @@
+OpenTelemetry C Wrapper TODO
+============================
+
+Implemented:
+------------
+- Traces:
+  - Core API for span management (start, end, attributes, status, events,
+    links).
+  - Span links at creation time (supported by all ABI versions, unlike AddLink
+    which requires ABI version 2).
+  - RecordException: records an exception event on a span following the
+    OpenTelemetry semantic conventions (exception.type, exception.message,
+    exception.stacktrace).
+  - Baggage propagation (set, get, variadic and array-based variants).
+  - Context propagation (TextMap and HTTP headers).
+  - Samplers: AlwaysOn, AlwaysOff, TraceIdRatioBased, and ParentBased
+    with per-state delegates (remote_sampled, remote_not_sampled,
+    local_sampled, local_not_sampled).
+  - Processors: Simple and Batch span processors.
+  - TracerProvider with multiple processors/exporters (via YAML list
+    configuration).
+  - Exporters: OTLP (HTTP/gRPC/File), OStream, Zipkin, In-Memory.
+- Metrics:
+  - Synchronous and Observable instruments (int64/double).
+  - Metric attributes and Views (custom aggregation/boundaries).
+  - Instrument retrieval by name and type.
+  - Periodic exporting metric reader.
+  - Multiple metric readers/exporters via YAML list configuration
+    (MeterProvider with AddMetricReader() for each exporter-reader pair).
+  - Enabled check (returns true when the meter is valid; the C++ SDK does not
+    yet provide Meter::Enabled()).
+  - Exporters: OTLP (HTTP/gRPC/File), OStream, In-Memory.
+- Logs:
+  - Basic logging API with severity, timestamps, and span correlation.
+  - Non-string log body types via otelc_value (int, double, bool, string).
+  - Simple and Batch log record processors.
+  - LoggerProvider with multiple processors/exporters (via YAML list
+    configuration).
+  - Exporters: OTLP (HTTP/gRPC/File), OStream, Elasticsearch.
+- General:
+  - YAML-based SDK configuration for all signals.
+  - Resource attribute detection and configuration.
+
+Planned (Traces):
+-----------------
+- Baggage entry metadata (the C++ SDK Baggage::Set() does not yet accept a
+  metadata parameter; pending upstream support).
+- SpanLimits configuration (max attributes, events, links per span) via
+  YAML (requires SpanLimits header in the C++ SDK build).
+- B3 propagator for Zipkin-style trace propagation (requires
+  B3Propagator header in the C++ SDK build).
+- Jaeger propagator for Uber-style trace headers (requires
+  JaegerPropagator header in the C++ SDK build).
+- Custom ID generators via C callback bridge.
+- Custom samplers via C callback bridge.
+- Expose Span Link retrieval if supported by OTel API.
+
+Planned (Metrics):
+------------------
+- Support Exemplars and Advice if ABI version allows.
+- Support delta aggregation temporality configuration.
+- View attribute filter (requires FilteringAttributesProcessor in the
+  C++ SDK build).
+- View cardinality limits (requires CardinalityLimit support in the
+  C++ SDK build).
+- Batch observable callbacks (multi-instrument observation).
+
+Planned (Logs):
+---------------
+- Support complex log body types (Map/Array) via otelc_value.
+- LogRecordLimits configuration (max attributes per log record) via
+  YAML (requires LogRecordLimits header in the C++ SDK build).
+
+Planned (General):
+------------------
+- Provide a way to programmatically configure the SDK without YAML.
+- Enhance documentation with more examples for metrics and logs.
+- Improve error handling and reporting for YAML configuration errors.
