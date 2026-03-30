@@ -668,7 +668,7 @@ endif()
 function(add_wrapper_executable _target)
     cmake_parse_arguments(_ARG "CXX" "" "SOURCES" ${ARGN})
 
-    add_executable(${_target} ${_ARG_SOURCES})
+    add_executable(${_target} EXCLUDE_FROM_ALL ${_ARG_SOURCES})
 
     target_include_directories(${_target} PRIVATE
         "${CMAKE_CURRENT_BINARY_DIR}"
@@ -739,6 +739,15 @@ foreach(_yml IN LISTS _test_yml_files)
     configure_file("${_yml}" "${CMAKE_CURRENT_BINARY_DIR}" COPYONLY)
 endforeach()
 
+## Custom "test" target -- builds all test programs on demand.
+add_custom_target(test DEPENDS
+    ${_test_bin_name}
+    test-tracer${_test_suffix}
+    test-meter${_test_suffix}
+    test-logger${_test_suffix}
+    test-yaml${_test_suffix}
+)
+
 ## ---------------------------------------------------------------------------
 ## Installation RPATH
 ## ---------------------------------------------------------------------------
@@ -789,7 +798,7 @@ install(FILES
 
 ## Installed test binary
 install(TARGETS ${_test_bin_name}
-    RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
+    RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}" OPTIONAL
 )
 
 ## pkg-config

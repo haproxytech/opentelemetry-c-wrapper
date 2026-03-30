@@ -10,5 +10,9 @@ doc_DATA        = AUTHORS COPYING ChangeLog INSTALL LICENSE MAINTAINERS NEWS REA
 LIBTOOL_DEPS    = @LIBTOOL_DEPS@
 libtool: $(LIBTOOL_DEPS)
 	$(SHELL) ./config.status libtool
+
+.PHONY: test
+test:
+	$(MAKE) check
 ##
 ## Makefile.am ends here
