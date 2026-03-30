@@ -1,0 +1,177 @@
+      ---------------------------------------------------------------
+       Sharded map vs. direct void pointer for span handle management
+      ---------------------------------------------------------------
+
+
+1. Background
+------------------------------------------------------------------------------
+
+Two approaches were evaluated for managing span and span_context handles in the
+C wrapper layer: a sharded map (otel_handle<T>) indexed by int64_t keys, and a
+direct void pointer stored in the C-facing structure.  The void pointer approach
+was implemented in the void_ptr branch and later removed from the master branch
+after benchmarks showed no significant acceleration.
+
+
+2. Sharded map approach (current)
+------------------------------------------------------------------------------
+
+Each span and span_context is stored in an otel_handle<T> structure consisting
+of 64 independently-locked shards.  Each shard contains an
+std::unordered_map<int64_t, T> protected by its own mutex (when thread-shared
+handles are enabled).  The C-facing structures hold an int64_t idx field used
+as a map key.
+
+Operations:
+
+  * Creation: a new ID is generated via an atomic increment, a C++ handle
+    object is allocated, the per-shard mutex is acquired, and the handle is
+    inserted into the corresponding shard's map.  Peak size is tracked with
+    a compare-and-swap loop.
+
+  * Lookup: every span operation (get_id, is_recording, set_status, add_event,
+    set_attribute, inject_context, etc.) requires computing the shard index,
+    acquiring the per-shard mutex, and performing a hash map lookup via
+    otel_map_find().
+
+  * Destruction: the per-shard mutex is acquired, the C++ handle is looked up
+    and deleted, and the entry is erased from the map.
+
+  * Cleanup: on tracer destruction, for_each_locked() iterates over all shards,
+    acquires each mutex, invokes a callback on every entry, and clears each
+    shard.
+
+Properties:
+
+  * Handle validation -- a lookup on a destroyed or invalid handle returns a
+    default-constructed value (nullptr) rather than causing undefined behavior.
+
+  * Use-after-free protection -- once an entry is erased, subsequent lookups
+    for the same index fail gracefully.
+
+  * Centralized span tracking -- the tracer can enumerate all live spans and
+    force-end orphaned ones during shutdown.
+
+  * Diagnostics -- atomic counters (peak_size, alloc_fail_cnt, erase_cnt,
+    destroy_cnt) provide visibility into the span lifecycle.
+
+  * Thread safety -- per-shard mutexes serialize concurrent access within each
+    shard; 64 shards keep contention low.
+
+
+3. Direct void pointer approach (evaluated and discarded)
+------------------------------------------------------------------------------
+
+The C-facing structures hold a void *handle field pointing directly to the C++
+handle object.  No map structures are involved for spans or contexts.
+Statistics are tracked in a standalone structure with atomic counters only.
+
+Operations:
+
+  * Creation: a C++ handle object is allocated and its address is stored
+    directly in the void *handle field.  No map insertion, no mutex, no
+    try-catch.
+
+  * Lookup: a simple static_cast from the void pointer to the handle type.
+    Zero overhead -- just a pointer dereference and type cast.
+
+  * Destruction: the handle is deleted via the stored pointer and the C
+    structure is freed.  No lock required.
+
+Properties:
+
+  * No handle validation -- if a stale or freed pointer is used, the result is
+    undefined behavior (use-after-free, corruption, crash).
+
+  * No centralized tracking -- there is no way to enumerate live spans or
+    force-end orphaned ones during tracer shutdown.
+
+  * Lost diagnostics -- peak_size tracking is removed entirely; only basic
+    atomic counters (id, alloc_fail_cnt, destroy_cnt) remain.
+
+  * Thread safety is delegated entirely to the C++ shared pointers inside the
+    handle objects; no additional synchronization is provided.
+
+
+4. Comparison
+------------------------------------------------------------------------------
+
+  Aspect                  Sharded map               Void pointer
+  ----------------------------------------------------------------------------
+  Lookup cost             O(1) hash + bucket        O(1) pointer dereference
+                          search + mutex lock
+
+  Memory overhead         64 shard structures,      Negligible
+                          each with mutex and
+                          unordered_map buckets
+
+  Per-operation locking   Per-shard mutex           None
+
+  Handle validation       Graceful nullptr on       Undefined behavior on
+                          invalid lookup            stale pointer
+
+  Use-after-free          Detected (lookup          Silent corruption or crash
+                          returns nullptr)
+
+  Span enumeration        for_each_locked()         Not possible
+                          iterates all shards
+
+  Diagnostics             peak_size, erase_cnt,     id, alloc_fail_cnt,
+                          destroy_cnt,              destroy_cnt only
+                          alloc_fail_cnt
+
+  Creation complexity     Atomic ID + map           Atomic ID + pointer
+                          insert + try-catch        assignment
+                          rollback
+
+  Tracer cleanup          Iterates and              No cleanup of orphaned
+                          force-ends all            spans
+                          orphaned spans
+
+
+5. Benchmark results
+------------------------------------------------------------------------------
+
+Both approaches were benchmarked using the test/otel-c-wrapper-test program
+with thread counts ranging from 1 to 1024.  Each run lasted 60 seconds.
+
+The test was performed on Linux, kernel 6.14.0-123037-tuxedo, processor
+AMD Ryzen 7 8845HS.  The total operation count (sum across all workers)
+is reported below.
+
+    Threads   Sharded map   Void pointer   Difference
+  -----------------------------------------------------
+          1       2405136        2434617    +1.2%
+          2       4521499        4714100    +4.3%
+          4       7966231        8268413    +3.8%
+          8      10022932       10487896    +4.6%
+         16       9295341        9831321    +5.8%
+         32       8071040        8683639    +7.6%
+         64       8141528        8762907    +7.6%
+        128       7843873        9259244   +18.0%
+        256       7149666        8965169   +25.4%
+        512       6420415        7564459   +17.8%
+       1024       5312592        5972378   +12.4%
+
+The void pointer approach shows a modest advantage at low thread counts (1-5%)
+that grows with higher concurrency, peaking at +25.4% with 256 threads.  Beyond
+that point both approaches degrade as the system becomes oversubscribed, and
+the gap narrows again.
+
+
+6. Conclusion
+------------------------------------------------------------------------------
+
+Benchmarks showed that the void pointer approach is somewhat faster when using
+a higher number of threads, as it eliminates per-shard mutex contention
+entirely.  However, the speedup is not significant enough to justify its use
+in the wrapper library.
+
+The sharded map is the better engineering choice.  It provides handle
+validation, use-after-free protection, centralized span tracking for cleanup,
+and diagnostic counters -- all of which contribute to safer, more observable,
+and more debuggable code.  The void pointer approach trades these properties
+away for a marginal speedup that does not outweigh the loss in safety and
+diagnostics.
+
+The sharded map remains the recommended and current implementation.
