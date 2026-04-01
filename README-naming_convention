@@ -1,0 +1,124 @@
+      -------------------------------------------------------------------
+       Naming convention for variadic and array-based function variants
+      -------------------------------------------------------------------
+
+
+1. Overview
+------------------------------------------------------------------------------
+
+Functions that accept a variable number of arguments follow a consistent naming
+convention based on two dimensions:
+
+  * Argument structure -- whether the function takes raw key/value pairs or
+    otelc_kv structs.
+
+  * Multiplicity mechanism -- whether multiple items are passed as a variadic
+    NULL-terminated argument list, an array with an explicit count, or a
+    va_list.
+
+
+2. Suffix conventions
+------------------------------------------------------------------------------
+
+  _var     Variadic (NULL-terminated).  The function takes one or more leading
+           arguments of the item type, followed by additional items of the same
+           type as variadic arguments, terminated by NULL.
+
+  _kv_var  Variadic of otelc_kv structs (NULL-terminated).  Same as _var, but
+           each variadic argument is a pointer to an otelc_kv struct rather
+           than raw key/value pairs.
+
+  _kv_n    Array with explicit count.  The function takes a pointer to an array
+           of otelc_kv structs and a size_t length parameter.
+
+  _v       va_list variant (internal).  Mirrors a variadic function but accepts
+           a va_list instead of "...".  Follows the C standard library
+           convention (printf/vprintf, sprintf/vsprintf).
+
+  (none)   Printf-style variadic functions that take a format string followed
+           by "..." receive no special suffix.
+
+
+3. Span API function families
+------------------------------------------------------------------------------
+
+The span API demonstrates all three public variants for each operation:
+
+  set_baggage:
+
+    set_baggage_var(span, key, value, ...)
+    set_baggage_kv_var(span, kv, ...)
+    set_baggage_kv_n(span, kv, kv_len)
+
+  set_attribute:
+
+    set_attribute_var(span, key, value, ...)
+    set_attribute_kv_var(span, kv, ...)
+    set_attribute_kv_n(span, kv, kv_len)
+
+  add_event:
+
+    add_event_var(span, name, ts, key, value, ...)
+    add_event_kv_var(span, name, ts, kv, ...)
+    add_event_kv_n(span, name, ts, kv, kv_len)
+
+  get_baggage:
+
+    get_baggage_var(span, key, ...)
+
+The _var variants accept raw key/value pairs as alternating arguments.  The
+_kv_var variants accept otelc_kv struct pointers.  The _kv_n variants accept
+a fixed-size array with a count parameter.
+
+
+4. Internal va_list variants
+------------------------------------------------------------------------------
+
+Internal (static) helper functions use the _v suffix to accept a va_list,
+allowing the variadic public function to delegate parsing:
+
+  yaml_get_node(...)    ->  yaml_get_node_v(..., va_list ap)
+  otel_logger_log(...)  ->  otel_logger_log_v(..., va_list ap)
+
+Both the logger and the YAML module use the _v suffix, consistent with the
+examples above.
+
+
+5. Printf-style variadic functions
+------------------------------------------------------------------------------
+
+Functions that accept a printf-style format string followed by variadic
+arguments receive no naming suffix:
+
+  otelc_sprintf(char **ret, const char *format, ...)
+  logger->ops->log(..., const char *format, ...)
+  logger->ops->log_span(..., const char *format, ...)
+
+
+6. Parameter naming for otelc_kv arrays
+------------------------------------------------------------------------------
+
+When a function accepts an otelc_kv pointer (with or without a count), the
+parameters must be named kv and kv_len:
+
+  const struct otelc_kv *kv, size_t kv_len
+
+This applies uniformly across the span interface: set_baggage_kv_n,
+set_attribute_kv_n, add_event_kv_n, add_link, and record_exception all use
+kv/kv_len.
+
+The logger interface uses attr/attr_len for its key-value array parameters.
+This is acceptable because the logger operates in a different domain (log
+record attributes) and is internally consistent.
+
+
+7. Summary table
+------------------------------------------------------------------------------
+
+  Pattern              Suffix    Last parameters
+  -------------------  --------  --------------------------
+  Raw key/value pairs  _var      ..., key, value, ..., NULL
+  otelc_kv structs     _kv_var   ..., kv, ..., NULL
+  Array + count        _kv_n     ..., kv, kv_len
+  va_list helper       _v        ..., va_list ap
+  Printf-style         (none)    ..., format, ...
