@@ -1,0 +1,192 @@
+      -------------------------------------------------------------------
+       Compile-time configuration macros (include/configuration.h)
+      -------------------------------------------------------------------
+
+
+1. Overview
+------------------------------------------------------------------------------
+
+The header include/configuration.h defines compile-time macros that control the
+library's threading model, context propagation strategy, provider architecture,
+and optional validation.  The macros under the OTELC_USER_CONFIG guard can be
+overridden by defining OTELC_USER_CONFIG before the header is included and
+supplying a fully custom set of definitions.
+
+When OTELC_USER_CONFIG is not defined, the following defaults apply:
+
+  Macro                                Default
+  -----------------------------------------------------------------------
+  OTELC_USE_THREAD_SHARED_HANDLE       defined
+  OTELC_USE_STATIC_HANDLE              undefined
+  OTELC_USE_COMPOSITE_PROPAGATOR       defined
+  OTELC_USE_MULTIPLE_PROCESSORS        defined
+  OTELC_USE_RUNTIME_CONTEXT            undefined
+
+One additional macro, OTELC_USE_INSTRUMENT_VALIDATOR, is defined outside the
+OTELC_USER_CONFIG block and is always undefined.
+
+
+2. OTELC_USE_THREAD_SHARED_HANDLE
+------------------------------------------------------------------------------
+
+Default: defined.
+
+Selects between a shared-handle model and a thread-local model for span and
+span context storage.
+
+When defined, span and span context handles are stored in global structures
+shared across all threads.  Each structure is a sharded map with 64
+independently-locked shards.  Every span operation (lookup, insert, erase)
+acquires the per-shard mutex for the shard selected by the handle's index.
+The THREAD_LOCAL macro expands to nothing, and OTEL_HANDLE_SHARED is true.
+
+When undefined, span and span context handles are thread-local.  Each thread
+owns its own handle map, and no locking is needed.  The THREAD_LOCAL macro
+expands to the thread_local keyword, OTEL_HANDLE_SHARED is false, and
+OTEL_LOCK_TRACER() compiles to a no-op.
+
+The shared-handle model is required for applications where one thread may
+access spans created by another (e.g. a span started on an accept thread and
+ended on a worker thread).  The thread-local model eliminates all lock overhead
+but restricts each span to the thread that created it.
+
+
+3. OTELC_USE_STATIC_HANDLE
+------------------------------------------------------------------------------
+
+Default: undefined.
+
+Selects between statically allocated and dynamically allocated handle maps.
+
+When defined, handle maps are declared as static (or thread-local) objects
+that the C++ runtime constructs automatically.  The OTEL_HANDLE(h, m) macro
+expands to ((h).m), accessing the handle via the dot operator.  The
+otel_tracer_handle_init() function is compiled out entirely because the
+handles already exist.
+
+When undefined, handle maps are declared as pointers initialized to nullptr.
+The OTEL_HANDLE(h, m) macro expands to ((h)->m), accessing the handle via
+the arrow operator.  The otel_tracer_handle_init() function allocates both
+otel_span and otel_span_context handle maps on first use via new(std::nothrow),
+and is called from otel_tracer_start_span_with_options() and
+otel_tracer_extract_*() before any handle access.
+
+The dynamic model avoids constructing handle maps for threads that never create
+spans.  The static model avoids the null-pointer check and the allocation call
+on first use, at the cost of constructing the handle map unconditionally.
+
+
+4. OTELC_USE_COMPOSITE_PROPAGATOR
+------------------------------------------------------------------------------
+
+Default: defined.
+
+Selects between a composite propagator that handles both trace context and
+baggage, and an HTTP-only propagator that requires separate baggage handling.
+
+When defined, the tracer's start() function creates an HttpTraceContext
+propagator and a BaggagePropagator, combines them into a CompositePropagator,
+and registers it as the global propagator.  A single Inject() or Extract()
+call then handles both W3C traceparent/tracestate headers and the baggage
+header transparently.
+
+When undefined, only an HttpTraceContext propagator is registered.  Baggage
+must be handled explicitly: during extraction, a separate BaggagePropagator
+is instantiated and its Extract() is called to merge baggage into the context.
+During injection, the baggage content is read from the context and written to
+the carrier as an additional header via Baggage::ToHeader().
+
+
+5. OTELC_USE_MULTIPLE_PROCESSORS
+------------------------------------------------------------------------------
+
+Default: defined.
+
+Selects between a multi-processor provider architecture and a single-processor
+provider architecture.
+
+When defined, the tracer provider is created via TracerContext, which accepts
+the full vector of span processors.  All processors configured in the YAML
+file are active simultaneously, allowing telemetry to be exported to multiple
+backends in parallel (e.g. OTLP/gRPC and OStream at the same time).  The
+logger provider is created with the full vector of log record processors in
+the same way.
+
+When undefined, only the first processor in the vector is passed to the provider
+constructor.  Any additional processors configured in YAML are silently ignored,
+resulting in a single export pipeline per signal.
+
+
+6. OTELC_USE_RUNTIME_CONTEXT
+------------------------------------------------------------------------------
+
+Default: undefined.
+
+Enables the OTel RuntimeContext mechanism for implicit parent span lookup,
+carrier context retrieval, and metric exemplar correlation.
+
+When defined, each span handle includes an additional scope field
+(otel_nostd::shared_ptr<otel_trace::Scope>) that is created alongside the
+span and pushes it into the OTel RuntimeContext as the active span.  This
+has the following effects:
+
+  * Parent span lookup: when start_span_with_options() is called without an
+    explicit parent_span or parent_context, the current context is obtained
+    from RuntimeContext::GetCurrent() instead of constructing an empty context.
+    New spans automatically become children of the currently active span.
+
+  * Carrier extraction: extract_text_map() and extract_http_headers() use
+    RuntimeContext::GetCurrent() as the base context for propagator extraction
+    instead of an empty context.
+
+  * Metric context: update_instrument() and update_instrument_kv_n() pass
+    RuntimeContext::GetCurrent() to the instrument's Add/Record call, enabling
+    exemplar correlation with the active span.
+
+When undefined, no scope is stored and RuntimeContext is not used.  An empty
+otel_context::Context{} is substituted in all three cases above.  Parent-child
+relationships must be established explicitly by passing parent_span or
+parent_context to start_span_with_options().
+
+This macro is undefined by default because the wrapper library's primary use
+case (the HAProxy OTel filter) manages parent-child relationships explicitly
+and does not rely on implicit context propagation.
+
+
+7. OTELC_USE_INSTRUMENT_VALIDATOR
+------------------------------------------------------------------------------
+
+Default: undefined (not user-configurable; defined outside OTELC_USER_CONFIG).
+
+Enables instrument metadata validation when creating metric instruments.
+
+When defined, otel_meter_create_instrument() calls
+InstrumentMetaDataValidator::ValidateName(),
+InstrumentMetaDataValidator::ValidateUnit(), and
+InstrumentMetaDataValidator::ValidateDescription() before creating each
+instrument.  These functions compile two std::regex objects on every call.
+
+When undefined, the validation is skipped entirely and instrument names, units,
+and descriptions are passed through without checking.
+
+This macro is intentionally kept undefined because the std::regex construction
+on every otel_meter_create_instrument() call causes a severe performance
+penalty.  It is provided solely for development-time validation and should not
+be enabled in production builds.
+
+
+8. Custom configuration
+------------------------------------------------------------------------------
+
+To override the defaults, define OTELC_USER_CONFIG before configuration.h is
+included (typically via a compiler flag) and provide the desired set of macro
+definitions:
+
+  CXXFLAGS="-DOTELC_USER_CONFIG               \
+            -DOTELC_USE_THREAD_SHARED_HANDLE  \
+            -DOTELC_USE_STATIC_HANDLE         \
+            -DOTELC_USE_COMPOSITE_PROPAGATOR"
+
+Any macro not explicitly defined in the custom configuration is left undefined.
+The OTELC_USER_CONFIG guard prevents the default block from executing, giving
+full control over which features are enabled.
