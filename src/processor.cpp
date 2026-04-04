@@ -335,23 +335,23 @@ int otel_tracer_processor_create(struct otelc_tracer *tracer, std::unique_ptr<ot
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
 	else if (rc == 0) {
 		if (name != nullptr)
-			OTEL_TRACER_ERETURN_INT("'%s': OpenTelemetry traces processor type not specified", name);
+			OTEL_TRACER_RETURN_INT("'%s': OpenTelemetry traces processor type not specified", name);
 		else
-			OTEL_TRACER_ERETURN_INT("OpenTelemetry traces processor type not specified");
+			OTEL_TRACER_RETURN_INT("OpenTelemetry traces processor type not specified");
 	}
 	else if (strcasecmp(type, "batch") == 0)
 		flag_batch = true;
 	else if (strcasecmp(type, "single") == 0)
 		flag_batch = false;
 	else if (*type != '\0')
-		OTEL_TRACER_ERETURN_INT("'%s': invalid OpenTelemetry traces processor type specified", type);
+		OTEL_TRACER_RETURN_INT("'%s': invalid OpenTelemetry traces processor type specified", type);
 
 	if (flag_batch) {
 		otel_sdk_trace::BatchSpanProcessorOptions        options{};
 		otel_sdk_trace::BatchSpanProcessorRuntimeOptions rt_options{};
 
 		if (max_queue_size < max_export_batch_size)
-			OTEL_TRACER_ERETURN_INT("Maximum buffer/queue size must be greater than or equal to maximum batch size: %" PRId64 " < %" PRId64, max_queue_size, max_export_batch_size);
+			OTEL_TRACER_RETURN_INT("Maximum buffer/queue size must be greater than or equal to maximum batch size: %" PRId64 " < %" PRId64, max_queue_size, max_export_batch_size);
 
 		/***
 		 * Configuration parameters are set here.
@@ -382,7 +382,7 @@ int otel_tracer_processor_create(struct otelc_tracer *tracer, std::unique_ptr<ot
 	}
 
 	if (OTEL_NULL(processor_maybe))
-		OTEL_TRACER_ERETURN_INT("Unable to create OpenTelemetry traces processor");
+		OTEL_TRACER_RETURN_INT("Unable to create OpenTelemetry traces processor");
 
 	processor = std::move(processor_maybe);
 
@@ -449,23 +449,23 @@ int otel_logger_processor_create(struct otelc_logger *logger, std::unique_ptr<ot
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
 	else if (rc == 0) {
 		if (name != nullptr)
-			OTEL_LOGGER_ERETURN_INT("'%s': OpenTelemetry logs processor type not specified", name);
+			OTEL_LOGGER_RETURN_INT("'%s': OpenTelemetry logs processor type not specified", name);
 		else
-			OTEL_LOGGER_ERETURN_INT("OpenTelemetry logs processor type not specified");
+			OTEL_LOGGER_RETURN_INT("OpenTelemetry logs processor type not specified");
 	}
 	else if (strcasecmp(type, "batch") == 0)
 		flag_batch = true;
 	else if (strcasecmp(type, "single") == 0)
 		flag_batch = false;
 	else if (*type != '\0')
-		OTEL_LOGGER_ERETURN_INT("'%s': invalid OpenTelemetry logs processor type specified", type);
+		OTEL_LOGGER_RETURN_INT("'%s': invalid OpenTelemetry logs processor type specified", type);
 
 	if (flag_batch) {
 		otel_sdk_logs::BatchLogRecordProcessorOptions        options{};
 		otel_sdk_logs::BatchLogRecordProcessorRuntimeOptions rt_options{};
 
 		if (max_queue_size < max_export_batch_size)
-			OTEL_LOGGER_ERETURN_INT("Maximum buffer/queue size must be greater than or equal to maximum batch size: %" PRId64 " < %" PRId64, max_queue_size, max_export_batch_size);
+			OTEL_LOGGER_RETURN_INT("Maximum buffer/queue size must be greater than or equal to maximum batch size: %" PRId64 " < %" PRId64, max_queue_size, max_export_batch_size);
 
 		/***
 		 * Configuration parameters are set here.
@@ -497,7 +497,7 @@ int otel_logger_processor_create(struct otelc_logger *logger, std::unique_ptr<ot
 	}
 
 	if (OTEL_NULL(processor_maybe))
-		OTEL_LOGGER_ERETURN_INT("Unable to create OpenTelemetry logs processor");
+		OTEL_LOGGER_RETURN_INT("Unable to create OpenTelemetry logs processor");
 
 	processor = std::move(processor_maybe);
 

@@ -137,9 +137,9 @@ int otel_resource_create(const char *desc, const char *path, otel_sdk_resource::
 	OTELC_FUNC("\"%s\", \"%s\", <resource>, %p:%p", OTELC_STR_ARG(desc), OTELC_STR_ARG(path), OTELC_DPTR_ARGS(err));
 
 	if (OTEL_NULL(desc))
-		OTEL_ERETURN_INT("Resource description not specified");
+		OTEL_ERR_RETURN_INT("Resource description not specified");
 	else if (OTEL_NULL(path))
-		OTEL_ERETURN_INT("Resource path not specified");
+		OTEL_ERR_RETURN_INT("Resource path not specified");
 
 	(void)otel_resource_detector(res_attr);
 
@@ -156,7 +156,7 @@ int otel_resource_create(const char *desc, const char *path, otel_sdk_resource::
 				OTEL_DBG_THROW();
 				emplace_status = res_attr.emplace(std::string{resources->key[i]}, std::string{resources->value[i]});
 			}
-			OTEL_CATCH_ERETURN( , OTEL_ERETURN_INT, "Unable to add resource attribute")
+			OTEL_CATCH_SIGNAL_RETURN( , OTEL_ERR_RETURN_INT, "Unable to add resource attribute")
 
 			if (emplace_status.second)
 				retval++;

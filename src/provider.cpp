@@ -53,14 +53,14 @@ int otel_tracer_provider_create(struct otelc_tracer *tracer, std::vector<std::un
 #ifdef OTELC_USE_MULTIPLE_PROCESSORS
 	auto context_maybe = otel::make_unique_nothrow<otel_sdk_trace::TracerContext>(std::move(processors), std::move(resource), std::move(sampler));
 	if (OTEL_NULL(context_maybe))
-		OTEL_TRACER_ERETURN_INT("Unable to create OpenTelemetry tracer context");
+		OTEL_TRACER_RETURN_INT("Unable to create OpenTelemetry tracer context");
 	auto provider_maybe = otel_nostd::unique_ptr<otel_trace::TracerProvider>(otel::make_unique_nothrow<otel_sdk_trace::TracerProvider>(std::move(context_maybe)).release());
 #else
 	auto provider_maybe = otel_nostd::unique_ptr<otel_trace::TracerProvider>(otel::make_unique_nothrow<otel_sdk_trace::TracerProvider>(std::move(processors[0]), std::move(resource), std::move(sampler)).release());
 #endif /* OTELC_USE_MULTIPLE_PROCESSORS */
 
 	if (OTEL_NULL(provider_maybe))
-		OTEL_TRACER_ERETURN_INT("Unable to create OpenTelemetry tracer provider");
+		OTEL_TRACER_RETURN_INT("Unable to create OpenTelemetry tracer provider");
 
 	provider = std::move(provider_maybe);
 
@@ -96,7 +96,7 @@ int otel_tracer_provider_get(struct otelc_tracer *tracer, otel_nostd::shared_ptr
 
 	auto provider_maybe = otel_trace::Provider::GetTracerProvider();
 	if (OTEL_NULL(provider_maybe))
-		OTEL_TRACER_ERETURN_INT("Unable to get OpenTelemetry tracer provider");
+		OTEL_TRACER_RETURN_INT("Unable to get OpenTelemetry tracer provider");
 
 	provider = std::move(provider_maybe);
 
@@ -186,7 +186,7 @@ int otel_meter_reader_create(struct otelc_meter *meter, std::unique_ptr<otel_sdk
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
 
 	if (export_interval < export_timeout)
-		OTEL_METER_ERETURN_INT("Periodic Exporting Metric Reader: invalid configuration: export_timeout should not exceed export_interval");
+		OTEL_METER_RETURN_INT("Periodic Exporting Metric Reader: invalid configuration: export_timeout should not exceed export_interval");
 
 	options.export_interval_millis = std::chrono::milliseconds(export_interval);
 	options.export_timeout_millis  = std::chrono::milliseconds(export_timeout);
@@ -199,7 +199,7 @@ int otel_meter_reader_create(struct otelc_meter *meter, std::unique_ptr<otel_sdk
 
 	auto reader_maybe = otel::make_unique_nothrow<otel_sdk_metrics::PeriodicExportingMetricReader>(std::move(exporter), options, rt_options);
 	if (OTEL_NULL(reader_maybe))
-		OTEL_METER_ERETURN_INT("Unable to create Periodic Exporting Metric Reader");
+		OTEL_METER_RETURN_INT("Unable to create Periodic Exporting Metric Reader");
 
 	reader = std::move(reader_maybe);
 
@@ -241,10 +241,10 @@ int otel_meter_provider_create(struct otelc_meter *meter, std::vector<std::uniqu
 
 	auto views_maybe = otel::make_unique_nothrow<otel_sdk_metrics::ViewRegistry>();
 	if (OTEL_NULL(views_maybe))
-		OTEL_METER_ERETURN_INT("Unable to create OpenTelemetry meter views");
+		OTEL_METER_RETURN_INT("Unable to create OpenTelemetry meter views");
 	auto provider_maybe = otel::make_shared_nothrow<otel_sdk_metrics::MeterProvider>(std::move(views_maybe), std::move(resource));
 	if (OTEL_NULL(provider_maybe))
-		OTEL_METER_ERETURN_INT("Unable to create OpenTelemetry meter provider");
+		OTEL_METER_RETURN_INT("Unable to create OpenTelemetry meter provider");
 
 	const auto provider_sdk = OTEL_CAST_STATIC_PTR(otel_sdk_metrics::MeterProvider, provider_maybe);
 
@@ -327,13 +327,13 @@ int otel_logger_provider_create(struct otelc_logger *logger, std::vector<std::un
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
 
 	if (processors.empty())
-		OTEL_LOGGER_ERETURN_INT("No OpenTelemetry logs processors configured");
+		OTEL_LOGGER_RETURN_INT("No OpenTelemetry logs processors configured");
 
 #ifdef OTELC_USE_MULTIPLE_PROCESSORS
 #  if 0
 	auto context_maybe = otel::make_unique_nothrow<otel_sdk_logs::LoggerContext>(std::move(processors), std::move(resource));
 	if (OTEL_NULL(context_maybe))
-		OTEL_LOGGER_ERETURN_INT("Unable to create OpenTelemetry logger context");
+		OTEL_LOGGER_RETURN_INT("Unable to create OpenTelemetry logger context");
 	auto provider_maybe = otel::make_shared_nothrow<otel_sdk_logs::LoggerProvider>(std::move(context_maybe));
 #  else
 	auto provider_maybe = otel::make_shared_nothrow<otel_sdk_logs::LoggerProvider>(std::move(processors), std::move(resource));
@@ -343,7 +343,7 @@ int otel_logger_provider_create(struct otelc_logger *logger, std::vector<std::un
 #endif /* OTELC_USE_MULTIPLE_PROCESSORS */
 
 	if (OTEL_NULL(provider_maybe))
-		OTEL_LOGGER_ERETURN_INT("Unable to create OpenTelemetry logger provider");
+		OTEL_LOGGER_RETURN_INT("Unable to create OpenTelemetry logger provider");
 
 	provider = std::move(provider_maybe);
 

@@ -22,11 +22,11 @@
 #define OTEL_YAML_PROCESSORS                 "/processors"
 #define OTEL_YAML_EXPORTERS                  "/exporters"
 
-#define OTEL_TRACER_ERROR(f, ...)            do { (void)otelc_sprintf(&(tracer->err), f, ##__VA_ARGS__); OTELC_DBG(OTEL, "%s", tracer->err); } while (0)
-#define OTEL_TRACER_ERETURN(f, ...)          do { OTEL_TRACER_ERROR(f, ##__VA_ARGS__); OTELC_RETURN(); } while (0)
-#define OTEL_TRACER_ERETURN_EX(t,r,f, ...)   do { OTEL_TRACER_ERROR(f, ##__VA_ARGS__); OTELC_RETURN##t(r); } while (0)
-#define OTEL_TRACER_ERETURN_INT(f, ...)      OTEL_TRACER_ERETURN_EX(_INT, OTELC_RET_ERROR, f, ##__VA_ARGS__)
-#define OTEL_TRACER_ERETURN_PTR(f, ...)      OTEL_TRACER_ERETURN_EX(_PTR, nullptr, f, ##__VA_ARGS__)
+#define OTEL_TRACER_ERROR(f, ...)            OTEL_SIGNAL_ERROR(tracer->err, f, ##__VA_ARGS__)
+#define OTEL_TRACER_RETURN(f, ...)           OTEL_RETURN(tracer, f, ##__VA_ARGS__)
+#define OTEL_TRACER_RETURN_EX(t,r,f, ...)    OTEL_RETURN_EX(tracer, t, (r), f, ##__VA_ARGS__)
+#define OTEL_TRACER_RETURN_INT(f, ...)       OTEL_RETURN_INT(tracer, f, ##__VA_ARGS__)
+#define OTEL_TRACER_RETURN_PTR(f, ...)       OTEL_RETURN_PTR(tracer, f, ##__VA_ARGS__)
 
 #endif /* _OPENTELEMETRY_C_WRAPPER_TRACER_H_ */
 

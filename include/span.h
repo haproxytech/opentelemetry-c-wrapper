@@ -16,11 +16,11 @@
 #ifndef _OPENTELEMETRY_C_WRAPPER_SPAN_H_
 #define _OPENTELEMETRY_C_WRAPPER_SPAN_H_
 
-#define OTEL_SPAN_ERROR(f, ...)            do { (void)otelc_sprintf(&(span->tracer->err), f, ##__VA_ARGS__); OTELC_DBG(OTEL, "%s", span->tracer->err); } while (0)
-#define OTEL_SPAN_ERETURN(f, ...)          do { OTEL_SPAN_ERROR(f, ##__VA_ARGS__); OTELC_RETURN(); } while (0)
-#define OTEL_SPAN_ERETURN_EX(t,r,f, ...)   do { OTEL_SPAN_ERROR(f, ##__VA_ARGS__); OTELC_RETURN##t(r); } while (0)
-#define OTEL_SPAN_ERETURN_INT(f, ...)      OTEL_SPAN_ERETURN_EX(_INT, OTELC_RET_ERROR, f, ##__VA_ARGS__)
-#define OTEL_SPAN_ERETURN_PTR(f, ...)      OTEL_SPAN_ERETURN_EX(_PTR, nullptr, f, ##__VA_ARGS__)
+#define OTEL_SPAN_ERROR(f, ...)            OTEL_SIGNAL_ERROR(span->tracer->err, f, ##__VA_ARGS__)
+#define OTEL_SPAN_RETURN(f, ...)           OTEL_RETURN(span, f, ##__VA_ARGS__)
+#define OTEL_SPAN_RETURN_EX(t,r,f, ...)    OTEL_RETURN_EX(span, t, (r), f, ##__VA_ARGS__)
+#define OTEL_SPAN_RETURN_INT(f, ...)       OTEL_RETURN_INT(span, f, ##__VA_ARGS__)
+#define OTEL_SPAN_RETURN_PTR(f, ...)       OTEL_RETURN_PTR(span, f, ##__VA_ARGS__)
 
 #define OTEL_SPAN_HANDLE(a)                otel_map_find(OTEL_HANDLE(otel_span, get_shard((a)->idx).map), (a)->idx)
 #define OTEL_SPAN_CONTEXT_HANDLE(a)        otel_map_find(OTEL_HANDLE(otel_span_context, get_shard((a)->idx).map), (a)->idx)
@@ -103,7 +103,7 @@ struct T {
 	if (OTEL_NULL(handle)) {                                                      \
 		OTELC_DBG(OTEL, "invalid otel_span[%" PRId64 "]", (arg_handle)->idx); \
 		                                                                      \
-		OTEL_SPAN_ERETURN##arg_type(arg_msg);                                 \
+		OTEL_SPAN_RETURN##arg_type(arg_msg);                                  \
 	}
 
 #define OTEL_LOCK_SPAN_CONTEXT_HANDLE(arg_type, arg_handle)                                   \
@@ -119,7 +119,7 @@ struct T {
 /***
  * Updates the baggage context after modifying baggage entries, then returns
  * from the calling function.  This is a macro because it must call
- * OTEL_SPAN_ERETURN_INT, which returns from the caller on error.
+ * OTEL_SPAN_RETURN_INT, which returns from the caller on error.
  *
  * SetBaggage() produces a new Context that does not carry the span token, so
  * SetSpan() is called to re-associate the original span with the new Context.
@@ -137,7 +137,7 @@ struct T {
 	auto c2_ = otel_trace::SetSpan(c1_, otel_trace::GetSpan(*((arg_handle)->context)));    \
 	auto c3_ = otel::make_shared_nothrow<otel_context::Context>(std::move(c2_));           \
 	if (OTEL_NULL(c3_))                                                                    \
-		OTEL_SPAN_ERETURN_INT(OTEL_ERROR_MSG_ENOMEM("baggage context"));               \
+		OTEL_SPAN_RETURN_INT(OTEL_ERROR_MSG_ENOMEM("baggage context"));                \
 	                                                                                       \
 	(arg_handle)->context = std::move(c3_);                                                \
 	                                                                                       \

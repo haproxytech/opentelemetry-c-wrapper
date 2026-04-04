@@ -61,7 +61,7 @@ static int otel_span_get_id(const struct otelc_span *span, uint8_t *span_id, siz
 
 	const auto span_ctx = handle->span->GetContext();
 	if (!span_ctx.IsValid())
-		OTEL_SPAN_ERETURN_INT("Invalid span context");
+		OTEL_SPAN_RETURN_INT("Invalid span context");
 
 	/* Copy the span ID, trace ID, and trace flags to the caller's buffers. */
 	if (!OTEL_NULL(span_id) && (span_id_size >= otel_trace::SpanId::kSize))
@@ -138,7 +138,7 @@ static int otel_span_set_status(const struct otelc_span *span, otelc_span_status
 	if (OTEL_NULL(span))
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
 	else if (!OTELC_IN_RANGE(status, OTELC_SPAN_STATUS_UNSET, OTELC_SPAN_STATUS_ERROR))
-		OTEL_SPAN_ERETURN_INT("Invalid span status: %d", status);
+		OTEL_SPAN_RETURN_INT("Invalid span status: %d", status);
 
 	OTEL_LOCK_SPAN_HANDLE(_INT, span);
 
@@ -186,7 +186,7 @@ static int otel_span_inject_carrier(const struct otelc_span *span, W *carrier, c
 	if (OTEL_NULL(span))
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
 	else if (OTEL_NULL(carrier))
-		OTEL_SPAN_ERETURN_INT("Invalid carrier");
+		OTEL_SPAN_RETURN_INT("Invalid carrier");
 
 	OTEL_LOCK_SPAN_HANDLE(_INT, span);
 
@@ -211,9 +211,9 @@ static int otel_span_inject_carrier(const struct otelc_span *span, W *carrier, c
 	OTELC_DBG_IFDEF((void)otel_carrier.Keys(nullptr), );
 
 	if (otel_carrier.data().empty())
-		OTEL_SPAN_ERETURN_INT("No injected data");
+		OTEL_SPAN_RETURN_INT("No injected data");
 	else if (OTEL_NULL(OTELC_TEXT_MAP_NEW(&(carrier->text_map), otel_carrier.data().size())))
-		OTEL_SPAN_ERETURN_INT("Unable to allocate memory for %s carrier", carrier_name);
+		OTEL_SPAN_RETURN_INT("Unable to allocate memory for %s carrier", carrier_name);
 
 	/* Copy injected data from the internal carrier to the caller's carrier. */
 	for (const auto &it : otel_carrier.data()) {
@@ -226,7 +226,7 @@ static int otel_span_inject_carrier(const struct otelc_span *span, W *carrier, c
 
 		if (rc == OTELC_RET_ERROR) {
 			otelc_text_map_free(&(carrier->text_map));
-			OTEL_SPAN_ERETURN_INT("Unable to copy injected data to %s carrier", carrier_name);
+			OTEL_SPAN_RETURN_INT("Unable to copy injected data to %s carrier", carrier_name);
 		}
 	}
 
@@ -403,7 +403,7 @@ static void otel_span_set_operation_name(const struct otelc_span *span, const ch
 	if (OTEL_NULL(span))
 		OTELC_RETURN();
 	else if (!OTELC_STR_IS_VALID(operation_name))
-		OTEL_SPAN_ERETURN("Invalid operation name");
+		OTEL_SPAN_RETURN("Invalid operation name");
 
 	OTEL_LOCK_SPAN_HANDLE( , span);
 
@@ -446,9 +446,9 @@ static int otel_span_set_baggage_var(const struct otelc_span *span, const char *
 	if (OTEL_NULL(span))
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
 	else if (!OTELC_STR_IS_VALID(key))
-		OTEL_SPAN_ERETURN_INT("Invalid baggage name");
+		OTEL_SPAN_RETURN_INT("Invalid baggage name");
 	else if (!OTELC_STR_IS_VALID(value))
-		OTEL_SPAN_ERETURN_INT("Invalid baggage value");
+		OTEL_SPAN_RETURN_INT("Invalid baggage value");
 
 	OTEL_LOCK_SPAN_HANDLE(_INT, span);
 
@@ -500,7 +500,7 @@ static int otel_span_set_baggage_kv_var(const struct otelc_span *span, const str
 	if (OTEL_NULL(span))
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
 	else if (OTEL_NULL(kv))
-		OTEL_SPAN_ERETURN_INT("Invalid baggage key-value");
+		OTEL_SPAN_RETURN_INT("Invalid baggage key-value");
 
 	OTEL_LOCK_SPAN_HANDLE(_INT, span);
 
@@ -518,7 +518,7 @@ static int otel_span_set_baggage_kv_var(const struct otelc_span *span, const str
 		else {
 			OTELC_DBG(ERROR, "invalid value data type: %d", kv->value.u_type);
 
-			OTEL_SPAN_ERETURN_INT("Invalid value data type");
+			OTEL_SPAN_RETURN_INT("Invalid value data type");
 		}
 
 		kv = va_arg(ap, typeof(kv));
@@ -559,9 +559,9 @@ static int otel_span_set_baggage_kv_n(const struct otelc_span *span, const struc
 	if (OTEL_NULL(span))
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
 	else if (OTEL_NULL(kv))
-		OTEL_SPAN_ERETURN_INT("Invalid baggage key-value");
+		OTEL_SPAN_RETURN_INT("Invalid baggage key-value");
 	else if (kv_len == 0)
-		OTEL_SPAN_ERETURN_INT("Invalid baggage key-value array size");
+		OTEL_SPAN_RETURN_INT("Invalid baggage key-value array size");
 
 	OTEL_LOCK_SPAN_HANDLE(_INT, span);
 
@@ -578,7 +578,7 @@ static int otel_span_set_baggage_kv_n(const struct otelc_span *span, const struc
 		else {
 			OTELC_DBG(ERROR, "invalid value data type: %d", kv[retval].value.u_type);
 
-			OTEL_SPAN_ERETURN_INT("Invalid value data type");
+			OTEL_SPAN_RETURN_INT("Invalid value data type");
 		}
 
 	OTEL_SPAN_UPDATE_BAGGAGE(handle, baggage, retval);
@@ -613,9 +613,9 @@ static int otel_span_set_baggage(const struct otelc_span *span, const char *key,
 	if (OTEL_NULL(span))
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
 	else if (!OTELC_STR_IS_VALID(key))
-		OTEL_SPAN_ERETURN_INT("Invalid baggage name");
+		OTEL_SPAN_RETURN_INT("Invalid baggage name");
 	else if (!OTELC_STR_IS_VALID(value))
-		OTEL_SPAN_ERETURN_INT("Invalid baggage value");
+		OTEL_SPAN_RETURN_INT("Invalid baggage value");
 
 	OTEL_LOCK_SPAN_HANDLE(_INT, span);
 
@@ -656,7 +656,7 @@ static char *otel_span_get_baggage(const struct otelc_span *span, const char *ke
 	if (OTEL_NULL(span))
 		OTELC_RETURN_PTR(nullptr);
 	else if (!OTELC_STR_IS_VALID(key))
-		OTEL_SPAN_ERETURN_PTR("Invalid baggage name");
+		OTEL_SPAN_RETURN_PTR("Invalid baggage name");
 
 	OTEL_LOCK_SPAN_HANDLE(_PTR, span);
 
@@ -666,7 +666,7 @@ static char *otel_span_get_baggage(const struct otelc_span *span, const char *ke
 	if (baggage->GetValue(key, value)) {
 		retptr = OTELC_STRNDUP(__func__, __LINE__, value.c_str(), value.length());
 		if (OTEL_NULL(retptr))
-			OTEL_SPAN_ERETURN_PTR(OTEL_ERROR_MSG_ENOMEM("baggage value"));
+			OTEL_SPAN_RETURN_PTR(OTEL_ERROR_MSG_ENOMEM("baggage value"));
 	}
 
 	OTELC_RETURN_EX(retptr, typeof(retptr), "\"%s\"");
@@ -709,14 +709,14 @@ static struct otelc_text_map *otel_span_get_baggage_var(const struct otelc_span 
 	if (OTEL_NULL(span))
 		OTELC_RETURN_PTR(nullptr);
 	else if (!OTELC_STR_IS_VALID(key))
-		OTEL_SPAN_ERETURN_PTR("Invalid baggage name");
+		OTEL_SPAN_RETURN_PTR("Invalid baggage name");
 
 	va_start(ap, key);
 	for (n = 1; !OTEL_NULL(va_arg(ap, typeof(key))); n++);
 	va_end(ap);
 
 	if (OTEL_NULL(retptr = OTELC_TEXT_MAP_NEW(nullptr, n)))
-		OTEL_SPAN_ERETURN_PTR(OTEL_ERROR_MSG_ENOMEM("baggage map"));
+		OTEL_SPAN_RETURN_PTR(OTEL_ERROR_MSG_ENOMEM("baggage map"));
 
 	OTEL_LOCK_TRACER(span, span->idx);
 
@@ -724,7 +724,7 @@ static struct otelc_text_map *otel_span_get_baggage_var(const struct otelc_span 
 	if (OTEL_NULL(handle)) {
 		otelc_text_map_destroy(&retptr);
 
-		OTEL_SPAN_ERETURN_PTR("Invalid span");
+		OTEL_SPAN_RETURN_PTR("Invalid span");
 	}
 
 	const auto baggage = otel_baggage::GetBaggage(*(handle->context));
@@ -739,7 +739,7 @@ static struct otelc_text_map *otel_span_get_baggage_var(const struct otelc_span 
 			if (OTELC_TEXT_MAP_ADD(retptr, key, 0, value.c_str(), value.length(), OTELC_TEXT_MAP_AUTO) == OTELC_RET_ERROR) {
 				otelc_text_map_destroy(&retptr);
 
-				OTEL_SPAN_ERETURN_PTR("Unable to copy baggage data to text map");
+				OTEL_SPAN_RETURN_PTR("Unable to copy baggage data to text map");
 			}
 
 			OTELC_DBG(OTELC, "get baggage[%d]: \"%s\" -> \"%s\"", i, retptr->key[m], retptr->value[m]);
@@ -829,9 +829,9 @@ static int otel_span_set_attribute_var(const struct otelc_span *span, const char
 	if (OTEL_NULL(span))
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
 	else if (!OTELC_STR_IS_VALID(key))
-		OTEL_SPAN_ERETURN_INT("Invalid attribute key");
+		OTEL_SPAN_RETURN_INT("Invalid attribute key");
 	else if (OTEL_NULL(value))
-		OTEL_SPAN_ERETURN_INT("Invalid attribute value");
+		OTEL_SPAN_RETURN_INT("Invalid attribute value");
 
 	OTEL_LOCK_SPAN_HANDLE(_INT, span);
 
@@ -839,7 +839,7 @@ static int otel_span_set_attribute_var(const struct otelc_span *span, const char
 	OTEL_VA_AUTO(ap, value);
 	for (retval = 0; !OTEL_NULL(key) && !OTEL_NULL(value); retval++) {
 		if (otel_span_set_one_attribute(handle->span, key, value) == OTELC_RET_ERROR)
-			OTEL_SPAN_ERETURN_INT("Unable to set span attribute");
+			OTEL_SPAN_RETURN_INT("Unable to set span attribute");
 
 		key = va_arg(ap, typeof(key));
 		if (!OTEL_NULL(key))
@@ -882,7 +882,7 @@ static int otel_span_set_attribute_kv_var(const struct otelc_span *span, const s
 	if (OTEL_NULL(span))
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
 	else if (OTEL_NULL(kv))
-		OTEL_SPAN_ERETURN_INT("Invalid attribute key-value");
+		OTEL_SPAN_RETURN_INT("Invalid attribute key-value");
 
 	OTEL_LOCK_SPAN_HANDLE(_INT, span);
 
@@ -890,7 +890,7 @@ static int otel_span_set_attribute_kv_var(const struct otelc_span *span, const s
 	OTEL_VA_AUTO(ap, kv);
 	for (retval = 0; !OTEL_NULL(kv); retval++) {
 		if (otel_span_set_one_attribute(handle->span, kv->key, &(kv->value)) == OTELC_RET_ERROR)
-			OTEL_SPAN_ERETURN_INT("Unable to set span attribute");
+			OTEL_SPAN_RETURN_INT("Unable to set span attribute");
 
 		kv = va_arg(ap, typeof(kv));
 	}
@@ -930,16 +930,16 @@ static int otel_span_set_attribute_kv_n(const struct otelc_span *span, const str
 	if (OTEL_NULL(span))
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
 	else if (OTEL_NULL(kv))
-		OTEL_SPAN_ERETURN_INT("Invalid attribute key-value");
+		OTEL_SPAN_RETURN_INT("Invalid attribute key-value");
 	else if (kv_len == 0)
-		OTEL_SPAN_ERETURN_INT("Invalid attribute key-value array size");
+		OTEL_SPAN_RETURN_INT("Invalid attribute key-value array size");
 
 	OTEL_LOCK_SPAN_HANDLE(_INT, span);
 
 	/* Iterate over the kv array and set each attribute. */
 	for (retval = 0; retval < OTEL_CAST_STATIC(int, kv_len); retval++)
 		if (otel_span_set_one_attribute(handle->span, kv[retval].key, &(kv[retval].value)) == OTELC_RET_ERROR)
-			OTEL_SPAN_ERETURN_INT("Unable to set span attribute");
+			OTEL_SPAN_RETURN_INT("Unable to set span attribute");
 
 	OTELC_RETURN_INT(retval);
 }
@@ -974,7 +974,7 @@ static int otel_span_add_one_event(const struct otelc_span *span, std::map<std::
 	if (OTEL_NULL(span))
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
 	else if (OTEL_NULL(key))
-		OTEL_SPAN_ERETURN_INT("Invalid event attribute");
+		OTEL_SPAN_RETURN_INT("Invalid event attribute");
 
 	OTELC_DBG(DEBUG, "'%s' -> %s", key, otelc_value_dump(value, ""));
 
@@ -1020,11 +1020,11 @@ static int otel_span_add_event_var(const struct otelc_span *span, const char *na
 	if (OTEL_NULL(span))
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
 	else if (OTEL_NULL(name))
-		OTEL_SPAN_ERETURN_INT("Invalid event name");
+		OTEL_SPAN_RETURN_INT("Invalid event name");
 	else if (!OTELC_STR_IS_VALID(key))
-		OTEL_SPAN_ERETURN_INT("Invalid event key");
+		OTEL_SPAN_RETURN_INT("Invalid event key");
 	else if (OTEL_NULL(value))
-		OTEL_SPAN_ERETURN_INT("Invalid event value");
+		OTEL_SPAN_RETURN_INT("Invalid event value");
 
 	OTEL_LOCK_SPAN_HANDLE(_INT, span);
 
@@ -1035,7 +1035,7 @@ static int otel_span_add_event_var(const struct otelc_span *span, const char *na
 	OTEL_VA_AUTO(ap, value);
 	for (retval = 0; !OTEL_NULL(key) && !OTEL_NULL(value); retval++) {
 		if (otel_span_add_one_event(span, attr, key, value) == OTELC_RET_ERROR)
-			OTEL_SPAN_ERETURN_INT("Unable to set span event attribute");
+			OTEL_SPAN_RETURN_INT("Unable to set span event attribute");
 
 		key = va_arg(ap, typeof(key));
 		if (!OTEL_NULL(key))
@@ -1084,9 +1084,9 @@ static int otel_span_add_event_kv_var(const struct otelc_span *span, const char 
 	if (OTEL_NULL(span))
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
 	else if (OTEL_NULL(name))
-		OTEL_SPAN_ERETURN_INT("Invalid event name");
+		OTEL_SPAN_RETURN_INT("Invalid event name");
 	else if (OTEL_NULL(kv))
-		OTEL_SPAN_ERETURN_INT("Invalid event key-value");
+		OTEL_SPAN_RETURN_INT("Invalid event key-value");
 
 	OTEL_LOCK_SPAN_HANDLE(_INT, span);
 
@@ -1097,7 +1097,7 @@ static int otel_span_add_event_kv_var(const struct otelc_span *span, const char 
 	OTEL_VA_AUTO(ap, kv);
 	for (retval = 0; !OTEL_NULL(kv); retval++) {
 		if (otel_span_add_one_event(span, attr, kv->key, &(kv->value)) == OTELC_RET_ERROR)
-			OTEL_SPAN_ERETURN_INT("Unable to set span event attribute");
+			OTEL_SPAN_RETURN_INT("Unable to set span event attribute");
 
 		kv = va_arg(ap, typeof(kv));
 	}
@@ -1143,11 +1143,11 @@ static int otel_span_add_event_kv_n(const struct otelc_span *span, const char *n
 	if (OTEL_NULL(span))
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
 	else if (OTEL_NULL(name))
-		OTEL_SPAN_ERETURN_INT("Invalid event name");
+		OTEL_SPAN_RETURN_INT("Invalid event name");
 	else if (OTEL_NULL(kv))
-		OTEL_SPAN_ERETURN_INT("Invalid event key-value");
+		OTEL_SPAN_RETURN_INT("Invalid event key-value");
 	else if (kv_len == 0)
-		OTEL_SPAN_ERETURN_INT("Invalid event key-value array size");
+		OTEL_SPAN_RETURN_INT("Invalid event key-value array size");
 
 	OTEL_LOCK_SPAN_HANDLE(_INT, span);
 
@@ -1157,7 +1157,7 @@ static int otel_span_add_event_kv_n(const struct otelc_span *span, const char *n
 	/* Iterate over the kv array and add each to the event. */
 	for (retval = 0; retval < OTEL_CAST_STATIC(int, kv_len); retval++)
 		if (otel_span_add_one_event(span, attr, kv[retval].key, &(kv[retval].value)) == OTELC_RET_ERROR)
-			OTEL_SPAN_ERETURN_INT("Unable to set span event attribute");
+			OTEL_SPAN_RETURN_INT("Unable to set span event attribute");
 
 	if (retval > 0)
 		handle->span->AddEvent(otel_nostd::string_view{name}, timestamp, attr);
@@ -1200,10 +1200,10 @@ static int otel_span_add_link(const struct otelc_span *span, const struct otelc_
 	std::map<std::string, otel_attribute_value> attribute{};
 
 	if (!OTEL_NULL(link_span) && !OTEL_NULL(link_context))
-		OTEL_SPAN_ERETURN_INT("Parameters link_span and link_context are mutually exclusive");
+		OTEL_SPAN_RETURN_INT("Parameters link_span and link_context are mutually exclusive");
 
 	if (OTEL_NULL(link_span) && OTEL_NULL(link_context))
-		OTEL_SPAN_ERETURN_INT("One of link_span or link_context must be specified");
+		OTEL_SPAN_RETURN_INT("One of link_span or link_context must be specified");
 
 	if (!OTEL_NULL(kv) && (kv_len > 0))
 		for (size_t i = 0; i < kv_len; ++i)
@@ -1219,7 +1219,7 @@ static int otel_span_add_link(const struct otelc_span *span, const struct otelc_
 
 		const auto context_handle = OTEL_SPAN_CONTEXT_HANDLE(link_context);
 		if (OTEL_NULL(context_handle))
-			OTEL_SPAN_ERETURN_INT("Invalid linked span context");
+			OTEL_SPAN_RETURN_INT("Invalid linked span context");
 
 		target = otel_trace::GetSpan(*(context_handle->context))->GetContext();
 	}
@@ -1230,12 +1230,12 @@ static int otel_span_add_link(const struct otelc_span *span, const struct otelc_
 
 		handle->span->AddLink(target, attribute);
 	} else {
-		OTEL_SPAN_ERETURN_INT("Invalid linked span context");
+		OTEL_SPAN_RETURN_INT("Invalid linked span context");
 	}
 
 	OTELC_RETURN_INT(OTELC_RET_OK);
 #else
-	OTEL_SPAN_ERETURN_INT("AddLink is not supported in this OpenTelemetry ABI version");
+	OTEL_SPAN_RETURN_INT("AddLink is not supported in this OpenTelemetry ABI version");
 #endif /* OPENTELEMETRY_ABI_VERSION_NO && (OPENTELEMETRY_ABI_VERSION_NO >= 2) */
 }
 
@@ -1276,7 +1276,7 @@ static int otel_span_record_exception(const struct otelc_span *span, const char 
 	if (OTEL_NULL(span))
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
 	else if (!OTELC_STR_IS_VALID(type))
-		OTEL_SPAN_ERETURN_INT("Invalid exception type");
+		OTEL_SPAN_RETURN_INT("Invalid exception type");
 
 	OTEL_LOCK_SPAN_HANDLE(_INT, span);
 
@@ -1287,7 +1287,7 @@ static int otel_span_record_exception(const struct otelc_span *span, const char 
 		OTEL_DBG_THROW();
 		(void)attr.emplace("exception.type", otel_nostd::string_view{type});
 	}
-	OTEL_CATCH_ERETURN( , OTEL_SPAN_ERETURN_INT, "Unable to add exception type")
+	OTEL_CATCH_SIGNAL_RETURN( , OTEL_SPAN_RETURN_INT, "Unable to add exception type")
 
 	/* Add the exception message attribute if provided. */
 	if (OTELC_STR_IS_VALID(message))
@@ -1295,7 +1295,7 @@ static int otel_span_record_exception(const struct otelc_span *span, const char 
 			OTEL_DBG_THROW();
 			(void)attr.emplace("exception.message", otel_nostd::string_view{message});
 		}
-		OTEL_CATCH_ERETURN( , OTEL_SPAN_ERETURN_INT, "Unable to add exception message")
+		OTEL_CATCH_SIGNAL_RETURN( , OTEL_SPAN_RETURN_INT, "Unable to add exception message")
 
 	/* Add the exception stacktrace attribute if provided. */
 	if (OTELC_STR_IS_VALID(stacktrace))
@@ -1303,7 +1303,7 @@ static int otel_span_record_exception(const struct otelc_span *span, const char 
 			OTEL_DBG_THROW();
 			(void)attr.emplace("exception.stacktrace", otel_nostd::string_view{stacktrace});
 		}
-		OTEL_CATCH_ERETURN( , OTEL_SPAN_ERETURN_INT, "Unable to add exception stacktrace")
+		OTEL_CATCH_SIGNAL_RETURN( , OTEL_SPAN_RETURN_INT, "Unable to add exception stacktrace")
 
 	/* Add any extra user-supplied attributes to the exception event. */
 	if (!OTEL_NULL(kv) && (kv_len > 0))
@@ -2116,23 +2116,23 @@ struct otelc_span_context *otelc_span_context_create(const uint8_t *trace_id, si
 	/* Wrap in a DefaultSpan and Context. */
 	otel_nostd::shared_ptr<otel_trace::Span> default_span(new(std::nothrow) otel_trace::DefaultSpan(span_ctx));
 	if (OTEL_NULL(default_span))
-		OTEL_ERETURN_PTR(OTEL_ERROR_MSG_ENOMEM("default span"));
+		OTEL_ERR_RETURN_PTR(OTEL_ERROR_MSG_ENOMEM("default span"));
 
 	otel_context::Context empty_ctx{};
 	auto context = otel::make_shared_nothrow<otel_context::Context>(otel_trace::SetSpan(empty_ctx, default_span));
 	if (OTEL_NULL(context))
-		OTEL_ERETURN_PTR(OTEL_ERROR_MSG_ENOMEM("span context"));
+		OTEL_ERR_RETURN_PTR(OTEL_ERROR_MSG_ENOMEM("span context"));
 
 	/* Allocate C handle. */
 	if (OTEL_NULL(retptr = otel_span_context_new()))
-		OTEL_ERETURN_PTR(OTEL_ERROR_MSG_ENOMEM("span context handle"));
+		OTEL_ERR_RETURN_PTR(OTEL_ERROR_MSG_ENOMEM("span context handle"));
 
 	const auto span_context_handle = new(std::nothrow) otel_span_context_handle{std::move(context)};
 	if (OTEL_NULL(span_context_handle)) {
 		OTEL_LOCK_TRACER(span_context, retptr->idx);
 		otel_nolock_span_context_destroy(&retptr);
 
-		OTEL_ERETURN_PTR(OTEL_ERROR_MSG_ENOMEM("span context handle"));
+		OTEL_ERR_RETURN_PTR(OTEL_ERROR_MSG_ENOMEM("span context handle"));
 	}
 
 	OTEL_LOCK_TRACER(span_context, retptr->idx);
@@ -2140,7 +2140,7 @@ struct otelc_span_context *otelc_span_context_create(const uint8_t *trace_id, si
 	/* Register the span context handle in the shared map. */
 	OTEL_HANDLE_EMPLACE(otel_span_context, retptr->idx, span_context_handle,
 		{ delete span_context_handle; otel_nolock_span_context_destroy(&retptr); },
-		OTEL_ERETURN_PTR, "Unable to add span context: duplicate id", "Unable to add span context"
+		OTEL_ERR_RETURN_PTR, "Unable to add span context: duplicate id", "Unable to add span context"
 	);
 
 	OTEL_DBG_SPAN_CONTEXT();

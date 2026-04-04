@@ -56,7 +56,7 @@ constexpr size_t OTEL_HANDLE_MAP_SHARDS    = 64;
 				err_macro(dup_msg);                                          \
 			}                                                                    \
 		}                                                                            \
-		OTEL_CATCH_ERETURN({                                                         \
+		OTEL_CATCH_SIGNAL_RETURN({                                                   \
 			if (emplace_ok)                                                      \
 				OTEL_HANDLE(map_name, get_shard(idx).map).erase(idx);        \
 			                                                                     \
@@ -119,9 +119,9 @@ decltype(auto) otelc_value_visit(const struct otelc_value *v, F &&f)
 			else if (OTELC_IN_RANGE((arg_value)->u_type, OTELC_VALUE_BOOL, OTELC_VALUE_DATA))                   \
 				otelc_value_visit((arg_value), [&](auto val_) { arg_map.arg_operation((arg_key), val_); }); \
 			else                                                                                                \
-				OTEL_ERETURN##arg_type("%s", (arg_fmt));                                                    \
+				OTEL_ERR_RETURN##arg_type("%s", (arg_fmt));                                                 \
 		}                                                                                                           \
-		OTEL_CATCH_ERETURN( , OTEL_ERETURN##arg_type, arg_fmt)                                                      \
+		OTEL_CATCH_SIGNAL_RETURN( , OTEL_ERR_RETURN##arg_type, arg_fmt)                                             \
 	} while (0)
 
 /***
@@ -377,7 +377,7 @@ struct otel_handle {
 			OTELC_RETURN_INT(OTELC_RET_OK);                                                                   \
 	}                                                                                                                 \
 	                                                                                                                  \
-	OTEL_##arg_signal##_ERETURN_INT(arg_msg);
+	OTEL_##arg_signal##_RETURN_INT(arg_msg);
 
 
 extern otelc_ext_malloc_t otelc_ext_malloc;

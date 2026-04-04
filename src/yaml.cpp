@@ -143,7 +143,7 @@ OTEL_YAML_DOC *yaml_open(const char *file, char **err)
 	OTELC_FUNC("\"%s\", %p:%p", OTELC_STR_ARG(file), OTELC_DPTR_ARGS(err));
 
 	if (OTEL_NULL(file))
-		OTEL_ERETURN_PTR("YAML file name not specified");
+		OTEL_ERR_RETURN_PTR("YAML file name not specified");
 
 #ifdef HAVE_LIBFYAML_H
 	retptr = fy_document_build_from_file(nullptr, file);
@@ -154,7 +154,7 @@ OTEL_YAML_DOC *yaml_open(const char *file, char **err)
 		std::string content;
 		std::ifstream ifs(file, std::ios::in | std::ios::binary);
 		if (!ifs)
-			OTEL_ERETURN_PTR("'%s': unable to open YAML file", file);
+			OTEL_ERR_RETURN_PTR("'%s': unable to open YAML file", file);
 
 		content.assign((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
 
@@ -164,17 +164,17 @@ OTEL_YAML_DOC *yaml_open(const char *file, char **err)
 		OTEL_DBG_THROW();
 		auto tree = std::unique_ptr<ryml::Tree>(new(std::nothrow) ryml::Tree(callbacks));
 		if (OTEL_NULL(tree))
-			OTEL_ERETURN_PTR(OTEL_ERROR_MSG_ENOMEM("ryml tree"));
+			OTEL_ERR_RETURN_PTR(OTEL_ERROR_MSG_ENOMEM("ryml tree"));
 
 		ryml::parse_in_arena(ryml::to_csubstr(content), tree.get());
 
 		retptr = tree.release();
 	}
-	OTEL_CATCH_ERETURN( , OTEL_ERETURN_PTR, "'%s': unable to parse OpenTelemetry configuration", file)
+	OTEL_CATCH_SIGNAL_RETURN( , OTEL_ERR_RETURN_PTR, "'%s': unable to parse OpenTelemetry configuration", file)
 #endif /* HAVE_LIBFYAML_H */
 
 	if (OTEL_NULL(retptr))
-		OTEL_ERROR("'%s': unable to parse OpenTelemetry configuration", file);
+		OTEL_SIGNAL_ERROR(*err, "'%s': unable to parse OpenTelemetry configuration", file);
 
 	OTELC_RETURN_PTR(retptr);
 }
@@ -243,11 +243,11 @@ char *yaml_read(const char *file, char **err)
 	OTELC_FUNC("\"%s\", %p:%p", OTELC_STR_ARG(file), OTELC_DPTR_ARGS(err));
 
 	if (OTEL_NULL(file))
-		OTEL_ERETURN_PTR("YAML file name not specified");
+		OTEL_ERR_RETURN_PTR("YAML file name not specified");
 
 	auto fyd = yaml_open(file, err);
 	if (OTEL_NULL(fyd))
-		OTEL_ERETURN_PTR("'%s': unable to open YAML file", file);
+		OTEL_ERR_RETURN_PTR("'%s': unable to open YAML file", file);
 
 	OTEL_DEFER(yaml_close(&fyd));
 
@@ -263,11 +263,11 @@ char *yaml_read(const char *file, char **err)
 		const std::string out = ryml::emitrs_yaml<std::string>(*fyd);
 		retptr = OTELC_STRDUP(__func__, __LINE__, out.c_str());
 	}
-	OTEL_CATCH_ERETURN( , OTEL_ERETURN_PTR, "'%s': unable to emit YAML document", file)
+	OTEL_CATCH_SIGNAL_RETURN( , OTEL_ERR_RETURN_PTR, "'%s': unable to emit YAML document", file)
 #endif /* HAVE_LIBFYAML_H */
 
 	if (OTEL_NULL(retptr))
-		OTEL_ERROR("'%s': unable to emit YAML document", file);
+		OTEL_SIGNAL_ERROR(*err, "'%s': unable to emit YAML document", file);
 
 	OTELC_RETURN_PTR(retptr);
 }
@@ -308,13 +308,13 @@ int yaml_find(OTEL_YAML_DOC *fyd, char **err, bool is_mandatory, const char *des
 	OTELC_FUNC("%p, %p:%p, %hhu, \"%s\", \"%s\", %p, %zu", fyd, OTELC_DPTR_ARGS(err), is_mandatory, OTELC_STR_ARG(desc), OTELC_STR_ARG(path), data, data_size);
 
 	if (OTEL_NULL(fyd))
-		OTEL_ERETURN_INT("YAML document name not specified");
+		OTEL_ERR_RETURN_INT("YAML document name not specified");
 	else if (OTEL_NULL(desc))
-		OTEL_ERETURN_INT("YAML node description not specified");
+		OTEL_ERR_RETURN_INT("YAML node description not specified");
 	else if (OTEL_NULL(path) || (*path == '\0'))
-		OTEL_ERETURN_INT("YAML node path not specified");
+		OTEL_ERR_RETURN_INT("YAML node path not specified");
 	else if (OTEL_NULL(data) || (data_size == 0))
-		OTEL_ERETURN_INT("Data buffer not specified or has zero size");
+		OTEL_ERR_RETURN_INT("Data buffer not specified or has zero size");
 
 #ifdef HAVE_LIBFYAML_H
 	/***
@@ -337,7 +337,7 @@ PRAGMA_DIAG_RESTORE
 #endif /* HAVE_LIBFYAML_H */
 
 	if ((retval == 0) && is_mandatory)
-		OTEL_ERETURN_INT("'%s': not specified in the YAML document", desc);
+		OTEL_ERR_RETURN_INT("'%s': not specified in the YAML document", desc);
 
 	if (retval == 1)
 		OTELC_DBG(DEBUG, "\"%s\"", data);
@@ -375,20 +375,20 @@ int yaml_get_sequence(OTEL_YAML_DOC *fyd, char **err, const char *path, struct o
 	OTELC_FUNC("%p, %p:%p, \"%s\", %p:%p", fyd, OTELC_DPTR_ARGS(err), OTELC_STR_ARG(path), OTELC_DPTR_ARGS(map));
 
 	if (OTEL_NULL(fyd))
-		OTEL_ERETURN_INT("YAML document name not specified");
+		OTEL_ERR_RETURN_INT("YAML document name not specified");
 	else if (OTEL_NULL(path) || (*path == '\0'))
-		OTEL_ERETURN_INT("YAML node path not specified");
+		OTEL_ERR_RETURN_INT("YAML node path not specified");
 	else if (OTEL_NULL(map))
-		OTEL_ERETURN_INT("Text map pointer not specified");
+		OTEL_ERR_RETURN_INT("Text map pointer not specified");
 
 #ifdef HAVE_LIBFYAML_H
 	void *iter_seq = nullptr;
 
 	const auto node_seq = fy_node_by_path(fy_document_root(fyd), path, -1, FYNWF_DONT_FOLLOW);
 	if (OTEL_NULL(node_seq))
-		OTEL_ERETURN_INT("'%s': path does not exist", path);
+		OTEL_ERR_RETURN_INT("'%s': path does not exist", path);
 	else if (!fy_node_is_sequence(node_seq))
-		OTEL_ERETURN_INT("'%s': not a YAML sequence", path);
+		OTEL_ERR_RETURN_INT("'%s': not a YAML sequence", path);
 
 	for (int count = fy_node_sequence_item_count(node_seq); count > 0; count--, retval++) {
 		struct fy_node      *node_iter;
@@ -397,7 +397,7 @@ int yaml_get_sequence(OTEL_YAML_DOC *fyd, char **err, const char *path, struct o
 		OTELC_DBG(DEBUG, "YAML sequence iteration: %d", retval);
 
 		if (OTEL_NULL(node_iter = fy_node_sequence_iterate(node_seq, &iter_seq)))
-			OTEL_ERETURN_INT("'%s[%d]': error while iterating YAML sequence", path, retval);
+			OTEL_ERR_RETURN_INT("'%s[%d]': error while iterating YAML sequence", path, retval);
 
 		for (void *iter_map = nullptr; !OTEL_NULL(node_pair = fy_node_mapping_iterate(node_iter, &iter_map)); ) {
 			size_t      key_len, value_len;
@@ -406,10 +406,10 @@ int yaml_get_sequence(OTEL_YAML_DOC *fyd, char **err, const char *path, struct o
 
 			if (OTEL_NULL(*map))
 				if (OTEL_NULL(*map = OTELC_TEXT_MAP_NEW(nullptr, count)))
-					OTEL_ERETURN_INT(OTEL_ERROR_MSG_ENOMEM("text map"));
+					OTEL_ERR_RETURN_INT(OTEL_ERROR_MSG_ENOMEM("text map"));
 
 			if (OTELC_TEXT_MAP_ADD(*map, key, key_len, value, value_len, OTELC_TEXT_MAP_AUTO) == OTELC_RET_ERROR)
-				OTEL_ERETURN_INT("Unable to add a key-value pair to a text map");
+				OTEL_ERR_RETURN_INT("Unable to add a key-value pair to a text map");
 		}
 	}
 
@@ -417,15 +417,15 @@ int yaml_get_sequence(OTEL_YAML_DOC *fyd, char **err, const char *path, struct o
 
 	const auto node = ryml_get_node_by_path(fyd, path);
 	if (node.invalid())
-		OTEL_ERETURN_INT("'%s': path does not exist", path);
+		OTEL_ERR_RETURN_INT("'%s': path does not exist", path);
 	else if (!node.is_seq())
-		OTEL_ERETURN_INT("'%s': not a YAML sequence", path);
+		OTEL_ERR_RETURN_INT("'%s': not a YAML sequence", path);
 
 	for (auto child : node.children()) {
 		OTELC_DBG(DEBUG, "YAML sequence iteration: %d", retval);
 
 		if (!child.is_map())
-			OTEL_ERETURN_INT("'%s[%d]': error while iterating YAML sequence (not a map)", path, retval);
+			OTEL_ERR_RETURN_INT("'%s[%d]': error while iterating YAML sequence (not a map)", path, retval);
 
 		for (auto kv : child.children()) {
 			if (!kv.has_key() || !kv.has_val())
@@ -438,10 +438,10 @@ int yaml_get_sequence(OTEL_YAML_DOC *fyd, char **err, const char *path, struct o
 
 			if (OTEL_NULL(*map))
 				if (OTEL_NULL(*map = OTELC_TEXT_MAP_NEW(nullptr, node.num_children())))
-					OTEL_ERETURN_INT(OTEL_ERROR_MSG_ENOMEM("text map"));
+					OTEL_ERR_RETURN_INT(OTEL_ERROR_MSG_ENOMEM("text map"));
 
 			if (OTELC_TEXT_MAP_ADD(*map, key.str, key.len, value.str, value.len, OTELC_TEXT_MAP_AUTO) == OTELC_RET_ERROR)
-				OTEL_ERETURN_INT("Unable to add a key-value pair to a text map");
+				OTEL_ERR_RETURN_INT("Unable to add a key-value pair to a text map");
 		}
 
 		retval++;
@@ -480,16 +480,16 @@ int yaml_get_sequence_len(OTEL_YAML_DOC *fyd, char **err, const char *path)
 	OTELC_FUNC("%p, %p:%p, \"%s\"", fyd, OTELC_DPTR_ARGS(err), OTELC_STR_ARG(path));
 
 	if (OTEL_NULL(fyd))
-		OTEL_ERETURN_INT("YAML document name not specified");
+		OTEL_ERR_RETURN_INT("YAML document name not specified");
 	else if (OTEL_NULL(path) || (*path == '\0'))
-		OTEL_ERETURN_INT("YAML node path not specified");
+		OTEL_ERR_RETURN_INT("YAML node path not specified");
 
 #ifdef HAVE_LIBFYAML_H
 	node_seq = fy_node_by_path(fy_document_root(fyd), path, -1, FYNWF_DONT_FOLLOW);
 	if (OTEL_NULL(node_seq))
-		OTEL_ERETURN_INT("'%s': path does not exist", path);
+		OTEL_ERR_RETURN_INT("'%s': path does not exist", path);
 	else if (!fy_node_is_sequence(node_seq))
-		OTEL_ERETURN_INT("'%s': not a YAML sequence", path);
+		OTEL_ERR_RETURN_INT("'%s': not a YAML sequence", path);
 
 	OTELC_RETURN_INT(fy_node_sequence_item_count(node_seq));
 
@@ -497,9 +497,9 @@ int yaml_get_sequence_len(OTEL_YAML_DOC *fyd, char **err, const char *path)
 
 	const auto node = ryml_get_node_by_path(fyd, path);
 	if (node.invalid())
-		OTEL_ERETURN_INT("'%s': path does not exist", path);
+		OTEL_ERR_RETURN_INT("'%s': path does not exist", path);
 	else if (!node.is_seq())
-		OTEL_ERETURN_INT("'%s': not a YAML sequence", path);
+		OTEL_ERR_RETURN_INT("'%s': not a YAML sequence", path);
 
 	OTELC_RETURN_INT(node.num_children());
 #endif /* HAVE_LIBFYAML_H */
@@ -576,44 +576,44 @@ int yaml_get_sequence_value(OTEL_YAML_DOC *fyd, char **err, const char *path, in
 	OTELC_FUNC("%p, %p:%p, \"%s\", %d, %p, %zu", fyd, OTELC_DPTR_ARGS(err), OTELC_STR_ARG(path), index, data, data_size);
 
 	if (OTEL_NULL(fyd))
-		OTEL_ERETURN_INT("YAML document name not specified");
+		OTEL_ERR_RETURN_INT("YAML document name not specified");
 	else if (OTEL_NULL(path) || (*path == '\0'))
-		OTEL_ERETURN_INT("YAML node path not specified");
+		OTEL_ERR_RETURN_INT("YAML node path not specified");
 	else if (index < 0)
-		OTEL_ERETURN_INT("'%s[%d]': index out of bounds", path, index);
+		OTEL_ERR_RETURN_INT("'%s[%d]': index out of bounds", path, index);
 	else if (OTEL_NULL(data) || (data_size == 0))
-		OTEL_ERETURN_INT("Data buffer not specified or has zero size");
+		OTEL_ERR_RETURN_INT("Data buffer not specified or has zero size");
 
 #ifdef HAVE_LIBFYAML_H
 	node_seq = fy_node_by_path(fy_document_root(fyd), path, -1, FYNWF_DONT_FOLLOW);
 	if (OTEL_NULL(node_seq))
-		OTEL_ERETURN_INT("'%s': path does not exist", path);
+		OTEL_ERR_RETURN_INT("'%s': path does not exist", path);
 	else if (!fy_node_is_sequence(node_seq))
-		OTEL_ERETURN_INT("'%s': not a YAML sequence", path);
+		OTEL_ERR_RETURN_INT("'%s': not a YAML sequence", path);
 
 	for (i = 0; i <= index; i++)
 		if (OTEL_NULL(node_val = fy_node_sequence_iterate(node_seq, &iter_seq)))
-			OTEL_ERETURN_INT("'%s[%d]': index out of bounds", path, index);
+			OTEL_ERR_RETURN_INT("'%s[%d]': index out of bounds", path, index);
 
 	value = fy_node_get_scalar(node_val, &len);
 	if (OTEL_NULL(value))
-		OTEL_ERETURN_INT("'%s[%d]': invalid value", path, index);
+		OTEL_ERR_RETURN_INT("'%s[%d]': invalid value", path, index);
 	else if (otelc_strlcpy(data, data_size, value, len) == OTELC_RET_ERROR)
-		OTEL_ERETURN_INT("'%s[%d]': invalid value", path, index);
+		OTEL_ERR_RETURN_INT("'%s[%d]': invalid value", path, index);
 
 #else
 
 	const auto node = ryml_get_node_by_path(fyd, path);
 	if (node.invalid())
-		OTEL_ERETURN_INT("'%s': path does not exist", path);
+		OTEL_ERR_RETURN_INT("'%s': path does not exist", path);
 	else if (!node.is_seq())
-		OTEL_ERETURN_INT("'%s': not a YAML sequence", path);
+		OTEL_ERR_RETURN_INT("'%s': not a YAML sequence", path);
 	else if (OTEL_CAST_STATIC(size_t, index) >= node.num_children())
-		OTEL_ERETURN_INT("'%s[%d]': index out of bounds", path, index);
+		OTEL_ERR_RETURN_INT("'%s[%d]': index out of bounds", path, index);
 	else if (!node[index].has_val())
-		OTEL_ERETURN_INT("'%s[%d]': not a scalar value", path, index);
+		OTEL_ERR_RETURN_INT("'%s[%d]': not a scalar value", path, index);
 	else if (otelc_strlcpy(data, data_size, node[index].val().str, node[index].val().len) == OTELC_RET_ERROR)
-		OTEL_ERETURN_INT("'%s[%d]': invalid value", path, index);
+		OTEL_ERR_RETURN_INT("'%s[%d]': invalid value", path, index);
 #endif /* HAVE_LIBFYAML_H */
 
 	OTELC_DBG(DEBUG, "\"%s\"", data);
@@ -655,7 +655,7 @@ int yaml_find_sequence(OTEL_YAML_DOC *fyd, char **err, bool is_mandatory, const 
 	OTELC_FUNC("%p, %p:%p, %hhu, \"%s\", \"%s\", %p:%p", fyd, OTELC_DPTR_ARGS(err), is_mandatory, OTELC_STR_ARG(path), OTELC_STR_ARG(sequence), OTELC_DPTR_ARGS(map));
 
 	if (OTEL_NULL(sequence) || (*sequence == '\0'))
-		OTEL_ERETURN_INT("YAML sequence name not specified");
+		OTEL_ERR_RETURN_INT("YAML sequence name not specified");
 
 	const auto retval = yaml_find(fyd, err, is_mandatory, sequence, path, arg, sizeof(arg));
 	if (retval < 1)
@@ -702,11 +702,11 @@ static int yaml_get_node_v(OTEL_YAML_DOC *fyd, char **err, const char *desc, con
 	OTELC_FUNC("%p, %p:%p, \"%s\", \"%s\", %d, %p", fyd, OTELC_DPTR_ARGS(err), OTELC_STR_ARG(desc), OTELC_STR_ARG(name), type, ap);
 
 	if (OTEL_NULL(fyd))
-		OTEL_ERETURN_INT("YAML document not specified");
+		OTEL_ERR_RETURN_INT("YAML document not specified");
 	else if (OTEL_NULL(desc))
-		OTEL_ERETURN_INT("YAML node description not specified");
+		OTEL_ERR_RETURN_INT("YAML node description not specified");
 	else if (OTEL_NULL(name) || (*name == '\0'))
-		OTEL_ERETURN_INT("YAML node name not specified");
+		OTEL_ERR_RETURN_INT("YAML node name not specified");
 
 	for ( ; type != OTEL_YAML_END; type = va_arg(ap, typeof(type))) {
 		int         arg_is_mandatory = va_arg(ap, typeof(arg_is_mandatory));
@@ -718,9 +718,9 @@ static int yaml_get_node_v(OTEL_YAML_DOC *fyd, char **err, const char *desc, con
 		OTELC_DBG(DEBUG, "args: %d %d '%s' '%s'", type, arg_is_mandatory, OTELC_STR_ARG(arg_path), OTELC_STR_ARG(path_desc));
 
 		if (OTEL_NULL(arg_path))
-			OTEL_ERETURN_INT("'%s': YAML argument path not specified", desc);
+			OTEL_ERR_RETURN_INT("'%s': YAML argument path not specified", desc);
 		else if (OTEL_NULL(path_desc))
-			OTEL_ERETURN_INT("'%s': invalid %s path", arg_path, desc);
+			OTEL_ERR_RETURN_INT("'%s': invalid %s path", arg_path, desc);
 		else
 			path_desc++;
 
@@ -736,7 +736,7 @@ PRAGMA_DIAG_RESTORE
 			else if (rc > 0)
 				retval++;
 			else if (arg_is_mandatory != 0)
-				OTEL_ERETURN_INT("%s %s not specified", desc, path_desc);
+				OTEL_ERR_RETURN_INT("%s %s not specified", desc, path_desc);
 
 			continue;
 		}
@@ -760,11 +760,11 @@ PRAGMA_DIAG_RESTORE
 			rc = 0;
 #endif /* HAVE_LIBFYAML_H */
 		if (rc == -1)
-			OTEL_ERETURN_INT("Unable to read %s %s", desc, path_desc);
+			OTEL_ERR_RETURN_INT("Unable to read %s %s", desc, path_desc);
 		else if (rc == 1)
 			retval++;
 		else if (arg_is_mandatory != 0)
-			OTEL_ERETURN_INT("%s %s not specified", desc, path_desc);
+			OTEL_ERR_RETURN_INT("%s %s not specified", desc, path_desc);
 
 		OTELC_DBG(DEBUG, "found: '%s'", subarg);
 
@@ -788,7 +788,7 @@ PRAGMA_DIAG_RESTORE
 			else if ((strcasecmp(subarg, "false") == 0) || (strcasecmp(subarg, "0") == 0))
 				*arg_value_ptr = 0;
 			else
-				OTEL_ERETURN_INT("'%s': invalid %s %s", subarg, desc, path_desc);
+				OTEL_ERR_RETURN_INT("'%s': invalid %s %s", subarg, desc, path_desc);
 		}
 		else if (type == OTEL_YAML_INT64) {
 			char    *endptr = nullptr;
@@ -803,7 +803,7 @@ PRAGMA_DIAG_RESTORE
 			errno = 0;
 			value = strtoll(subarg, &endptr, 0);
 			if ((*endptr != '\0') || (errno != 0) || !OTELC_IN_RANGE(value, arg_value_min, arg_value_max))
-				OTEL_ERETURN_INT("'%s': invalid %s %s", subarg, desc, path_desc);
+				OTEL_ERR_RETURN_INT("'%s': invalid %s %s", subarg, desc, path_desc);
 
 			*arg_value_ptr = value;
 		}
@@ -820,12 +820,12 @@ PRAGMA_DIAG_RESTORE
 			errno = 0;
 			value = strtod(subarg, &endptr);
 			if ((*endptr != '\0') || (errno != 0) || !OTELC_IN_RANGE(value, arg_value_min, arg_value_max))
-				OTEL_ERETURN_INT("'%s': invalid %s %s", subarg, desc, path_desc);
+				OTEL_ERR_RETURN_INT("'%s': invalid %s %s", subarg, desc, path_desc);
 
 			*arg_value_ptr = value;
 		}
 		else {
-			OTEL_ERETURN_INT("Invalid data type: %d", type);
+			OTEL_ERR_RETURN_INT("Invalid data type: %d", type);
 		}
 	}
 
@@ -874,9 +874,9 @@ int yaml_get_node(OTEL_YAML_DOC *fyd, char **err, bool is_mandatory, const char 
 	OTELC_FUNC("%p, %p:%p, %hhu, \"%s\", \"%s\", \"%s\", %d, ...", fyd, OTELC_DPTR_ARGS(err), is_mandatory, OTELC_STR_ARG(desc), OTELC_STR_ARG(path), OTELC_STR_ARG(name), type);
 
 	if (OTEL_NULL(fyd))
-		OTEL_ERETURN_INT("YAML document not specified");
+		OTEL_ERR_RETURN_INT("YAML document not specified");
 	else if (OTEL_NULL(desc))
-		OTEL_ERETURN_INT("YAML node description not specified");
+		OTEL_ERR_RETURN_INT("YAML node description not specified");
 
 	/* name takes priority over the path parameter. */
 	if (OTEL_NULL(name) && !OTEL_NULL(path) && (*path != '\0')) {
@@ -888,7 +888,7 @@ int yaml_get_node(OTEL_YAML_DOC *fyd, char **err, bool is_mandatory, const char 
 	}
 
 	if (OTEL_NULL(name) || (*name == '\0'))
-		OTEL_ERETURN_INT("YAML node name not specified");
+		OTEL_ERR_RETURN_INT("YAML node name not specified");
 
 	va_start(ap, type);
 	rc = yaml_get_node_v(fyd, err, desc, name, type, ap);

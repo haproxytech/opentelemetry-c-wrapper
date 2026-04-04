@@ -1786,9 +1786,9 @@ int otelc_init(const char *cfgfile, char **err)
 	OTELC_FUNC("\"%s\", %p:%p", OTELC_STR_ARG(cfgfile), OTELC_DPTR_ARGS(err));
 
 	if (!OTEL_NULL(otelc_fyd))
-		OTEL_ERETURN_INT("The OpenTelemetry C wrapper library is already initialized");
+		OTEL_ERR_RETURN_INT("The OpenTelemetry C wrapper library is already initialized");
 	else if (OTEL_NULL(cfgfile))
-		OTEL_ERETURN_INT("Invalid configuration file path");
+		OTEL_ERR_RETURN_INT("Invalid configuration file path");
 
 	otelc_fyd = yaml_open(cfgfile, err);
 

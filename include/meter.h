@@ -19,11 +19,11 @@
 #define OTEL_YAML_METER_PREFIX              "/signals/metrics"
 #define OTEL_YAML_READERS                   "/readers"
 
-#define OTEL_METER_ERROR(f, ...)            do { (void)otelc_sprintf(&(meter->err), f, ##__VA_ARGS__); OTELC_DBG(OTEL, "%s", meter->err); } while (0)
-#define OTEL_METER_ERETURN(f, ...)          do { OTEL_METER_ERROR(f, ##__VA_ARGS__); OTELC_RETURN(); } while (0)
-#define OTEL_METER_ERETURN_EX(t,r,f, ...)   do { OTEL_METER_ERROR(f, ##__VA_ARGS__); OTELC_RETURN##t(r); } while (0)
-#define OTEL_METER_ERETURN_INT(f, ...)      OTEL_METER_ERETURN_EX(_INT, OTELC_RET_ERROR, f, ##__VA_ARGS__)
-#define OTEL_METER_ERETURN_PTR(f, ...)      OTEL_METER_ERETURN_EX(_PTR, nullptr, f, ##__VA_ARGS__)
+#define OTEL_METER_ERROR(f, ...)            OTEL_SIGNAL_ERROR(meter->err, f, ##__VA_ARGS__)
+#define OTEL_METER_RETURN(f, ...)           OTEL_RETURN(meter, f, ##__VA_ARGS__)
+#define OTEL_METER_RETURN_EX(t,r,f, ...)    OTEL_RETURN_EX(meter, t, (r), f, ##__VA_ARGS__)
+#define OTEL_METER_RETURN_INT(f, ...)       OTEL_RETURN_INT(meter, f, ##__VA_ARGS__)
+#define OTEL_METER_RETURN_PTR(f, ...)       OTEL_RETURN_PTR(meter, f, ##__VA_ARGS__)
 
 #define OTEL_INSTRUMENT_HANDLE(a)           otel_map_find(OTEL_HANDLE(otel_instrument, shards[0].map), (a))
 #define OTEL_DBG_INSTRUMENT()               OTEL_DBG_HANDLE(OTEL, "otel_instrument", otel_instrument)
@@ -113,7 +113,7 @@ struct T {
 	                                                         \
 	const auto instrument = OTEL_INSTRUMENT_HANDLE(arg_idx); \
 	if (OTEL_NULL(instrument))                               \
-		OTEL_METER_ERETURN##arg_type("Invalid OpenTelemetry meter instrument index: %d", (arg_idx));
+		OTEL_METER_RETURN##arg_type("Invalid OpenTelemetry meter instrument index: %d", (arg_idx));
 
 /***
  * Generates an observable callback function that adapts the OpenTelemetry
@@ -156,7 +156,7 @@ struct T {
  * is a no-op; for observable types it invokes the appropriate int64 or double
  * callback adapter.
  *
- * Requires 'meter' in scope for OTEL_METER_ERETURN_INT.
+ * Requires 'meter' in scope for OTEL_METER_RETURN_INT.
  */
 #define OTEL_METER_OBSERVABLE_DISPATCH(arg_instr, arg_meth, arg_state)                                                          \
 	if ((arg_instr)->type == OTELC_METRIC_INSTRUMENT_COUNTER_UINT64)                                                        \
@@ -185,7 +185,7 @@ struct T {
 		(arg_instr)->observable->arg_meth(otel_meter_observable_double_cb, OTEL_CAST_REINTERPRET(void *, (arg_state))); \
 	OTEL_METER_OBSERVABLE_DISPATCH_GAUGE(arg_instr)                                                                         \
 	else                                                                                                                    \
-		OTEL_METER_ERETURN_INT("Invalid OpenTelemetry meter instrument type: %d", (arg_instr)->type)
+		OTEL_METER_RETURN_INT("Invalid OpenTelemetry meter instrument type: %d", (arg_instr)->type)
 
 
 #ifdef OTELC_USE_STATIC_HANDLE

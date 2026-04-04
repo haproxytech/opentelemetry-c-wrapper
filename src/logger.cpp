@@ -103,11 +103,11 @@ static int otel_logger_enabled(struct otelc_logger *logger, otelc_log_severity_t
 
 	auto *logger_ptr = otel_logger.load();
 	if (OTEL_NULL(logger_ptr))
-		OTEL_LOGGER_ERETURN_INT("Invalid logger");
+		OTEL_LOGGER_RETURN_INT("Invalid logger");
 
 	const auto log_severity = otel_logger_severity(logger, severity);
 	if (log_severity == otel_logs::Severity::kInvalid)
-		OTEL_LOGGER_ERETURN_INT("Invalid log severity level: %d", severity);
+		OTEL_LOGGER_RETURN_INT("Invalid log severity level: %d", severity);
 
 	OTELC_RETURN_INT(logger_ptr->Enabled(log_severity) ? true : false);
 }
@@ -142,11 +142,11 @@ static int otel_logger_set_min_severity(struct otelc_logger *logger, otelc_log_s
 
 	auto *logger_ptr = otel_logger.load();
 	if (OTEL_NULL(logger_ptr))
-		OTEL_LOGGER_ERETURN_INT("Invalid logger");
+		OTEL_LOGGER_RETURN_INT("Invalid logger");
 
 	const auto log_severity = otel_logger_severity(logger, severity);
 	if (log_severity == otel_logs::Severity::kInvalid)
-		OTEL_LOGGER_ERETURN_INT("Invalid log severity level: %d", severity);
+		OTEL_LOGGER_RETURN_INT("Invalid log severity level: %d", severity);
 
 	OTEL_CAST_STATIC(otel_logs_logger *, logger_ptr)->SetMinimumSeverity(OTEL_CAST_STATIC(uint8_t, log_severity));
 
@@ -199,11 +199,11 @@ static int otel_logger_record_create(struct otelc_logger *logger, otel_logs::Log
 	OTELC_FUNC("%p, %p, %hhu, %" PRId64 ", \"%s\", %p, %zu, %p, %zu, 0x%02hhx, %p, %p, %zu", logger, logger_ptr, severity, event_id, OTELC_STR_ARG(event_name), span_id, span_id_size, trace_id, trace_id_size, trace_flags, ts, attr, attr_len);
 
 	if (OTEL_NULL(logger_ptr))
-		OTEL_LOGGER_ERETURN_INT("Invalid logger");
+		OTEL_LOGGER_RETURN_INT("Invalid logger");
 
 	const auto log_severity = otel_logger_severity(logger, severity);
 	if (log_severity == otel_logs::Severity::kInvalid)
-		OTEL_LOGGER_ERETURN_INT("Invalid log severity level: %d", severity);
+		OTEL_LOGGER_RETURN_INT("Invalid log severity level: %d", severity);
 
 	if (!logger_ptr->Enabled(log_severity))
 		OTELC_RETURN_INT(0);
@@ -216,7 +216,7 @@ static int otel_logger_record_create(struct otelc_logger *logger, otel_logs::Log
 	/* Create the log record and populate its common fields. */
 	log_record = logger_ptr->CreateLogRecord();
 	if (OTEL_NULL(log_record))
-		OTEL_LOGGER_ERETURN_INT("Unable to create log record");
+		OTEL_LOGGER_RETURN_INT("Unable to create log record");
 
 	log_record->SetSeverity(log_severity);
 	log_record->SetSpanId(otel_trace::SpanId{span_id_buf});
@@ -285,7 +285,7 @@ static int otel_logger_log_v(struct otelc_logger *logger, otelc_log_severity_t s
 	if (OTEL_NULL(logger))
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
 	else if (OTEL_NULL(format))
-		OTEL_LOGGER_ERETURN_INT("Invalid format string");
+		OTEL_LOGGER_RETURN_INT("Invalid format string");
 
 	otel_nostd::unique_ptr<otel_logs::LogRecord> log_record;
 	auto *logger_ptr = otel_logger.load();
@@ -295,7 +295,7 @@ static int otel_logger_log_v(struct otelc_logger *logger, otelc_log_severity_t s
 
 	retval = vasprintf(&ptr, format, ap);
 	if (retval == -1)
-		OTEL_LOGGER_ERETURN_INT(OTEL_ERROR_MSG_ENOMEM("log body"));
+		OTEL_LOGGER_RETURN_INT(OTEL_ERROR_MSG_ENOMEM("log body"));
 
 	log_record->SetBody(ptr);
 	logger_ptr->EmitLogRecord(std::move(log_record));
@@ -451,7 +451,7 @@ static int otel_logger_log_body(struct otelc_logger *logger, otelc_log_severity_
 	if (OTEL_NULL(logger))
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
 	else if (OTEL_NULL(body))
-		OTEL_LOGGER_ERETURN_INT("Invalid body value");
+		OTEL_LOGGER_RETURN_INT("Invalid body value");
 
 	otel_nostd::unique_ptr<otel_logs::LogRecord> log_record;
 	auto *logger_ptr = otel_logger.load();
@@ -464,7 +464,7 @@ static int otel_logger_log_body(struct otelc_logger *logger, otelc_log_severity_
 	else if (OTELC_IN_RANGE(body->u_type, OTELC_VALUE_BOOL, OTELC_VALUE_DATA))
 		otelc_value_visit(body, [&](auto val) { log_record->SetBody(val); });
 	else
-		OTEL_LOGGER_ERETURN_INT("Invalid body value type: %d", body->u_type);
+		OTEL_LOGGER_RETURN_INT("Invalid body value type: %d", body->u_type);
 
 	logger_ptr->EmitLogRecord(std::move(log_record));
 
@@ -608,12 +608,12 @@ static int otel_logger_start(struct otelc_logger *logger)
 
 	logger->scope_name = OTELC_STRDUP(__func__, __LINE__, scope_name);
 	if (OTEL_NULL(logger->scope_name))
-		OTEL_LOGGER_ERETURN_INT(OTEL_ERROR_MSG_ENOMEM("scope name"));
+		OTEL_LOGGER_RETURN_INT(OTEL_ERROR_MSG_ENOMEM("scope name"));
 
 	if (yaml_find(otelc_fyd, &(logger->err), 0, "OpenTelemetry logger min severity", OTEL_YAML_LOGGER_PREFIX "/min_severity", min_severity, sizeof(min_severity)) > 0) {
 		const auto severity = otelc_logger_severity_parse(min_severity);
 		if (severity == OTELC_LOG_SEVERITY_INVALID)
-			OTEL_LOGGER_ERETURN_INT("'%s': invalid minimum log severity level", min_severity);
+			OTEL_LOGGER_RETURN_INT("'%s': invalid minimum log severity level", min_severity);
 
 		logger->min_severity = severity;
 	}
@@ -657,7 +657,7 @@ static int otel_logger_start(struct otelc_logger *logger)
 				OTEL_DBG_THROW();
 				processors.push_back(std::move(processor));
 			}
-			OTEL_CATCH_ERETURN( , OTEL_LOGGER_ERETURN_INT, "Unable to add processor")
+			OTEL_CATCH_SIGNAL_RETURN( , OTEL_LOGGER_RETURN_INT, "Unable to add processor")
 		}
 	} else {
 		std::unique_ptr<otel_sdk_logs::LogRecordExporter>  exporter;
@@ -673,7 +673,7 @@ static int otel_logger_start(struct otelc_logger *logger)
 			OTEL_DBG_THROW();
 			processors.push_back(std::move(processor));
 		}
-		OTEL_CATCH_ERETURN( , OTEL_LOGGER_ERETURN_INT, "Unable to add processor")
+		OTEL_CATCH_SIGNAL_RETURN( , OTEL_LOGGER_RETURN_INT, "Unable to add processor")
 	}
 
 	/* Create the provider and logger, then install them as globals. */
@@ -822,7 +822,7 @@ struct otelc_logger *otelc_logger_create(char **err)
 	OTELC_FUNC("%p:%p", OTELC_DPTR_ARGS(err));
 
 	if (OTEL_NULL(retptr = otel_logger_new()))
-		OTEL_ERETURN_PTR(OTEL_ERROR_MSG_ENOMEM("logger"));
+		OTEL_ERR_RETURN_PTR(OTEL_ERROR_MSG_ENOMEM("logger"));
 
 	OTELC_DBG_LOGGER(OTEL, "logger", retptr);
 

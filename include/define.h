@@ -103,13 +103,32 @@ template <typename T> otel_defer_struct<T>make_defer(T fn) { return { fn }; }
 
 #define OTEL_ERROR_MSG_ENOMEM(s)      "Unable to allocate memory for " s
 
-#define OTEL_ERROR(f, ...)            do { if (otelc_sprintf(err, f, ##__VA_ARGS__) > 0) OTELC_DBG(OTEL, "%s", *err); } while (0)
-#define OTEL_ERETURN(f, ...)          do { OTEL_ERROR(f, ##__VA_ARGS__); OTELC_RETURN(); } while (0)
-#define OTEL_ERETURN_EX(t,r,f, ...)   do { OTEL_ERROR(f, ##__VA_ARGS__); OTELC_RETURN##t(r); } while (0)
-#define OTEL_ERETURN_INT(f, ...)      OTEL_ERETURN_EX(_INT, OTELC_RET_ERROR, f, ##__VA_ARGS__)
-#define OTEL_ERETURN_PTR(f, ...)      OTEL_ERETURN_EX(_PTR, nullptr, f, ##__VA_ARGS__)
+#define OTEL_SIGNAL_ERROR(e,f, ...)           do { if (otelc_sprintf(&(e), f, ##__VA_ARGS__) > 0) OTELC_DBG(OTEL, "%s", (e)); } while (0)
+#define OTEL_SIGNAL_RETURN(e,f, ...)          do { OTEL_SIGNAL_ERROR((e), f, ##__VA_ARGS__); OTELC_RETURN(); } while (0)
+#define OTEL_SIGNAL_RETURN_EX(e,t,r,f, ...)   do { OTEL_SIGNAL_ERROR((e), f, ##__VA_ARGS__); OTELC_RETURN##t(r); } while (0)
+#define OTEL_SIGNAL_RETURN_INT(e,f, ...)      OTEL_SIGNAL_RETURN_EX((e), _INT, OTELC_RET_ERROR, f, ##__VA_ARGS__)
+#define OTEL_SIGNAL_RETURN_PTR(e,f, ...)      OTEL_SIGNAL_RETURN_EX((e), _PTR, nullptr, f, ##__VA_ARGS__)
 
-#define OTEL_CATCH_ERETURN(arg_func, arg_return, arg_fmt, ...)       \
+/***
+ * Token-paste dispatch table for error-string pointers.  Each OTEL_ERR_<signal>
+ * macro resolves to the error-string pointer appropriate for the given context,
+ * so a single OTEL_RETURN*(signal, ...) call works uniformly across all signal
+ * types.
+ */
+#define OTEL_ERR_span                  span->tracer->err
+#define OTEL_ERR_tracer                tracer->err
+#define OTEL_ERR_meter                 meter->err
+#define OTEL_ERR_logger                logger->err
+#define OTEL_ERR_err                   *err
+#define OTEL_RETURN(s,f, ...)          OTEL_SIGNAL_RETURN(OTEL_ERR_##s, f, ##__VA_ARGS__)
+#define OTEL_RETURN_EX(s,t,r,f, ...)   OTEL_SIGNAL_RETURN_EX(OTEL_ERR_##s, t, (r), f, ##__VA_ARGS__)
+#define OTEL_RETURN_INT(s,f, ...)      OTEL_SIGNAL_RETURN_INT(OTEL_ERR_##s, f, ##__VA_ARGS__)
+#define OTEL_RETURN_PTR(s,f, ...)      OTEL_SIGNAL_RETURN_PTR(OTEL_ERR_##s, f, ##__VA_ARGS__)
+
+#define OTEL_ERR_RETURN_INT(f, ...)    OTEL_RETURN_INT(err, f, ##__VA_ARGS__)
+#define OTEL_ERR_RETURN_PTR(f, ...)    OTEL_RETURN_PTR(err, f, ##__VA_ARGS__)
+
+#define OTEL_CATCH_SIGNAL_RETURN(arg_func, arg_return, arg_fmt, ...) \
 	catch (const std::exception &e) {                            \
 		arg_func;                                            \
 		arg_return(arg_fmt ": %s", ##__VA_ARGS__, e.what()); \

@@ -90,9 +90,9 @@ static int otel_exporter_set_otlp_file_options(const char *desc, const char *pat
 	OTELC_FUNC("\"%s\", \"%s\", <options>, %p:%p, \"%s\"", OTELC_STR_ARG(desc), OTELC_STR_ARG(path), OTELC_DPTR_ARGS(err), OTELC_STR_ARG(name));
 
 	if (OTEL_NULL(desc))
-		OTEL_ERETURN_INT("Exporter description not specified");
+		OTEL_ERR_RETURN_INT("Exporter description not specified");
 	else if (OTEL_NULL(path))
-		OTEL_ERETURN_INT("Exporter path not specified");
+		OTEL_ERR_RETURN_INT("Exporter path not specified");
 
 	rc = yaml_get_node(otelc_fyd, err, 1, desc, path, name,
 	                   OTEL_YAML_ARG_STR(0, EXPORTERS, thread_name),
@@ -107,9 +107,9 @@ static int otel_exporter_set_otlp_file_options(const char *desc, const char *pat
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
 	else if (rc == 0) {
 		if (OTEL_NULL(name))
-			OTEL_ERETURN_INT("OpenTelemetry exporter type not specified");
+			OTEL_ERR_RETURN_INT("OpenTelemetry exporter type not specified");
 		else
-			OTEL_ERETURN_INT("'%s': OpenTelemetry exporter type not specified", name);
+			OTEL_ERR_RETURN_INT("'%s': OpenTelemetry exporter type not specified", name);
 	}
 
 	fs_options.file_pattern   = file_pattern;
@@ -178,11 +178,11 @@ static int otel_exporter_set_otlp_grpc_options(const char *desc, const char *pat
 	OTELC_FUNC("\"%s\", \"%s\", \"%s\", <options>, %p:%p, \"%s\"", OTELC_STR_ARG(desc), OTELC_STR_ARG(path), OTELC_STR_ARG(endpoint), OTELC_DPTR_ARGS(err), OTELC_STR_ARG(name));
 
 	if (OTEL_NULL(desc))
-		OTEL_ERETURN_INT("Exporter description not specified");
+		OTEL_ERR_RETURN_INT("Exporter description not specified");
 	else if (OTEL_NULL(path))
-		OTEL_ERETURN_INT("Exporter path not specified");
+		OTEL_ERR_RETURN_INT("Exporter path not specified");
 	else if (OTEL_NULL(endpoint))
-		OTEL_ERETURN_INT("Exporter endpoint not specified");
+		OTEL_ERR_RETURN_INT("Exporter endpoint not specified");
 
 	rc = yaml_get_node(otelc_fyd, err, 1, desc, path, name,
 	                   OTEL_YAML_ARG_STR(0, EXPORTERS, thread_name),
@@ -279,11 +279,11 @@ static int otel_exporter_set_otlp_http_options(const char *desc, const char *pat
 	OTELC_FUNC("\"%s\", \"%s\", \"%s\", <options>, %p:%p, \"%s\"", OTELC_STR_ARG(desc), OTELC_STR_ARG(path), OTELC_STR_ARG(endpoint), OTELC_DPTR_ARGS(err), OTELC_STR_ARG(name));
 
 	if (OTEL_NULL(desc))
-		OTEL_ERETURN_INT("Exporter description not specified");
+		OTEL_ERR_RETURN_INT("Exporter description not specified");
 	else if (OTEL_NULL(path))
-		OTEL_ERETURN_INT("Exporter path not specified");
+		OTEL_ERR_RETURN_INT("Exporter path not specified");
 	else if (OTEL_NULL(endpoint))
-		OTEL_ERETURN_INT("Exporter endpoint not specified");
+		OTEL_ERR_RETURN_INT("Exporter endpoint not specified");
 
 	rc = yaml_get_node(otelc_fyd, err, 1, desc, path, name,
 	                   OTEL_YAML_ARG_STR(0, EXPORTERS, thread_name),
@@ -319,7 +319,7 @@ static int otel_exporter_set_otlp_http_options(const char *desc, const char *pat
 	else if (strcasecmp(content_type, "binary") == 0)
 		options.content_type = otel_exporter_otlp::HttpRequestContentType::kBinary;
 	else if (*content_type != '\0')
-		OTEL_ERETURN_INT("Invalid content_type: '%s'", content_type);
+		OTEL_ERR_RETURN_INT("Invalid content_type: '%s'", content_type);
 
 	/* <opentelemetry/exporters/otlp/otlp_http.h> */
 	if (strcasecmp(json_bytes_mapping, "hexid") == 0)
@@ -329,7 +329,7 @@ static int otel_exporter_set_otlp_http_options(const char *desc, const char *pat
 	else if (strcasecmp(json_bytes_mapping, "base64") == 0)
 		options.json_bytes_mapping = otel_exporter_otlp::JsonBytesMappingKind::kBase64;
 	else if (*json_bytes_mapping != '\0')
-		OTEL_ERETURN_INT("Invalid json_bytes_mapping: '%s'", json_bytes_mapping);
+		OTEL_ERR_RETURN_INT("Invalid json_bytes_mapping: '%s'", json_bytes_mapping);
 
 	if (!OTEL_NULL(http_headers))
 		for (size_t i = 0; i < http_headers->count; i++) {
@@ -337,7 +337,7 @@ static int otel_exporter_set_otlp_http_options(const char *desc, const char *pat
 				OTEL_DBG_THROW();
 				otlp_http_headers.emplace(std::string{http_headers->key[i]}, std::string{http_headers->value[i]});
 			}
-			OTEL_CATCH_ERETURN( , OTEL_ERETURN_INT, "Unable to add HTTP header")
+			OTEL_CATCH_SIGNAL_RETURN( , OTEL_ERR_RETURN_INT, "Unable to add HTTP header")
 		}
 
 	options.url                         = endpoint;
@@ -409,9 +409,9 @@ static int otel_exporter_set_ostream_options(const char *desc, const char *path,
 	OTELC_FUNC("\"%s\", \"%s\", <stream>, <exporter>, %p:%p, \"%s\"", OTELC_STR_ARG(desc), OTELC_STR_ARG(path), OTELC_DPTR_ARGS(err), OTELC_STR_ARG(name));
 
 	if (OTEL_NULL(desc))
-		OTEL_ERETURN_INT("Exporter description not specified");
+		OTEL_ERR_RETURN_INT("Exporter description not specified");
 	else if (OTEL_NULL(path))
-		OTEL_ERETURN_INT("Exporter path not specified");
+		OTEL_ERR_RETURN_INT("Exporter path not specified");
 
 	rc = yaml_get_node(otelc_fyd, err, 1, desc, path, name, OTEL_YAML_ARG_STR(0, EXPORTERS, filename), OTEL_YAML_END);
 	if (rc == OTELC_RET_ERROR)
@@ -426,7 +426,7 @@ static int otel_exporter_set_ostream_options(const char *desc, const char *path,
 	else {
 		stream.open(filename, std::ios::out);
 		if (stream.fail())
-			OTEL_ERETURN_INT("'%s': %s", filename, otel_strerror(errno));
+			OTEL_ERR_RETURN_INT("'%s': %s", filename, otel_strerror(errno));
 		else
 			exporter = otel::make_unique_nothrow<C>(stream);
 	}
@@ -435,7 +435,7 @@ static int otel_exporter_set_ostream_options(const char *desc, const char *path,
 		if (stream.is_open())
 			stream.close();
 
-		OTEL_ERETURN_INT("Unable to create ostream exporter");
+		OTEL_ERR_RETURN_INT("Unable to create ostream exporter");
 	}
 
 	OTELC_RETURN_INT(OTELC_RET_OK);
@@ -525,7 +525,7 @@ int otel_tracer_exporter_create(struct otelc_tracer *tracer, std::unique_ptr<ote
 		else if (strcasecmp(format, "protobuf") == 0)
 			options.format = otel_exporter_zipkin::TransportFormat::kProtobuf;
 		else if (*format != '\0')
-			OTEL_TRACER_ERETURN_INT("Invalid Zipkin exporter format: '%s'", format);
+			OTEL_TRACER_RETURN_INT("Invalid Zipkin exporter format: '%s'", format);
 
 		options.endpoint     = endpoint;
 		options.service_name = service_name;
@@ -757,7 +757,7 @@ int otel_logger_exporter_create(struct otelc_logger *logger, std::unique_ptr<ote
 					OTEL_DBG_THROW();
 					es_http_headers.emplace(std::string{http_headers->key[i]}, std::string{http_headers->value[i]});
 				}
-				OTEL_CATCH_ERETURN( , OTEL_LOGGER_ERETURN_INT, "Unable to add HTTP header")
+				OTEL_CATCH_SIGNAL_RETURN( , OTEL_LOGGER_RETURN_INT, "Unable to add HTTP header")
 			}
 
 		options.host_             = host;

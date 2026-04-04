@@ -18,11 +18,11 @@
 
 #define OTEL_YAML_LOGGER_PREFIX             "/signals/logs"
 
-#define OTEL_LOGGER_ERROR(f, ...)            do { (void)otelc_sprintf(&(logger->err), f, ##__VA_ARGS__); OTELC_DBG(OTEL, "%s", logger->err); } while (0)
-#define OTEL_LOGGER_ERETURN(f, ...)          do { OTEL_LOGGER_ERROR(f, ##__VA_ARGS__); OTELC_RETURN(); } while (0)
-#define OTEL_LOGGER_ERETURN_EX(t,r,f, ...)   do { OTEL_LOGGER_ERROR(f, ##__VA_ARGS__); OTELC_RETURN##t(r); } while (0)
-#define OTEL_LOGGER_ERETURN_INT(f, ...)      OTEL_LOGGER_ERETURN_EX(_INT, OTELC_RET_ERROR, f, ##__VA_ARGS__)
-#define OTEL_LOGGER_ERETURN_PTR(f, ...)      OTEL_LOGGER_ERETURN_EX(_PTR, nullptr, f, ##__VA_ARGS__)
+#define OTEL_LOGGER_ERROR(f, ...)            OTEL_SIGNAL_ERROR(logger->err, f, ##__VA_ARGS__)
+#define OTEL_LOGGER_RETURN(f, ...)           OTEL_RETURN(logger, f, ##__VA_ARGS__)
+#define OTEL_LOGGER_RETURN_EX(t,r,f, ...)    OTEL_RETURN_EX(logger, t, (r), f, ##__VA_ARGS__)
+#define OTEL_LOGGER_RETURN_INT(f, ...)       OTEL_RETURN_INT(logger, f, ##__VA_ARGS__)
+#define OTEL_LOGGER_RETURN_PTR(f, ...)       OTEL_RETURN_PTR(logger, f, ##__VA_ARGS__)
 
 #endif /* _OPENTELEMETRY_C_WRAPPER_LOGGER_H_ */
 

@@ -76,7 +76,7 @@ int otel_sampler_create(struct otelc_tracer *tracer, std::unique_ptr<otel_sdk_tr
 			const std::string str_ratio{"TraceIdRatioBasedSampler{" + std::to_string(ratio) + "}"};
 
 			if (str_ratio != sampler_maybe->GetDescription())
-				OTEL_TRACER_ERETURN_INT("Invalid OpenTelemetry sampler ratio: %f", ratio);
+				OTEL_TRACER_RETURN_INT("Invalid OpenTelemetry sampler ratio: %f", ratio);
 		}
 #endif /* DEBUG */
 	}
@@ -122,11 +122,11 @@ int otel_sampler_create(struct otelc_tracer *tracer, std::unique_ptr<otel_sdk_tr
 			delegate_sampler = otel::make_unique_nothrow<otel_sdk_trace::TraceIdRatioBasedSampler>(ratio);
 		}
 		else {
-			OTEL_TRACER_ERETURN_INT("Invalid parent_based sampler delegate type: '%s'", delegate);
+			OTEL_TRACER_RETURN_INT("Invalid parent_based sampler delegate type: '%s'", delegate);
 		}
 
 		if (OTEL_NULL(delegate_sampler))
-			OTEL_TRACER_ERETURN_INT("Unable to create delegate sampler for ParentBasedSampler");
+			OTEL_TRACER_RETURN_INT("Unable to create delegate sampler for ParentBasedSampler");
 
 		if (OTELC_STR_IS_VALID(remote_sampled)) {
 			if (strcasecmp(remote_sampled, "always_on") == 0)
@@ -134,7 +134,7 @@ int otel_sampler_create(struct otelc_tracer *tracer, std::unique_ptr<otel_sdk_tr
 			else if (strcasecmp(remote_sampled, "always_off") == 0)
 				remote_sampled_sampler = std::make_shared<otel_sdk_trace::AlwaysOffSampler>();
 			else
-				OTEL_TRACER_ERETURN_INT("Invalid remote_sampled delegate: '%s'", remote_sampled);
+				OTEL_TRACER_RETURN_INT("Invalid remote_sampled delegate: '%s'", remote_sampled);
 		}
 		if (OTELC_STR_IS_VALID(remote_not_sampled)) {
 			if (strcasecmp(remote_not_sampled, "always_on") == 0)
@@ -142,7 +142,7 @@ int otel_sampler_create(struct otelc_tracer *tracer, std::unique_ptr<otel_sdk_tr
 			else if (strcasecmp(remote_not_sampled, "always_off") == 0)
 				remote_not_sampled_sampler = std::make_shared<otel_sdk_trace::AlwaysOffSampler>();
 			else
-				OTEL_TRACER_ERETURN_INT("Invalid remote_not_sampled delegate: '%s'", remote_not_sampled);
+				OTEL_TRACER_RETURN_INT("Invalid remote_not_sampled delegate: '%s'", remote_not_sampled);
 		}
 		if (OTELC_STR_IS_VALID(local_sampled)) {
 			if (strcasecmp(local_sampled, "always_on") == 0)
@@ -150,7 +150,7 @@ int otel_sampler_create(struct otelc_tracer *tracer, std::unique_ptr<otel_sdk_tr
 			else if (strcasecmp(local_sampled, "always_off") == 0)
 				local_sampled_sampler = std::make_shared<otel_sdk_trace::AlwaysOffSampler>();
 			else
-				OTEL_TRACER_ERETURN_INT("Invalid local_sampled delegate: '%s'", local_sampled);
+				OTEL_TRACER_RETURN_INT("Invalid local_sampled delegate: '%s'", local_sampled);
 		}
 		if (OTELC_STR_IS_VALID(local_not_sampled)) {
 			if (strcasecmp(local_not_sampled, "always_on") == 0)
@@ -158,17 +158,17 @@ int otel_sampler_create(struct otelc_tracer *tracer, std::unique_ptr<otel_sdk_tr
 			else if (strcasecmp(local_not_sampled, "always_off") == 0)
 				local_not_sampled_sampler = std::make_shared<otel_sdk_trace::AlwaysOffSampler>();
 			else
-				OTEL_TRACER_ERETURN_INT("Invalid local_not_sampled delegate: '%s'", local_not_sampled);
+				OTEL_TRACER_RETURN_INT("Invalid local_not_sampled delegate: '%s'", local_not_sampled);
 		}
 
 		sampler_maybe = otel::make_unique_nothrow<otel_sdk_trace::ParentBasedSampler>(std::move(delegate_sampler), remote_sampled_sampler, remote_not_sampled_sampler, local_sampled_sampler, local_not_sampled_sampler);
 	}
 	else {
-		OTEL_TRACER_ERETURN_INT("Invalid sampler type: '%s'", type);
+		OTEL_TRACER_RETURN_INT("Invalid sampler type: '%s'", type);
 	}
 
 	if (OTEL_NULL(sampler_maybe))
-		OTEL_TRACER_ERETURN_INT("Unable to create OpenTelemetry sampler");
+		OTEL_TRACER_RETURN_INT("Unable to create OpenTelemetry sampler");
 
 	sampler = std::move(sampler_maybe);
 
