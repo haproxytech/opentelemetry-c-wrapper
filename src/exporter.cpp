@@ -500,65 +500,10 @@ int otel_tracer_exporter_create(struct otelc_tracer *tracer, std::unique_ptr<ote
 		OTEL_TRACER_ERROR(OTEL_TRACER_EXPORTER_NOT_SUPPORTED("In-Memory"));
 #endif /* HAVE_OTEL_EXPORTER_IN_MEMORY */
 	}
-	else if (strcasecmp(type, OTEL_EXPORTER_OSTREAM) == 0) {
-#ifdef HAVE_OTEL_EXPORTER_OSTREAM
-		if (otel_exporter_set_ostream_options<otel_exporter_trace::OStreamSpanExporter>(OTEL_TRACER_EXPORTER_DESC, OTEL_YAML_TRACER_PREFIX OTEL_YAML_EXPORTERS, otel_tracer_logfile, exporter_maybe, &(tracer->err), name) == OTELC_RET_ERROR)
-			OTELC_RETURN_INT(OTELC_RET_ERROR);
-#else
-		OTEL_TRACER_ERROR(OTEL_TRACER_EXPORTER_NOT_SUPPORTED("ostream"));
-#endif /* HAVE_OTEL_EXPORTER_OSTREAM */
-	}
-	else if (strcasecmp(type, OTEL_EXPORTER_OTLP_FILE) == 0) {
-#ifdef HAVE_OTEL_EXPORTER_OTLP_FILE
-		otel_exporter_otlp::OtlpFileExporterOptions        options{};
-		otel_exporter_otlp::OtlpFileExporterRuntimeOptions rt_options{};
-
-		if (otel_exporter_set_otlp_file_options(OTEL_TRACER_EXPORTER_DESC, OTEL_YAML_TRACER_PREFIX OTEL_YAML_EXPORTERS, options, rt_options, &(tracer->err), name) == OTELC_RET_ERROR)
-			OTELC_RETURN_INT(OTELC_RET_ERROR);
-
-		exporter_maybe = otel::make_unique_nothrow<otel_exporter_otlp::OtlpFileExporter>(options, rt_options);
-		if (OTEL_NULL(exporter_maybe))
-			OTEL_TRACER_ERROR(OTEL_TRACER_EXPORTER_FAILED("OTLP File"));
-#else
-		OTEL_TRACER_ERROR(OTEL_TRACER_EXPORTER_NOT_SUPPORTED("OTLP File"));
-#endif /* HAVE_OTEL_EXPORTER_OTLP_FILE */
-	}
-	else if (strcasecmp(type, OTEL_EXPORTER_OTLP_GRPC) == 0) {
-#ifdef HAVE_OTEL_EXPORTER_OTLP_GRPC
-		/* <opentelemetry/exporters/otlp/otlp_grpc_client_options.h> */
-		otel_exporter_otlp::OtlpGrpcExporterOptions options{};
-		char                                        endpoint[OTEL_YAML_BUFSIZ] = OTEL_TRACER_EXPORTER_OTLP_GRPC_ENDPOINT;
-
-		if (otel_exporter_set_otlp_grpc_options(OTEL_TRACER_EXPORTER_DESC, OTEL_YAML_TRACER_PREFIX OTEL_YAML_EXPORTERS, endpoint, options, &(tracer->err), name) == OTELC_RET_ERROR)
-			OTELC_RETURN_INT(OTELC_RET_ERROR);
-
-		exporter_maybe = otel::make_unique_nothrow<otel_exporter_otlp::OtlpGrpcExporter>(options);
-		if (OTEL_NULL(exporter_maybe))
-			OTEL_TRACER_ERROR(OTEL_TRACER_EXPORTER_FAILED("OTLP gRPC"));
-#else
-		OTEL_TRACER_ERROR(OTEL_TRACER_EXPORTER_NOT_SUPPORTED("OTLP gRPC"));
-#endif /* HAVE_OTEL_EXPORTER_OTLP_GRPC */
-	}
-	else if (strcasecmp(type, OTEL_EXPORTER_OTLP_HTTP) == 0) {
-#ifdef HAVE_OTEL_EXPORTER_OTLP_HTTP
-		/***
-		 * <opentelemetry/exporters/otlp/otlp_http_exporter_options.h>
-		 * <opentelemetry/exporters/otlp/otlp_http_exporter_runtime_options.h>
-		 */
-		otel_exporter_otlp::OtlpHttpExporterOptions        options{};
-		otel_exporter_otlp::OtlpHttpExporterRuntimeOptions rt_options{};
-		char                                               endpoint[OTEL_YAML_BUFSIZ] = OTEL_TRACER_EXPORTER_OTLP_HTTP_ENDPOINT;
-
-		if (otel_exporter_set_otlp_http_options(OTEL_TRACER_EXPORTER_DESC, OTEL_YAML_TRACER_PREFIX OTEL_YAML_EXPORTERS, endpoint, options, rt_options, &(tracer->err), name) == OTELC_RET_ERROR)
-			OTELC_RETURN_INT(OTELC_RET_ERROR);
-
-		exporter_maybe = otel::make_unique_nothrow<otel_exporter_otlp::OtlpHttpExporter>(options, rt_options);
-		if (OTEL_NULL(exporter_maybe))
-			OTEL_TRACER_ERROR(OTEL_TRACER_EXPORTER_FAILED("OTLP HTTP"));
-#else
-		OTEL_TRACER_ERROR(OTEL_TRACER_EXPORTER_NOT_SUPPORTED("OTLP HTTP"));
-#endif /* HAVE_OTEL_EXPORTER_OTLP_HTTP */
-	}
+	OTEL_EXPORTER_CASE_OSTREAM(TRACER, otel_exporter_trace::OStreamSpanExporter, otel_tracer_logfile, &(tracer->err))
+	OTEL_EXPORTER_CASE_OTLP_FILE(TRACER, OtlpFileExporter, &(tracer->err))
+	OTEL_EXPORTER_CASE_OTLP_GRPC(TRACER, OtlpGrpcExporter, &(tracer->err))
+	OTEL_EXPORTER_CASE_OTLP_HTTP(TRACER, OtlpHttpExporter, &(tracer->err))
 	else if (strcasecmp(type, OTEL_EXPORTER_ZIPKIN) == 0) {
 #ifdef HAVE_OTEL_EXPORTER_ZIPKIN
 		otel_exporter_zipkin::ZipkinExporterOptions options{};
@@ -696,60 +641,10 @@ int otel_meter_exporter_create(struct otelc_meter *meter, std::unique_ptr<otel_s
 		OTEL_METER_ERROR(OTEL_METER_EXPORTER_NOT_SUPPORTED("In-Memory"));
 #endif /* HAVE_OTEL_EXPORTER_IN_MEMORY */
 	}
-	else if (strcasecmp(type, OTEL_EXPORTER_OSTREAM) == 0) {
-#ifdef HAVE_OTEL_EXPORTER_OSTREAM
-		if (otel_exporter_set_ostream_options<otel_exporter_metrics::OStreamMetricExporter>(OTEL_METER_EXPORTER_DESC, OTEL_YAML_METER_PREFIX OTEL_YAML_EXPORTERS, otel_meter_logfile, exporter_maybe, &(meter->err), name) == OTELC_RET_ERROR)
-			OTELC_RETURN_INT(OTELC_RET_ERROR);
-#else
-		OTEL_METER_ERROR(OTEL_METER_EXPORTER_NOT_SUPPORTED("ostream"));
-#endif /* HAVE_OTEL_EXPORTER_OSTREAM */
-	}
-	else if (strcasecmp(type, OTEL_EXPORTER_OTLP_FILE) == 0) {
-#ifdef HAVE_OTEL_EXPORTER_OTLP_FILE
-		otel_exporter_otlp::OtlpFileMetricExporterOptions        options{};
-		otel_exporter_otlp::OtlpFileMetricExporterRuntimeOptions rt_options{};
-
-		if (otel_exporter_set_otlp_file_options(OTEL_METER_EXPORTER_DESC, OTEL_YAML_METER_PREFIX OTEL_YAML_EXPORTERS, options, rt_options, &(meter->err), name) == OTELC_RET_ERROR)
-			OTELC_RETURN_INT(OTELC_RET_ERROR);
-
-		exporter_maybe = otel::make_unique_nothrow<otel_exporter_otlp::OtlpFileMetricExporter>(options, rt_options);
-		if (OTEL_NULL(exporter_maybe))
-			OTEL_METER_ERROR(OTEL_METER_EXPORTER_FAILED("OTLP File"));
-#else
-		OTEL_METER_ERROR(OTEL_METER_EXPORTER_NOT_SUPPORTED("OTLP File"));
-#endif /* HAVE_OTEL_EXPORTER_OTLP_FILE */
-	}
-	else if (strcasecmp(type, OTEL_EXPORTER_OTLP_GRPC) == 0) {
-#ifdef HAVE_OTEL_EXPORTER_OTLP_GRPC
-		otel_exporter_otlp::OtlpGrpcMetricExporterOptions options{};
-		char                                              endpoint[OTEL_YAML_BUFSIZ] = OTEL_METER_EXPORTER_OTLP_GRPC_ENDPOINT;
-
-		if (otel_exporter_set_otlp_grpc_options(OTEL_METER_EXPORTER_DESC, OTEL_YAML_METER_PREFIX OTEL_YAML_EXPORTERS, endpoint, options, &(meter->err), name) == OTELC_RET_ERROR)
-			OTELC_RETURN_INT(OTELC_RET_ERROR);
-
-		exporter_maybe = otel::make_unique_nothrow<otel_exporter_otlp::OtlpGrpcMetricExporter>(options);
-		if (OTEL_NULL(exporter_maybe))
-			OTEL_METER_ERROR(OTEL_METER_EXPORTER_FAILED("OTLP gRPC"));
-#else
-		OTEL_METER_ERROR(OTEL_METER_EXPORTER_NOT_SUPPORTED("OTLP gRPC"));
-#endif /* HAVE_OTEL_EXPORTER_OTLP_GRPC */
-	}
-	else if (strcasecmp(type, OTEL_EXPORTER_OTLP_HTTP) == 0) {
-#ifdef HAVE_OTEL_EXPORTER_OTLP_HTTP
-		otel_exporter_otlp::OtlpHttpMetricExporterOptions        options{};
-		otel_exporter_otlp::OtlpHttpMetricExporterRuntimeOptions rt_options{};
-		char                                                     endpoint[OTEL_YAML_BUFSIZ] = OTEL_METER_EXPORTER_OTLP_HTTP_ENDPOINT;
-
-		if (otel_exporter_set_otlp_http_options(OTEL_METER_EXPORTER_DESC, OTEL_YAML_METER_PREFIX OTEL_YAML_EXPORTERS, endpoint, options, rt_options, &(meter->err), name) == OTELC_RET_ERROR)
-			OTELC_RETURN_INT(OTELC_RET_ERROR);
-
-		exporter_maybe = otel::make_unique_nothrow<otel_exporter_otlp::OtlpHttpMetricExporter>(options, rt_options);
-		if (OTEL_NULL(exporter_maybe))
-			OTEL_METER_ERROR(OTEL_METER_EXPORTER_FAILED("OTLP HTTP"));
-#else
-		OTEL_METER_ERROR(OTEL_METER_EXPORTER_NOT_SUPPORTED("OTLP HTTP"));
-#endif /* HAVE_OTEL_EXPORTER_OTLP_HTTP */
-	}
+	OTEL_EXPORTER_CASE_OSTREAM(METER, otel_exporter_metrics::OStreamMetricExporter, otel_meter_logfile, &(meter->err))
+	OTEL_EXPORTER_CASE_OTLP_FILE(METER, OtlpFileMetricExporter, &(meter->err))
+	OTEL_EXPORTER_CASE_OTLP_GRPC(METER, OtlpGrpcMetricExporter, &(meter->err))
+	OTEL_EXPORTER_CASE_OTLP_HTTP(METER, OtlpHttpMetricExporter, &(meter->err))
 	else if (strcasecmp(type, OTEL_EXPORTER_ZIPKIN) == 0) {
 		OTEL_METER_ERROR(OTEL_METER_EXPORTER_NOT_SUPPORTED("Zipkin"));
 	}
@@ -882,60 +777,10 @@ int otel_logger_exporter_create(struct otelc_logger *logger, std::unique_ptr<ote
 	else if (strcasecmp(type, OTEL_EXPORTER_IN_MEMORY) == 0) {
 		OTEL_LOGGER_ERROR(OTEL_LOGGER_EXPORTER_NOT_SUPPORTED("In-Memory"));
 	}
-	else if (strcasecmp(type, OTEL_EXPORTER_OSTREAM) == 0) {
-#ifdef HAVE_OTEL_EXPORTER_OSTREAM
-		if (otel_exporter_set_ostream_options<otel_exporter_logs::OStreamLogRecordExporter>(OTEL_LOGGER_EXPORTER_DESC, OTEL_YAML_LOGGER_PREFIX OTEL_YAML_EXPORTERS, otel_logger_logfile, exporter_maybe, &(logger->err), name) == OTELC_RET_ERROR)
-			OTELC_RETURN_INT(OTELC_RET_ERROR);
-#else
-		OTEL_LOGGER_ERROR(OTEL_LOGGER_EXPORTER_NOT_SUPPORTED("ostream"));
-#endif /* HAVE_OTEL_EXPORTER_OSTREAM */
-	}
-	else if (strcasecmp(type, OTEL_EXPORTER_OTLP_FILE) == 0) {
-#ifdef HAVE_OTEL_EXPORTER_OTLP_FILE
-		otel_exporter_otlp::OtlpFileLogRecordExporterOptions        options{};
-		otel_exporter_otlp::OtlpFileLogRecordExporterRuntimeOptions rt_options{};
-
-		if (otel_exporter_set_otlp_file_options(OTEL_LOGGER_EXPORTER_DESC, OTEL_YAML_LOGGER_PREFIX OTEL_YAML_EXPORTERS, options, rt_options, &(logger->err), name) == OTELC_RET_ERROR)
-			OTELC_RETURN_INT(OTELC_RET_ERROR);
-
-		exporter_maybe = otel::make_unique_nothrow<otel_exporter_otlp::OtlpFileLogRecordExporter>(options, rt_options);
-		if (OTEL_NULL(exporter_maybe))
-			OTEL_LOGGER_ERROR(OTEL_LOGGER_EXPORTER_FAILED("OTLP File"));
-#else
-		OTEL_LOGGER_ERROR(OTEL_LOGGER_EXPORTER_NOT_SUPPORTED("OTLP File"));
-#endif /* HAVE_OTEL_EXPORTER_OTLP_FILE */
-	}
-	else if (strcasecmp(type, OTEL_EXPORTER_OTLP_GRPC) == 0) {
-#ifdef HAVE_OTEL_EXPORTER_OTLP_GRPC
-		otel_exporter_otlp::OtlpGrpcLogRecordExporterOptions options{};
-		char                                                 endpoint[OTEL_YAML_BUFSIZ] = OTEL_LOGGER_EXPORTER_OTLP_GRPC_ENDPOINT;
-
-		if (otel_exporter_set_otlp_grpc_options(OTEL_LOGGER_EXPORTER_DESC, OTEL_YAML_LOGGER_PREFIX OTEL_YAML_EXPORTERS, endpoint, options, &(logger->err), name) == OTELC_RET_ERROR)
-			OTELC_RETURN_INT(OTELC_RET_ERROR);
-
-		exporter_maybe = otel::make_unique_nothrow<otel_exporter_otlp::OtlpGrpcLogRecordExporter>(options);
-		if (OTEL_NULL(exporter_maybe))
-			OTEL_LOGGER_ERROR(OTEL_LOGGER_EXPORTER_FAILED("OTLP gRPC"));
-#else
-		OTEL_LOGGER_ERROR(OTEL_LOGGER_EXPORTER_NOT_SUPPORTED("OTLP gRPC"));
-#endif /* HAVE_OTEL_EXPORTER_OTLP_GRPC */
-	}
-	else if (strcasecmp(type, OTEL_EXPORTER_OTLP_HTTP) == 0) {
-#ifdef HAVE_OTEL_EXPORTER_OTLP_HTTP
-		otel_exporter_otlp::OtlpHttpLogRecordExporterOptions        options{};
-		otel_exporter_otlp::OtlpHttpLogRecordExporterRuntimeOptions rt_options{};
-		char                                                        endpoint[OTEL_YAML_BUFSIZ] = OTEL_LOGGER_EXPORTER_OTLP_HTTP_ENDPOINT;
-
-		if (otel_exporter_set_otlp_http_options(OTEL_LOGGER_EXPORTER_DESC, OTEL_YAML_LOGGER_PREFIX OTEL_YAML_EXPORTERS, endpoint, options, rt_options, &(logger->err), name) == OTELC_RET_ERROR)
-			OTELC_RETURN_INT(OTELC_RET_ERROR);
-
-		exporter_maybe = otel::make_unique_nothrow<otel_exporter_otlp::OtlpHttpLogRecordExporter>(options, rt_options);
-		if (OTEL_NULL(exporter_maybe))
-			OTEL_LOGGER_ERROR(OTEL_LOGGER_EXPORTER_FAILED("OTLP HTTP"));
-#else
-		OTEL_LOGGER_ERROR(OTEL_LOGGER_EXPORTER_NOT_SUPPORTED("OTLP HTTP"));
-#endif /* HAVE_OTEL_EXPORTER_OTLP_HTTP */
-	}
+	OTEL_EXPORTER_CASE_OSTREAM(LOGGER, otel_exporter_logs::OStreamLogRecordExporter, otel_logger_logfile, &(logger->err))
+	OTEL_EXPORTER_CASE_OTLP_FILE(LOGGER, OtlpFileLogRecordExporter, &(logger->err))
+	OTEL_EXPORTER_CASE_OTLP_GRPC(LOGGER, OtlpGrpcLogRecordExporter, &(logger->err))
+	OTEL_EXPORTER_CASE_OTLP_HTTP(LOGGER, OtlpHttpLogRecordExporter, &(logger->err))
 	else if (strcasecmp(type, OTEL_EXPORTER_ZIPKIN) == 0) {
 		OTEL_LOGGER_ERROR(OTEL_LOGGER_EXPORTER_NOT_SUPPORTED("Zipkin"));
 	}

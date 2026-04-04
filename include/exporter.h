@@ -47,6 +47,99 @@
 #define OTEL_LOGGER_EXPORTER_OTLP_GRPC_ENDPOINT   "http://localhost:4317/v1/logs"
 #define OTEL_LOGGER_EXPORTER_OTLP_HTTP_ENDPOINT   "http://localhost:4318/v1/logs"
 
+/***
+ * Exporter dispatch macros for shared backends.  Each macro expands to an
+ * else-if branch that creates the corresponding exporter.  The ifdef-guarded
+ * pair selects the supported or unsupported variant at compile time so that
+ * callers do not need ifdef guards at the expansion site.
+ *
+ * All macros assume these locals exist in the caller:
+ *   type, exporter_maybe, name
+ */
+#ifdef HAVE_OTEL_EXPORTER_OSTREAM
+  #define OTEL_EXPORTER_CASE_OSTREAM(arg_sig, arg_type, arg_logfile, arg_err)                                                       \
+	else if (strcasecmp(type, OTEL_EXPORTER_OSTREAM) == 0) {                                                                    \
+		if (otel_exporter_set_ostream_options<arg_type>(OTEL_##arg_sig##_EXPORTER_DESC,                                     \
+		                                                OTEL_YAML_##arg_sig##_PREFIX OTEL_YAML_EXPORTERS,                   \
+		                                                (arg_logfile), exporter_maybe, (arg_err), name) == OTELC_RET_ERROR) \
+			OTELC_RETURN_INT(OTELC_RET_ERROR);                                                                          \
+	}
+#else
+  #define OTEL_EXPORTER_CASE_OSTREAM(arg_sig, arg_type, arg_logfile, arg_err)               \
+	else if (strcasecmp(type, OTEL_EXPORTER_OSTREAM) == 0) {                            \
+		OTEL_##arg_sig##_ERROR(OTEL_##arg_sig##_EXPORTER_NOT_SUPPORTED("ostream")); \
+	}
+#endif /* HAVE_OTEL_EXPORTER_OSTREAM */
+
+#ifdef HAVE_OTEL_EXPORTER_OTLP_FILE
+  #define OTEL_EXPORTER_CASE_OTLP_FILE(arg_sig, arg_base, arg_err)                                                \
+	else if (strcasecmp(type, OTEL_EXPORTER_OTLP_FILE) == 0) {                                                \
+		otel_exporter_otlp::arg_base##Options        options{};                                           \
+		otel_exporter_otlp::arg_base##RuntimeOptions rt_options{};                                        \
+		                                                                                                  \
+		if (otel_exporter_set_otlp_file_options(OTEL_##arg_sig##_EXPORTER_DESC,                           \
+		                                        OTEL_YAML_##arg_sig##_PREFIX OTEL_YAML_EXPORTERS,         \
+		                                        options, rt_options, (arg_err), name) == OTELC_RET_ERROR) \
+			OTELC_RETURN_INT(OTELC_RET_ERROR);                                                        \
+		exporter_maybe = otel::make_unique_nothrow<otel_exporter_otlp::arg_base>(options, rt_options);    \
+		if (OTEL_NULL(exporter_maybe))                                                                    \
+			OTEL_##arg_sig##_ERROR(OTEL_##arg_sig##_EXPORTER_FAILED("OTLP File"));                    \
+	}
+#else
+  #define OTEL_EXPORTER_CASE_OTLP_FILE(arg_sig, arg_base, arg_err)                            \
+	else if (strcasecmp(type, OTEL_EXPORTER_OTLP_FILE) == 0) {                            \
+		OTEL_##arg_sig##_ERROR(OTEL_##arg_sig##_EXPORTER_NOT_SUPPORTED("OTLP File")); \
+	}
+#endif /* HAVE_OTEL_EXPORTER_OTLP_FILE */
+
+/* <opentelemetry/exporters/otlp/otlp_grpc_client_options.h> */
+#ifdef HAVE_OTEL_EXPORTER_OTLP_GRPC
+  #define OTEL_EXPORTER_CASE_OTLP_GRPC(arg_sig, arg_base, arg_err)                                                               \
+	else if (strcasecmp(type, OTEL_EXPORTER_OTLP_GRPC) == 0) {                                                               \
+		otel_exporter_otlp::arg_base##Options options{};                                                                 \
+		char                                  endpoint[OTEL_YAML_BUFSIZ] = OTEL_##arg_sig##_EXPORTER_OTLP_GRPC_ENDPOINT; \
+		                                                                                                                 \
+		if (otel_exporter_set_otlp_grpc_options(OTEL_##arg_sig##_EXPORTER_DESC,                                          \
+		                                        OTEL_YAML_##arg_sig##_PREFIX OTEL_YAML_EXPORTERS,                        \
+		                                        endpoint, options, (arg_err), name) == OTELC_RET_ERROR)                  \
+			OTELC_RETURN_INT(OTELC_RET_ERROR);                                                                       \
+		exporter_maybe = otel::make_unique_nothrow<otel_exporter_otlp::arg_base>(options);                               \
+		if (OTEL_NULL(exporter_maybe))                                                                                   \
+			OTEL_##arg_sig##_ERROR(OTEL_##arg_sig##_EXPORTER_FAILED("OTLP gRPC"));                                   \
+	}
+#else
+  #define OTEL_EXPORTER_CASE_OTLP_GRPC(arg_sig, arg_base, arg_err)                            \
+	else if (strcasecmp(type, OTEL_EXPORTER_OTLP_GRPC) == 0) {                            \
+		OTEL_##arg_sig##_ERROR(OTEL_##arg_sig##_EXPORTER_NOT_SUPPORTED("OTLP gRPC")); \
+	}
+#endif /* HAVE_OTEL_EXPORTER_OTLP_GRPC */
+
+/***
+ * <opentelemetry/exporters/otlp/otlp_http_exporter_options.h>
+ * <opentelemetry/exporters/otlp/otlp_http_exporter_runtime_options.h>
+ */
+#ifdef HAVE_OTEL_EXPORTER_OTLP_HTTP
+  #define OTEL_EXPORTER_CASE_OTLP_HTTP(arg_sig, arg_base, arg_err)                                                                      \
+	else if (strcasecmp(type, OTEL_EXPORTER_OTLP_HTTP) == 0) {                                                                      \
+		otel_exporter_otlp::arg_base##Options        options{};                                                                 \
+		otel_exporter_otlp::arg_base##RuntimeOptions rt_options{};                                                              \
+		char                                         endpoint[OTEL_YAML_BUFSIZ] = OTEL_##arg_sig##_EXPORTER_OTLP_HTTP_ENDPOINT; \
+		                                                                                                                        \
+		if (otel_exporter_set_otlp_http_options(OTEL_##arg_sig##_EXPORTER_DESC,                                                 \
+		                                        OTEL_YAML_##arg_sig##_PREFIX OTEL_YAML_EXPORTERS,                               \
+		                                        endpoint, options, rt_options, (arg_err), name) == OTELC_RET_ERROR)             \
+			OTELC_RETURN_INT(OTELC_RET_ERROR);                                                                              \
+		exporter_maybe = otel::make_unique_nothrow<otel_exporter_otlp::arg_base>(options, rt_options);                          \
+		if (OTEL_NULL(exporter_maybe))                                                                                          \
+			OTEL_##arg_sig##_ERROR(OTEL_##arg_sig##_EXPORTER_FAILED("OTLP HTTP"));                                          \
+	}
+#else
+  #define OTEL_EXPORTER_CASE_OTLP_HTTP(arg_sig, arg_base, arg_err)                            \
+	else if (strcasecmp(type, OTEL_EXPORTER_OTLP_HTTP) == 0) {                            \
+		OTEL_##arg_sig##_ERROR(OTEL_##arg_sig##_EXPORTER_NOT_SUPPORTED("OTLP HTTP")); \
+	}
+#endif /* HAVE_OTEL_EXPORTER_OTLP_HTTP */
+
 
 int  otel_tracer_exporter_create(struct otelc_tracer *tracer, std::unique_ptr<otel_sdk_trace::SpanExporter> &exporter, const char *name = nullptr);
 void otel_tracer_exporter_destroy(void);
