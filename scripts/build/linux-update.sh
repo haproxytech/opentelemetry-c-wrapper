@@ -21,6 +21,7 @@
 #     - use CMAKE_POLICY_VERSION_MINIMUM=3.5 for cmake >= 4.1
 #   - ubuntu 22.04.5 LTS (Jammy Jellyfish)
 #   - ubuntu 24.04.3 LTS (Noble Numbat)
+#   - ubuntu 25.10 (Questing Quokka)
 #   - tuxedo 24.04.3 LTS
 #   - opensuse-leap 15.5
 #     - install gcc10
@@ -73,7 +74,7 @@ sh_cmake_install ()
 
 sh_system_update ()
 {
-	local _var_pkg_common="automake binutils cmake gawk gcc git libtool make pkgconf wget"
+	local _var_pkg_common="automake autoconf-archive binutils cmake gawk gcc git libtool make pkgconf wget"
 	local _var_pkg_debian="debhelper g++ libc6-dev libcurl4-gnutls-dev libgpg-error-dev libkeyutils-dev liblzma-dev libssl-dev libsystemd-dev zlib1g-dev"
 	local _var_pkg_rhel="gcc-c++ glibc-devel libcurl-devel libgpg-error-devel patch rpm-build systemd-devel zlib-devel"
 

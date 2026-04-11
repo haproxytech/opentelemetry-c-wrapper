@@ -51,7 +51,7 @@ scripts/build directory.  All scripts have been tested on the following Linux
 distributions for the amd64 architecture:
 
   * debian 11 / 12 / 13
-  * ubuntu 20.04.6 / 22.04.5 / 24.04.3
+  * ubuntu 20.04.6 / 22.04.5 / 24.04.3 / 25.10
   * tuxedo 24.04.3
   * rhel 8.10 / 9.5 / 10.0
   * rocky 9.5

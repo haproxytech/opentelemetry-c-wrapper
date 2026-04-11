@@ -29,6 +29,11 @@ dnl Set the compiler, preprocessor, and file extensions.
 dnl
 AC_LANG([C])
 
+m4_ifndef(
+	[AX_CHECK_COMPILE_FLAG],
+	[m4_fatal([AX_CHECK_COMPILE_FLAG is required. Install autoconf-archive.])]
+)
+
 dnl Checking command line options.
 dnl
 AX_ENABLE_DEBUG

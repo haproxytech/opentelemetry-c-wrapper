@@ -34,7 +34,7 @@ cd scripts/build
 ./linux-update.sh
 ```
 
-Tested Linux distributions (amd64): Debian 11/12/13, Ubuntu 20.04/22.04/24.04,
+Tested Linux distributions (amd64): Debian 11/12/13, Ubuntu 20.04/22.04/24.04/25.10,
 Tuxedo 24.04, RHEL 8.10/9.5/10.0, Rocky 9.5, and openSUSE Leap 15.5/15.6.
 
 ### Building the OTel C++ SDK and Dependencies
