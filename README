@@ -100,8 +100,18 @@ following two scripts:
     automatically downloads and compiles all the necessary prerequisite
     libraries
 
+It is strongly recommended to use the provided build scripts rather than relying
+on system-installed dependency packages, which are likely outdated or compiled
+with options incompatible with the OTel C wrapper.
+
 Whichever script is used, the result should be the same.  However, it is
-recommended to use the build-bundle.sh script for this task.
+recommended to use the build-bundle.sh script for this task.  In that script,
+the AWS-LC and curl build steps are commented out by default, so the script uses
+the OpenSSL and curl libraries present on the system.  An SSL library (OpenSSL
+or another supported implementation) must be installed on the system; if
+curl is not available, the OTel C++ build process downloads and compiles it
+automatically.  Users can uncomment the AWS-LC and curl steps if they prefer to
+build those from source as well.
 
 Example of how to run an installation script:
 
@@ -129,9 +139,9 @@ Note: it is possible that some prerequisite libraries are already installed on
       directory, such as /opt, /usr/local, or any other non-system directory of
       your choice.
 
-If one prefers not to use the AWS-LC cryptographic library and instead opts for
-the system-installed OpenSSL, the building of the first two packages (AWS-LC and
-curl) can be commented out in the installation scripts.
+If one prefers to use the AWS-LC cryptographic library instead of the
+system-installed OpenSSL, the AWS-LC and curl build steps can be uncommented in
+the installation scripts.
 
 List of (almost) all dependencies for the OTel C++ client package:
 

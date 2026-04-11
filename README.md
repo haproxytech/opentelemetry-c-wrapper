@@ -50,6 +50,10 @@ cd scripts/build
 By default, libraries are installed under `/opt`.  A sequential alternative
 (`build.sh`) is also available.
 
+**Important:** Use the provided build scripts rather than relying on
+system-installed dependency packages, which are likely outdated or compiled
+with options incompatible with the OTel C wrapper.
+
 ### Building the Wrapper Library
 
 **Autotools** (recommended):
