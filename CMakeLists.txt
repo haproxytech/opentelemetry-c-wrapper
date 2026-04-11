@@ -291,7 +291,7 @@ if(OPENTELEMETRY_DIR)
         "${OPENTELEMETRY_DIR}/lib/pkgconfig:${OPENTELEMETRY_DIR}/lib64/pkgconfig:$ENV{PKG_CONFIG_PATH}")
 endif()
 
-pkg_check_modules(OPENTELEMETRY REQUIRED opentelemetry_api)
+pkg_check_modules(OPENTELEMETRY REQUIRED opentelemetry_api>=1.26.0)
 
 ## Add -DOPENTELEMETRY_PROTO_API= to mirror autotools.
 list(APPEND OPENTELEMETRY_CFLAGS_OTHER "-DOPENTELEMETRY_PROTO_API=")
@@ -321,6 +321,29 @@ if(_otel_includedir AND EXISTS "${_otel_includedir}/opentelemetry/version.h")
     endif()
 endif()
 message(STATUS "OpenTelemetry C++ SDK version: ${OTELCPP_VERSION}")
+
+## Verify ABI version is 2.
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/_abi_check.cpp" [=[
+#include <stdio.h>
+#include <opentelemetry/version.h>
+int main(void) { printf("%d", OPENTELEMETRY_ABI_VERSION_NO); return 0; }
+]=])
+try_run(_abi_run_rc _abi_compile_rc
+    "${CMAKE_CURRENT_BINARY_DIR}"
+    "${CMAKE_CURRENT_BINARY_DIR}/_abi_check.cpp"
+    CMAKE_FLAGS "-DINCLUDE_DIRECTORIES:STRING=${_otel_includedir}"
+    COMPILE_DEFINITIONS ${OPENTELEMETRY_CFLAGS_OTHER}
+    RUN_OUTPUT_VARIABLE _otel_abi_version
+)
+if(NOT _abi_compile_rc)
+    message(FATAL_ERROR "Failed to compile OpenTelemetry ABI version check")
+endif()
+string(STRIP "${_otel_abi_version}" _otel_abi_version)
+if(NOT _otel_abi_version STREQUAL "2")
+    message(FATAL_ERROR
+        "Invalid ABI version: expected 2, got ${_otel_abi_version}")
+endif()
+message(STATUS "OpenTelemetry ABI version: ${_otel_abi_version}")
 
 ## ---------------------------------------------------------------------------
 ## Exporter probing  (find_library based)

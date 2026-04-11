@@ -24,6 +24,12 @@ AC_DEFUN([AX_WITH_OPENTELEMETRY], [
 		OPENTELEMETRY_LIBS="`PKG_CONFIG_PATH=${PKG_CONFIG_PATH} pkg-config --libs-only-l opentelemetry_api`"
 		OPENTELEMETRY_INCLUDEDIR="`PKG_CONFIG_PATH=${PKG_CONFIG_PATH} pkg-config --variable=includedir opentelemetry_api`"
 
+		AS_IF(
+			[PKG_CONFIG_PATH=${PKG_CONFIG_PATH} pkg-config --atleast-version=1.26.0 opentelemetry_api],
+			[AC_MSG_NOTICE([*** OpenTelemetry: opentelemetry_api >= 1.26.0 found])],
+			[AC_MSG_ERROR([*** OpenTelemetry: opentelemetry_api >= 1.26.0 not found])]
+		)
+
 		AX_VARIABLES_STORE
 
 		AC_LANG_PUSH([C++])
@@ -32,6 +38,18 @@ AC_DEFUN([AX_WITH_OPENTELEMETRY], [
 		LIBS="${_saved_libs} ${OPENTELEMETRY_LIBS}"
 
 		AC_CHECK_HEADER([opentelemetry/version.h], [], [AC_MSG_ERROR([OpenTelemetry library headers not found])], [])
+		AC_COMPUTE_INT(
+			[_otel_abi_version],
+			[OPENTELEMETRY_ABI_VERSION_NO],
+			[],
+			[#include <opentelemetry/version.h>]
+		)
+		AS_IF(
+			[test "${_otel_abi_version}" -eq 2],
+			[AC_MSG_NOTICE([*** OpenTelemetry: ABI version is 2])],
+			[AC_MSG_ERROR([*** OpenTelemetry: Invalid ABI version: expected 2, got ${_otel_abi_version}])]
+		)
+
 		AC_RUN_IFELSE([
 			AC_LANG_PROGRAM(
 				[[#include <stdio.h>]
