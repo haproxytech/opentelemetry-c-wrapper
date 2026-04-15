@@ -770,6 +770,8 @@ int otel_logger_exporter_create(struct otelc_logger *logger, std::unique_ptr<ote
 		exporter_maybe = otel::make_unique_nothrow<otel_exporter_logs::ElasticsearchLogRecordExporter>(options);
 		if (OTEL_NULL(exporter_maybe))
 			OTEL_LOGGER_ERROR(OTEL_LOGGER_EXPORTER_FAILED("Elasticsearch"));
+		else
+			OTEL_CAST_STATIC(otel_exporter_logs::ElasticsearchLogRecordExporter *, exporter_maybe.get())->MaybeSpawnBackgroundThread();
 #else
 		OTEL_LOGGER_ERROR(OTEL_LOGGER_EXPORTER_NOT_SUPPORTED("Elasticsearch"));
 #endif /* HAVE_OTEL_EXPORTER_ELASTICSEARCH */

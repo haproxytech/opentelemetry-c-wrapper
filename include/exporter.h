@@ -84,6 +84,8 @@
 		exporter_maybe = otel::make_unique_nothrow<otel_exporter_otlp::arg_base>(options, rt_options);    \
 		if (OTEL_NULL(exporter_maybe))                                                                    \
 			OTEL_##arg_sig##_ERROR(OTEL_##arg_sig##_EXPORTER_FAILED("OTLP File"));                    \
+		else                                                                                              \
+			OTEL_CAST_STATIC(otel_exporter_otlp::arg_base *, exporter_maybe.get())->MaybeSpawnBackgroundThread(); \
 	}
 #else
   #define OTEL_EXPORTER_CASE_OTLP_FILE(arg_sig, arg_base, arg_err)                            \
@@ -106,6 +108,8 @@
 		exporter_maybe = otel::make_unique_nothrow<otel_exporter_otlp::arg_base>(options);                               \
 		if (OTEL_NULL(exporter_maybe))                                                                                   \
 			OTEL_##arg_sig##_ERROR(OTEL_##arg_sig##_EXPORTER_FAILED("OTLP gRPC"));                                   \
+		else                                                                                                             \
+			OTEL_CAST_STATIC(otel_exporter_otlp::arg_base *, exporter_maybe.get())->MaybeSpawnBackgroundThread();    \
 	}
 #else
   #define OTEL_EXPORTER_CASE_OTLP_GRPC(arg_sig, arg_base, arg_err)                            \
@@ -132,6 +136,8 @@
 		exporter_maybe = otel::make_unique_nothrow<otel_exporter_otlp::arg_base>(options, rt_options);                          \
 		if (OTEL_NULL(exporter_maybe))                                                                                          \
 			OTEL_##arg_sig##_ERROR(OTEL_##arg_sig##_EXPORTER_FAILED("OTLP HTTP"));                                          \
+		else                                                                                                                    \
+			OTEL_CAST_STATIC(otel_exporter_otlp::arg_base *, exporter_maybe.get())->MaybeSpawnBackgroundThread();           \
 	}
 #else
   #define OTEL_EXPORTER_CASE_OTLP_HTTP(arg_sig, arg_base, arg_err)                            \
