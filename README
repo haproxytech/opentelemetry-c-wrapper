@@ -104,6 +104,11 @@ It is strongly recommended to use the provided build scripts rather than relying
 on system-installed dependency packages, which are likely outdated or compiled
 with options incompatible with the OTel C wrapper.
 
+If none of the attached build-*.sh scripts is used, the patches in
+scripts/build/ must be applied to the OpenTelemetry C++ source tree before
+compilation and the same CMake configuration options found in
+scripts/build/opentelemetry-cpp-1.26.0-install.sh must be used.
+
 Whichever script is used, the result should be the same.  However, it is
 recommended to use the build-bundle.sh script for this task.  In that script,
 the AWS-LC and curl build steps are commented out by default, so the script uses

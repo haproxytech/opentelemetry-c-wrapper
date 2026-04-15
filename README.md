@@ -54,6 +54,11 @@ By default, libraries are installed under `/opt`.  A sequential alternative
 system-installed dependency packages, which are likely outdated or compiled
 with options incompatible with the OTel C wrapper.
 
+If none of the attached `build-*.sh` scripts is used, the patches in
+`scripts/build/` must be applied to the OpenTelemetry C++ source tree
+before compilation and the same CMake configuration options found in
+`scripts/build/opentelemetry-cpp-1.26.0-install.sh` must be used.
+
 ### Building the Wrapper Library
 
 **Autotools** (recommended):
