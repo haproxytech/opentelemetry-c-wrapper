@@ -1,0 +1,54 @@
+From 14e70e4da3b324e2abb1f49ea0c40b12efa86791 Mon Sep 17 00:00:00 2001
+From: Miroslav Zagorac <mzagorac@haproxy.com>
+Date: Wed, 15 Apr 2026 21:16:57 +0200
+Subject: [PATCH 3/5] [EXPORTERS] Add MaybeSpawnBackgroundThread() to
+ Elasticsearch exporter
+
+The Elasticsearch log exporter uses the same async curl HttpClient as the
+OTLP HTTP exporters, so its background thread is also started lazily on
+the first SendRequest() call.
+
+Exposed MaybeSpawnBackgroundThread() on the ElasticsearchLogRecordExporter
+class, forwarding directly to the underlying HttpClient virtual method
+added in the previous OTLP HTTP patch.
+---
+ .../exporters/elasticsearch/es_log_record_exporter.h        | 6 ++++++
+ exporters/elasticsearch/src/es_log_record_exporter.cc       | 5 +++++
+ 2 files changed, 11 insertions(+)
+
+diff --git a/exporters/elasticsearch/include/opentelemetry/exporters/elasticsearch/es_log_record_exporter.h b/exporters/elasticsearch/include/opentelemetry/exporters/elasticsearch/es_log_record_exporter.h
+index bf07bd1b..6d41c6a8 100644
+--- a/exporters/elasticsearch/include/opentelemetry/exporters/elasticsearch/es_log_record_exporter.h
++++ b/exporters/elasticsearch/include/opentelemetry/exporters/elasticsearch/es_log_record_exporter.h
+@@ -120,6 +120,12 @@ class ElasticsearchLogRecordExporter final : public opentelemetry::sdk::logs::Lo
+   bool Shutdown(
+       std::chrono::microseconds timeout = (std::chrono::microseconds::max)()) noexcept override;
+ 
++  /**
++   * Pre-spawn the HTTP background thread so it is ready before the first export.
++   * @return true if the thread was spawned, false if it was already running.
++   */
++  bool MaybeSpawnBackgroundThread() noexcept;
++
+ private:
+   // Stores if this exporter had its Shutdown() method called
+   std::atomic<bool> is_shutdown_{false};
+diff --git a/exporters/elasticsearch/src/es_log_record_exporter.cc b/exporters/elasticsearch/src/es_log_record_exporter.cc
+index d617a1ac..3b45115c 100644
+--- a/exporters/elasticsearch/src/es_log_record_exporter.cc
++++ b/exporters/elasticsearch/src/es_log_record_exporter.cc
+@@ -504,6 +504,11 @@ bool ElasticsearchLogRecordExporter::Shutdown(std::chrono::microseconds /* timeo
+   return true;
+ }
+ 
++bool ElasticsearchLogRecordExporter::MaybeSpawnBackgroundThread() noexcept
++{
++  return http_client_->MaybeSpawnBackgroundThread();
++}
++
+ bool ElasticsearchLogRecordExporter::isShutdown() const noexcept
+ {
+   return is_shutdown_;
+-- 
+2.43.0
+

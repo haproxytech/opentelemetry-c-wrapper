@@ -1,0 +1,194 @@
+From 896a3afe53b76d1493c765369f2437fb84b91386 Mon Sep 17 00:00:00 2001
+From: Miroslav Zagorac <mzagorac@haproxy.com>
+Date: Wed, 15 Apr 2026 21:17:35 +0200
+Subject: [PATCH 4/5] [EXPORTERS] Add MaybeSpawnBackgroundThread() to OTLP File
+ exporters
+
+The file system backend's background flush thread is started lazily on the
+first Export() call via the private SpawnBackgroundWorkThread() method.
+
+Added a virtual MaybeSpawnBackgroundThread() method to the
+OtlpFileAppender interface (default no-op) and overrode it in
+OtlpFileSystemBackend to call SpawnBackgroundWorkThread() directly.
+Exposed the method through OtlpFileClient and all three OTLP File exporter
+classes (traces, metrics, logs) so callers can pre-spawn the flush thread
+immediately after construction.  The ostream backend inherits the default
+no-op since it has no background thread.
+---
+ .../exporters/otlp/otlp_file_client.h            |  6 ++++++
+ .../exporters/otlp/otlp_file_client_options.h    |  2 ++
+ .../exporters/otlp/otlp_file_exporter.h          |  6 ++++++
+ .../otlp/otlp_file_log_record_exporter.h         |  6 ++++++
+ .../exporters/otlp/otlp_file_metric_exporter.h   |  6 ++++++
+ exporters/otlp/src/otlp_file_client.cc           | 16 ++++++++++++++++
+ exporters/otlp/src/otlp_file_exporter.cc         |  5 +++++
+ .../otlp/src/otlp_file_log_record_exporter.cc    |  5 +++++
+ exporters/otlp/src/otlp_file_metric_exporter.cc  |  5 +++++
+ 9 files changed, 57 insertions(+)
+
+diff --git a/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_file_client.h b/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_file_client.h
+index 891657e0..d657dd99 100644
+--- a/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_file_client.h
++++ b/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_file_client.h
+@@ -68,6 +68,12 @@ class OtlpFileClient
+    */
+   bool Shutdown(std::chrono::microseconds timeout = std::chrono::microseconds(0)) noexcept;
+ 
++  /**
++   * Pre-spawn the file background flush thread so it is ready before the first export.
++   * @return true if the thread was spawned, false otherwise.
++   */
++  bool MaybeSpawnBackgroundThread() noexcept;
++
+   /**
+    * Get options of current OTLP file client.
+    * @return options of current OTLP file client.
+diff --git a/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_file_client_options.h b/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_file_client_options.h
+index 1b72d953..13460f0c 100644
+--- a/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_file_client_options.h
++++ b/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_file_client_options.h
+@@ -80,6 +80,8 @@ class OtlpFileAppender
+   virtual bool ForceFlush(std::chrono::microseconds timeout) noexcept = 0;
+ 
+   virtual bool Shutdown(std::chrono::microseconds timeout) noexcept = 0;
++
++  virtual bool MaybeSpawnBackgroundThread() noexcept { return false; }
+ };
+ 
+ using OtlpFileClientBackendOptions =
+diff --git a/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_file_exporter.h b/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_file_exporter.h
+index cc25ca66..3d1bb89d 100644
+--- a/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_file_exporter.h
++++ b/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_file_exporter.h
+@@ -74,6 +74,12 @@ class OPENTELEMETRY_EXPORT OtlpFileExporter final : public opentelemetry::sdk::t
+   bool Shutdown(
+       std::chrono::microseconds timeout = (std::chrono::microseconds::max)()) noexcept override;
+ 
++  /**
++   * Pre-spawn the file background flush thread so it is ready before the first export.
++   * @return true if the thread was spawned, false otherwise.
++   */
++  bool MaybeSpawnBackgroundThread() noexcept;
++
+ private:
+   // The configuration options associated with this exporter.
+   OtlpFileExporterOptions options_;
+diff --git a/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_file_log_record_exporter.h b/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_file_log_record_exporter.h
+index 77426163..720257c9 100644
+--- a/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_file_log_record_exporter.h
++++ b/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_file_log_record_exporter.h
+@@ -75,6 +75,12 @@ class OtlpFileLogRecordExporter final : public opentelemetry::sdk::logs::LogReco
+   bool Shutdown(
+       std::chrono::microseconds timeout = (std::chrono::microseconds::max)()) noexcept override;
+ 
++  /**
++   * Pre-spawn the file background flush thread so it is ready before the first export.
++   * @return true if the thread was spawned, false otherwise.
++   */
++  bool MaybeSpawnBackgroundThread() noexcept;
++
+ private:
+   // Configuration options for the exporter
+   OtlpFileLogRecordExporterOptions options_;
+diff --git a/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_file_metric_exporter.h b/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_file_metric_exporter.h
+index 73ae412f..e3968328 100644
+--- a/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_file_metric_exporter.h
++++ b/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_file_metric_exporter.h
+@@ -65,6 +65,12 @@ class OtlpFileMetricExporter final : public opentelemetry::sdk::metrics::PushMet
+   bool Shutdown(
+       std::chrono::microseconds timeout = (std::chrono::microseconds::max)()) noexcept override;
+ 
++  /**
++   * Pre-spawn the file background flush thread so it is ready before the first export.
++   * @return true if the thread was spawned, false otherwise.
++   */
++  bool MaybeSpawnBackgroundThread() noexcept;
++
+ private:
+   friend class OtlpFileMetricExporterTestPeer;
+ 
+diff --git a/exporters/otlp/src/otlp_file_client.cc b/exporters/otlp/src/otlp_file_client.cc
+index c1c00cd0..c9eed4be 100644
+--- a/exporters/otlp/src/otlp_file_client.cc
++++ b/exporters/otlp/src/otlp_file_client.cc
+@@ -1137,6 +1137,12 @@ class OPENTELEMETRY_LOCAL_SYMBOL OtlpFileSystemBackend : public OtlpFileAppender
+     return result;
+   }
+ 
++  bool MaybeSpawnBackgroundThread() noexcept override
++  {
++    SpawnBackgroundWorkThread();
++    return true;
++  }
++
+ private:
+   void Initialize()
+   {
+@@ -1673,6 +1679,16 @@ opentelemetry::sdk::common::ExportResult OtlpFileClient::Export(
+   return ::opentelemetry::sdk::common::ExportResult::kFailure;
+ }
+ 
++bool OtlpFileClient::MaybeSpawnBackgroundThread() noexcept
++{
++  if (backend_)
++  {
++    return backend_->MaybeSpawnBackgroundThread();
++  }
++
++  return false;
++}
++
+ bool OtlpFileClient::ForceFlush(std::chrono::microseconds timeout) noexcept
+ {
+   if (backend_)
+diff --git a/exporters/otlp/src/otlp_file_exporter.cc b/exporters/otlp/src/otlp_file_exporter.cc
+index 158f152f..395e7a5d 100644
+--- a/exporters/otlp/src/otlp_file_exporter.cc
++++ b/exporters/otlp/src/otlp_file_exporter.cc
+@@ -109,6 +109,11 @@ bool OtlpFileExporter::Shutdown(std::chrono::microseconds timeout) noexcept
+   return file_client_->Shutdown(timeout);
+ }
+ 
++bool OtlpFileExporter::MaybeSpawnBackgroundThread() noexcept
++{
++  return file_client_->MaybeSpawnBackgroundThread();
++}
++
+ }  // namespace otlp
+ }  // namespace exporter
+ OPENTELEMETRY_END_NAMESPACE
+diff --git a/exporters/otlp/src/otlp_file_log_record_exporter.cc b/exporters/otlp/src/otlp_file_log_record_exporter.cc
+index 8767a7fd..e60c9ecf 100644
+--- a/exporters/otlp/src/otlp_file_log_record_exporter.cc
++++ b/exporters/otlp/src/otlp_file_log_record_exporter.cc
+@@ -111,6 +111,11 @@ bool OtlpFileLogRecordExporter::Shutdown(std::chrono::microseconds timeout) noex
+   return file_client_->Shutdown(timeout);
+ }
+ 
++bool OtlpFileLogRecordExporter::MaybeSpawnBackgroundThread() noexcept
++{
++  return file_client_->MaybeSpawnBackgroundThread();
++}
++
+ }  // namespace otlp
+ }  // namespace exporter
+ OPENTELEMETRY_END_NAMESPACE
+diff --git a/exporters/otlp/src/otlp_file_metric_exporter.cc b/exporters/otlp/src/otlp_file_metric_exporter.cc
+index 76c1fd0b..0156eefe 100644
+--- a/exporters/otlp/src/otlp_file_metric_exporter.cc
++++ b/exporters/otlp/src/otlp_file_metric_exporter.cc
+@@ -118,6 +118,11 @@ bool OtlpFileMetricExporter::Shutdown(std::chrono::microseconds timeout) noexcep
+   return file_client_->Shutdown(timeout);
+ }
+ 
++bool OtlpFileMetricExporter::MaybeSpawnBackgroundThread() noexcept
++{
++  return file_client_->MaybeSpawnBackgroundThread();
++}
++
+ }  // namespace otlp
+ }  // namespace exporter
+ OPENTELEMETRY_END_NAMESPACE
+-- 
+2.43.0
+

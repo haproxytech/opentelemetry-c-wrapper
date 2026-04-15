@@ -1,0 +1,189 @@
+From d9d28263c3b4ec41d54c14606c7be6c74b0e0ae5 Mon Sep 17 00:00:00 2001
+From: Miroslav Zagorac <mzagorac@haproxy.com>
+Date: Wed, 15 Apr 2026 21:18:21 +0200
+Subject: [PATCH 5/5] [EXPORTERS] Add MaybeSpawnBackgroundThread() to OTLP gRPC
+ exporters
+
+The gRPC channel stays in IDLE state until the first RPC is issued,
+deferring DNS resolution, TCP handshake, TLS negotiation and HTTP/2
+connection setup to the first export.
+
+Added MaybeSpawnBackgroundThread() to OtlpGrpcClient which calls
+channel->GetState(true) to transition the channel from IDLE to CONNECTING,
+triggering gRPC's internal thread creation and connection setup.  Exposed
+the method through all three OTLP gRPC exporter classes (traces, metrics,
+logs) so callers can force an early connection immediately after
+construction.
+---
+ .../opentelemetry/exporters/otlp/otlp_grpc_client.h |  7 +++++++
+ .../exporters/otlp/otlp_grpc_exporter.h             |  7 +++++++
+ .../exporters/otlp/otlp_grpc_log_record_exporter.h  |  7 +++++++
+ .../exporters/otlp/otlp_grpc_metric_exporter.h      |  7 +++++++
+ exporters/otlp/src/otlp_grpc_client.cc              | 13 +++++++++++++
+ exporters/otlp/src/otlp_grpc_exporter.cc            | 10 ++++++++++
+ exporters/otlp/src/otlp_grpc_log_record_exporter.cc | 10 ++++++++++
+ exporters/otlp/src/otlp_grpc_metric_exporter.cc     | 10 ++++++++++
+ 8 files changed, 71 insertions(+)
+
+diff --git a/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_grpc_client.h b/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_grpc_client.h
+index 2a60a28a..23f5654c 100644
+--- a/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_grpc_client.h
++++ b/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_grpc_client.h
+@@ -235,6 +235,13 @@ class OtlpGrpcClient
+           &&result_callback) noexcept;
+ #endif
+ 
++  /**
++   * Force the gRPC channel to start connecting so its internal threads are
++   * created before the first export.
++   * @return true if the channel transitioned out of IDLE, false otherwise.
++   */
++  bool MaybeSpawnBackgroundThread() noexcept;
++
+   /**
+    * Force flush the gRPC client.
+    */
+diff --git a/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_grpc_exporter.h b/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_grpc_exporter.h
+index f698b8fb..92256841 100644
+--- a/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_grpc_exporter.h
++++ b/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_grpc_exporter.h
+@@ -93,6 +93,13 @@ class OtlpGrpcExporter final : public opentelemetry::sdk::trace::SpanExporter
+   bool Shutdown(
+       std::chrono::microseconds timeout = (std::chrono::microseconds::max)()) noexcept override;
+ 
++  /**
++   * Force the gRPC channel to start connecting so its internal threads are
++   * created before the first export.
++   * @return true if the channel transitioned out of IDLE, false otherwise.
++   */
++  bool MaybeSpawnBackgroundThread() noexcept;
++
+   /**
+    * Get the Client object
+    *
+diff --git a/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_grpc_log_record_exporter.h b/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_grpc_log_record_exporter.h
+index 888c368b..422d0a4b 100644
+--- a/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_grpc_log_record_exporter.h
++++ b/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_grpc_log_record_exporter.h
+@@ -92,6 +92,13 @@ class OtlpGrpcLogRecordExporter : public opentelemetry::sdk::logs::LogRecordExpo
+   bool Shutdown(
+       std::chrono::microseconds timeout = (std::chrono::microseconds::max)()) noexcept override;
+ 
++  /**
++   * Force the gRPC channel to start connecting so its internal threads are
++   * created before the first export.
++   * @return true if the channel transitioned out of IDLE, false otherwise.
++   */
++  bool MaybeSpawnBackgroundThread() noexcept;
++
+   /**
+    * Get the Client object
+    *
+diff --git a/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_grpc_metric_exporter.h b/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_grpc_metric_exporter.h
+index 4272bf21..2221e61e 100644
+--- a/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_grpc_metric_exporter.h
++++ b/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_grpc_metric_exporter.h
+@@ -77,6 +77,13 @@ class OtlpGrpcMetricExporter : public opentelemetry::sdk::metrics::PushMetricExp
+   bool Shutdown(
+       std::chrono::microseconds timeout = (std::chrono::microseconds::max)()) noexcept override;
+ 
++  /**
++   * Force the gRPC channel to start connecting so its internal threads are
++   * created before the first export.
++   * @return true if the channel transitioned out of IDLE, false otherwise.
++   */
++  bool MaybeSpawnBackgroundThread() noexcept;
++
+   /**
+    * Get the Client object
+    *
+diff --git a/exporters/otlp/src/otlp_grpc_client.cc b/exporters/otlp/src/otlp_grpc_client.cc
+index 9e065bc0..56f697b2 100644
+--- a/exporters/otlp/src/otlp_grpc_client.cc
++++ b/exporters/otlp/src/otlp_grpc_client.cc
+@@ -708,6 +708,19 @@ bool OtlpGrpcClient::IsShutdown() const noexcept
+   return is_shutdown_.load(std::memory_order_acquire);
+ }
+ 
++bool OtlpGrpcClient::MaybeSpawnBackgroundThread() noexcept
++{
++  if (async_data_ && async_data_->channel)
++  {
++    // GetState(true) transitions the channel from IDLE to CONNECTING,
++    // which triggers gRPC internal thread creation, DNS resolution,
++    // TCP handshake, TLS negotiation and HTTP/2 connection setup.
++    async_data_->channel->GetState(true);
++    return true;
++  }
++  return false;
++}
++
+ bool OtlpGrpcClient::ForceFlush(
+     OPENTELEMETRY_MAYBE_UNUSED std::chrono::microseconds timeout) noexcept
+ {
+diff --git a/exporters/otlp/src/otlp_grpc_exporter.cc b/exporters/otlp/src/otlp_grpc_exporter.cc
+index fa665ed4..396e6ec2 100644
+--- a/exporters/otlp/src/otlp_grpc_exporter.cc
++++ b/exporters/otlp/src/otlp_grpc_exporter.cc
+@@ -226,6 +226,16 @@ bool OtlpGrpcExporter::isShutdown() const noexcept
+   return is_shutdown_;
+ }
+ 
++bool OtlpGrpcExporter::MaybeSpawnBackgroundThread() noexcept
++{
++  std::shared_ptr<OtlpGrpcClient> client = client_;
++  if (!client)
++  {
++    return false;
++  }
++  return client->MaybeSpawnBackgroundThread();
++}
++
+ const std::shared_ptr<OtlpGrpcClient> &OtlpGrpcExporter::GetClient() const noexcept
+ {
+   return client_;
+diff --git a/exporters/otlp/src/otlp_grpc_log_record_exporter.cc b/exporters/otlp/src/otlp_grpc_log_record_exporter.cc
+index 712db424..37865cfd 100644
+--- a/exporters/otlp/src/otlp_grpc_log_record_exporter.cc
++++ b/exporters/otlp/src/otlp_grpc_log_record_exporter.cc
+@@ -222,6 +222,16 @@ bool OtlpGrpcLogRecordExporter::isShutdown() const noexcept
+   return is_shutdown_;
+ }
+ 
++bool OtlpGrpcLogRecordExporter::MaybeSpawnBackgroundThread() noexcept
++{
++  std::shared_ptr<OtlpGrpcClient> client = client_;
++  if (!client)
++  {
++    return false;
++  }
++  return client->MaybeSpawnBackgroundThread();
++}
++
+ const std::shared_ptr<OtlpGrpcClient> &OtlpGrpcLogRecordExporter::GetClient() const noexcept
+ {
+   return client_;
+diff --git a/exporters/otlp/src/otlp_grpc_metric_exporter.cc b/exporters/otlp/src/otlp_grpc_metric_exporter.cc
+index f73eb1ab..2f354b3f 100644
+--- a/exporters/otlp/src/otlp_grpc_metric_exporter.cc
++++ b/exporters/otlp/src/otlp_grpc_metric_exporter.cc
+@@ -232,6 +232,16 @@ bool OtlpGrpcMetricExporter::isShutdown() const noexcept
+   return is_shutdown_;
+ }
+ 
++bool OtlpGrpcMetricExporter::MaybeSpawnBackgroundThread() noexcept
++{
++  std::shared_ptr<OtlpGrpcClient> client = client_;
++  if (!client)
++  {
++    return false;
++  }
++  return client->MaybeSpawnBackgroundThread();
++}
++
+ const std::shared_ptr<OtlpGrpcClient> &OtlpGrpcMetricExporter::GetClient() const noexcept
+ {
+   return client_;
+-- 
+2.43.0
+

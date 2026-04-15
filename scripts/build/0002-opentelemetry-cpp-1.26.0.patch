@@ -1,0 +1,203 @@
+From 77b6c221e5bf26c2fc2180951119c7a052fca1f3 Mon Sep 17 00:00:00 2001
+From: Miroslav Zagorac <mzagorac@haproxy.com>
+Date: Wed, 15 Apr 2026 21:16:01 +0200
+Subject: [PATCH 2/5] [EXPORTERS] Add MaybeSpawnBackgroundThread() to OTLP HTTP
+ exporters
+
+The curl HTTP client's background thread is started lazily on the first
+call to Session::SendRequest().  This delays thread creation until the
+first batch export, which may happen seconds after program start.
+
+Added a virtual MaybeSpawnBackgroundThread() method to the base HttpClient
+interface (default no-op) and marked the existing curl implementation as
+an override.  Exposed the method through OtlpHttpClient and all three OTLP
+HTTP exporter classes (traces, metrics, logs) so callers can pre-spawn the
+thread immediately after construction.
+---
+ .../include/opentelemetry/exporters/otlp/otlp_http_client.h | 6 ++++++
+ .../opentelemetry/exporters/otlp/otlp_http_exporter.h       | 6 ++++++
+ .../exporters/otlp/otlp_http_log_record_exporter.h          | 6 ++++++
+ .../exporters/otlp/otlp_http_metric_exporter.h              | 6 ++++++
+ exporters/otlp/src/otlp_http_client.cc                      | 5 +++++
+ exporters/otlp/src/otlp_http_exporter.cc                    | 5 +++++
+ exporters/otlp/src/otlp_http_log_record_exporter.cc         | 5 +++++
+ exporters/otlp/src/otlp_http_metric_exporter.cc             | 5 +++++
+ .../opentelemetry/ext/http/client/curl/http_client_curl.h   | 2 +-
+ ext/include/opentelemetry/ext/http/client/http_client.h     | 2 ++
+ ext/src/http/client/curl/http_client_curl.cc                | 2 +-
+ 11 files changed, 48 insertions(+), 2 deletions(-)
+
+diff --git a/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_http_client.h b/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_http_client.h
+index 15197cf4..410656a4 100644
+--- a/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_http_client.h
++++ b/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_http_client.h
+@@ -224,6 +224,12 @@ class OtlpHttpClient
+    */
+   void ReleaseSession(const opentelemetry::ext::http::client::Session &session) noexcept;
+ 
++  /**
++   * Pre-spawn the HTTP background thread so it is ready before the first export.
++   * @return true if the thread was spawned, false if it was already running.
++   */
++  bool MaybeSpawnBackgroundThread() noexcept;
++
+   /**
+    * Get options of current OTLP http client.
+    * @return options of current OTLP http client.
+diff --git a/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_http_exporter.h b/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_http_exporter.h
+index 454959dd..dcccde01 100644
+--- a/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_http_exporter.h
++++ b/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_http_exporter.h
+@@ -74,6 +74,12 @@ class OPENTELEMETRY_EXPORT OtlpHttpExporter final : public opentelemetry::sdk::t
+   bool Shutdown(
+       std::chrono::microseconds timeout = (std::chrono::microseconds::max)()) noexcept override;
+ 
++  /**
++   * Pre-spawn the HTTP background thread so it is ready before the first export.
++   * @return true if the thread was spawned, false if it was already running.
++   */
++  bool MaybeSpawnBackgroundThread() noexcept;
++
+ private:
+   // The configuration options associated with this exporter.
+   OtlpHttpExporterOptions options_;
+diff --git a/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_http_log_record_exporter.h b/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_http_log_record_exporter.h
+index aba43052..9384877b 100644
+--- a/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_http_log_record_exporter.h
++++ b/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_http_log_record_exporter.h
+@@ -75,6 +75,12 @@ class OtlpHttpLogRecordExporter final : public opentelemetry::sdk::logs::LogReco
+   bool Shutdown(
+       std::chrono::microseconds timeout = (std::chrono::microseconds::max)()) noexcept override;
+ 
++  /**
++   * Pre-spawn the HTTP background thread so it is ready before the first export.
++   * @return true if the thread was spawned, false if it was already running.
++   */
++  bool MaybeSpawnBackgroundThread() noexcept;
++
+ private:
+   // Configuration options for the exporter
+   OtlpHttpLogRecordExporterOptions options_;
+diff --git a/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_http_metric_exporter.h b/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_http_metric_exporter.h
+index 72774f36..4b13b817 100644
+--- a/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_http_metric_exporter.h
++++ b/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_http_metric_exporter.h
+@@ -65,6 +65,12 @@ class OtlpHttpMetricExporter final : public opentelemetry::sdk::metrics::PushMet
+   bool Shutdown(
+       std::chrono::microseconds timeout = (std::chrono::microseconds::max)()) noexcept override;
+ 
++  /**
++   * Pre-spawn the HTTP background thread so it is ready before the first export.
++   * @return true if the thread was spawned, false if it was already running.
++   */
++  bool MaybeSpawnBackgroundThread() noexcept;
++
+ private:
+   // Configuration options for the exporter
+   OtlpHttpMetricExporterOptions options_;
+diff --git a/exporters/otlp/src/otlp_http_client.cc b/exporters/otlp/src/otlp_http_client.cc
+index 77f4df3e..7b8cb7e4 100644
+--- a/exporters/otlp/src/otlp_http_client.cc
++++ b/exporters/otlp/src/otlp_http_client.cc
+@@ -786,6 +786,11 @@ sdk::common::ExportResult OtlpHttpClient::Export(
+   return opentelemetry::sdk::common::ExportResult::kSuccess;
+ }
+ 
++bool OtlpHttpClient::MaybeSpawnBackgroundThread() noexcept
++{
++  return http_client_->MaybeSpawnBackgroundThread();
++}
++
+ bool OtlpHttpClient::ForceFlush(std::chrono::microseconds timeout) noexcept
+ {
+   // ASAN will report chrono: runtime error: signed integer overflow: A + B cannot be represented
+diff --git a/exporters/otlp/src/otlp_http_exporter.cc b/exporters/otlp/src/otlp_http_exporter.cc
+index 499d5771..b0f2a2c1 100644
+--- a/exporters/otlp/src/otlp_http_exporter.cc
++++ b/exporters/otlp/src/otlp_http_exporter.cc
+@@ -218,6 +218,11 @@ bool OtlpHttpExporter::Shutdown(std::chrono::microseconds timeout) noexcept
+   return http_client_->Shutdown(timeout);
+ }
+ 
++bool OtlpHttpExporter::MaybeSpawnBackgroundThread() noexcept
++{
++  return http_client_->MaybeSpawnBackgroundThread();
++}
++
+ }  // namespace otlp
+ }  // namespace exporter
+ OPENTELEMETRY_END_NAMESPACE
+diff --git a/exporters/otlp/src/otlp_http_log_record_exporter.cc b/exporters/otlp/src/otlp_http_log_record_exporter.cc
+index b787ae3a..36890757 100644
+--- a/exporters/otlp/src/otlp_http_log_record_exporter.cc
++++ b/exporters/otlp/src/otlp_http_log_record_exporter.cc
+@@ -217,6 +217,11 @@ bool OtlpHttpLogRecordExporter::Shutdown(std::chrono::microseconds timeout) noex
+   return http_client_->Shutdown(timeout);
+ }
+ 
++bool OtlpHttpLogRecordExporter::MaybeSpawnBackgroundThread() noexcept
++{
++  return http_client_->MaybeSpawnBackgroundThread();
++}
++
+ }  // namespace otlp
+ }  // namespace exporter
+ OPENTELEMETRY_END_NAMESPACE
+diff --git a/exporters/otlp/src/otlp_http_metric_exporter.cc b/exporters/otlp/src/otlp_http_metric_exporter.cc
+index 40b3f042..e64a2991 100644
+--- a/exporters/otlp/src/otlp_http_metric_exporter.cc
++++ b/exporters/otlp/src/otlp_http_metric_exporter.cc
+@@ -226,6 +226,11 @@ bool OtlpHttpMetricExporter::Shutdown(std::chrono::microseconds timeout) noexcep
+   return http_client_->Shutdown(timeout);
+ }
+ 
++bool OtlpHttpMetricExporter::MaybeSpawnBackgroundThread() noexcept
++{
++  return http_client_->MaybeSpawnBackgroundThread();
++}
++
+ }  // namespace otlp
+ }  // namespace exporter
+ OPENTELEMETRY_END_NAMESPACE
+diff --git a/ext/include/opentelemetry/ext/http/client/curl/http_client_curl.h b/ext/include/opentelemetry/ext/http/client/curl/http_client_curl.h
+index 6a1f9c3e..aaaebcb1 100644
+--- a/ext/include/opentelemetry/ext/http/client/curl/http_client_curl.h
++++ b/ext/include/opentelemetry/ext/http/client/curl/http_client_curl.h
+@@ -346,7 +346,7 @@ class HttpClient : public opentelemetry::ext::http::client::HttpClient
+   inline CURLM *GetMultiHandle() noexcept { return multi_handle_; }
+ 
+   // return true if create background thread, false is already exist background thread
+-  bool MaybeSpawnBackgroundThread();
++  bool MaybeSpawnBackgroundThread() noexcept override;
+ 
+   void ScheduleAddSession(uint64_t session_id);
+   void ScheduleAbortSession(uint64_t session_id);
+diff --git a/ext/include/opentelemetry/ext/http/client/http_client.h b/ext/include/opentelemetry/ext/http/client/http_client.h
+index 09c3c5b2..cc2b65b2 100644
+--- a/ext/include/opentelemetry/ext/http/client/http_client.h
++++ b/ext/include/opentelemetry/ext/http/client/http_client.h
+@@ -414,6 +414,8 @@ class HttpClient
+ 
+   virtual void SetMaxSessionsPerConnection(std::size_t max_requests_per_connection) noexcept = 0;
+ 
++  virtual bool MaybeSpawnBackgroundThread() noexcept { return false; }
++
+   virtual ~HttpClient() = default;
+ };
+ 
+diff --git a/ext/src/http/client/curl/http_client_curl.cc b/ext/src/http/client/curl/http_client_curl.cc
+index 3a25e821..551a0cfd 100644
+--- a/ext/src/http/client/curl/http_client_curl.cc
++++ b/ext/src/http/client/curl/http_client_curl.cc
+@@ -440,7 +440,7 @@ bool HttpClient::InternalCancelAllSessions() noexcept
+   return true;
+ }
+ 
+-bool HttpClient::MaybeSpawnBackgroundThread()
++bool HttpClient::MaybeSpawnBackgroundThread() noexcept
+ {
+   std::lock_guard<std::mutex> lock_guard{background_thread_m_};
+   if (background_thread_)
+-- 
+2.43.0
+
