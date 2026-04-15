@@ -73,7 +73,7 @@ sh_archive ()
 	test -f "${SH_PKG}.tar.gz" || wget "${SH_PKG_URL}" -O "${SH_PKG}.tar.gz"
 	tar xf "${SH_PKG}.tar.gz"
 	cd "${SH_PKG}"
-	test -f "../${SH_PKG}.patch" && patch -p1 < "../${SH_PKG}.patch"
+	find .. -maxdepth 1 -name "*${SH_PKG}.patch" -type f | grep -q . && patch -p1 < "../*${SH_PKG}.patch"
 
 	mkdir build && cd build || exit 1
 }
