@@ -15,6 +15,14 @@ Summary
    4. Basic concepts of OpenTelemetry
    5. Library API overview
    6. YAML configuration
+     6.1. Document structure
+     6.2. Exporters
+     6.3. Samplers
+     6.4. Processors
+     6.5. Readers
+     6.6. Providers
+     6.7. Signals
+     6.8. Environment variables
    7. Tracing example
    8. Metrics example
    9. Logging example
@@ -393,25 +401,29 @@ All public headers reside under include/opentelemetry-c-wrapper/.  Including
 6. YAML configuration
 ------------------------------------------------------------------------------
 
-The library is configured through a YAML file whose path is passed to the
-otelc_init() function.  The file contains the following top-level sections:
+The library reads its configuration from a YAML file whose path is passed to
+the otelc_init() function.  Named pipeline components are defined in top-level
+sections and bound together per signal type in the 'signals' section.  All
+string values have a maximum length of 4095 characters.  Boolean values accept
+"true" / "1" for true and "false" / "0" for false (case-insensitive).
 
-  * exporters  - define where telemetry data is sent (OTLP file, gRPC, HTTP,
-                 ostream, memory, Zipkin, Elasticsearch)
-  * readers    - configure periodic metric collection intervals
-  * samplers   - control trace sampling strategy (always_on, always_off,
-                 trace_id_ratio_based, parent_based)
-  * processors - define how telemetry is batched before export (batch or single)
-  * providers  - set resource attributes (service name, version, namespace)
-  * signals    - tie the above components together per signal type
 
-The 'signals' section is the central binding point.  Each signal -- traces,
-metrics, or logs -- references the components it needs.  Traces use exporters,
-samplers, processors, and a provider.  Metrics use exporters, readers, and a
-provider.  Logs use exporters, processors, and a provider.  For all three
-signals, exporters (and processors/readers) accept either a single name or a
-YAML list of names; when a list is given, each pair forms a separate pipeline
-within the same provider.
+6.1. Document structure
+------------------------------------------------------------------------------
+
+The YAML file contains the following top-level sections:
+
+  * exporters  - define where telemetry data is sent
+  * samplers   - control trace sampling strategy (traces only)
+  * processors - define how telemetry is batched before export (traces and logs
+                 only)
+  * readers    - configure periodic metric collection intervals (metrics only)
+  * providers  - set resource attributes attached to all telemetry
+  * signals    - bind the above components together per signal type
+
+Each section (except 'signals') contains named configuration blocks.  The
+'signals' section references these blocks by name, either as a single name or
+as a YAML list of names.
 
 Here is a minimal configuration that exports traces to stdout:
 
@@ -443,6 +455,510 @@ Here is a minimal configuration that exports traces to stdout:
 
 A complete configuration covering all three signals and multiple exporter types
 can be found in the file test/otel-cfg.yml.
+
+
+6.2. Exporters
+------------------------------------------------------------------------------
+
+Exporters define where telemetry data is sent.  Each named exporter block must
+include a 'type' key that selects the exporter backend.  The available exporter
+types and their signal support are:
+
+  Type              Traces  Metrics  Logs
+  ----              ------  -------  ----
+  otlp_file         yes     yes      yes
+  otlp_grpc         yes     yes      yes
+  otlp_http         yes     yes      yes
+  ostream           yes     yes      yes
+  memory            yes     yes      no
+  zipkin            yes     no       no
+  elasticsearch     no      no       yes
+
+Exporter availability depends on the build configuration; unsupported types
+produce an error at startup.
+
+The configuration keys for each exporter type are listed below.  All keys are
+optional unless noted otherwise.
+
+
+OTLP File exporter (otlp_file)
+
+Writes telemetry data to rotating files in OTLP format.
+
+  type (string, mandatory)
+      Must be "otlp_file".
+
+  thread_name (string, default: "")
+      Name assigned to the exporter's background thread.
+
+  file_pattern (string, default: "otel-logfile-%F-%N.txt")
+      Output file naming pattern.
+
+  alias_pattern (string, default: "")
+      Symbolic link or alias pattern for the current output file.
+
+  flush_interval (integer, default: 30000000, range: 100000-60000000)
+      Flush interval in microseconds.
+
+  flush_count (integer, default: 256, range: 16-8192)
+      Number of records buffered before flushing to disk.
+
+  file_size (integer, default: 20971520, range: 65536-2147483648)
+      Maximum file size in bytes (64 KB to 2 GB).
+
+  rotate_size (integer, default: 3, range: 1-256)
+      Number of rotated files to retain.
+
+
+OTLP gRPC exporter (otlp_grpc)
+
+Sends telemetry data to a collector over gRPC.
+
+  type (string, mandatory)
+      Must be "otlp_grpc".
+
+  thread_name (string, default: "")
+      Read from YAML for configuration consistency but not used by the SDK, as
+      gRPC exporters do not support runtime thread naming.
+
+  endpoint (string)
+      Server endpoint URL.  Signal-specific defaults:
+        traces:  "http://localhost:4317/v1/traces"
+        metrics: "http://localhost:4317/v1/metrics"
+        logs:    "http://localhost:4317/v1/logs"
+
+  use_ssl_credentials (boolean, default: false)
+      Enable TLS for the gRPC connection.
+
+  ssl_credentials_cacert_path (string, default: "")
+      Path to a CA certificate file for server verification.
+
+  ssl_credentials_cacert_as_string (string, default: "")
+      CA certificate content provided as an inline string.
+
+  ssl_client_key_path (string, default: "")
+      Path to the client private key.  Requires the SDK MTLS build flag
+      (ENABLE_OTLP_GRPC_SSL_MTLS_PREVIEW).
+
+  ssl_client_key_string (string, default: "")
+      Client private key as an inline string.  Requires the SDK MTLS build flag.
+
+  ssl_client_cert_path (string, default: "")
+      Path to the client certificate.  Requires the SDK MTLS build flag.
+
+  ssl_client_cert_string (string, default: "")
+      Client certificate as an inline string.  Requires the SDK MTLS build flag.
+
+  timeout (integer, default: 10, range: 1-60)
+      Request timeout in seconds.
+
+  user_agent (string, default: "")
+      Custom user-agent string sent with each request.
+
+  max_threads (integer, default: 0, range: 1-1024)
+      Maximum number of concurrent gRPC threads.  A value of 0 uses the SDK
+      default.
+
+  compression (string, default: "")
+      Compression algorithm (e.g., "gzip").
+
+  max_concurrent_requests (integer, default: 0, range: 1-1024)
+      Maximum number of concurrent export requests.  A value of 0 uses the SDK
+      default.
+
+
+OTLP HTTP exporter (otlp_http)
+
+Sends telemetry data to a collector over HTTP using the curl library.
+
+  type (string, mandatory)
+      Must be "otlp_http".
+
+  thread_name (string, default: "")
+      Name assigned to the exporter's background thread.
+
+  endpoint (string)
+      Server endpoint URL.  Signal-specific defaults:
+        traces:  "http://localhost:4318/v1/traces"
+        metrics: "http://localhost:4318/v1/metrics"
+        logs:    "http://localhost:4318/v1/logs"
+
+  content_type (string, default: "json")
+      HTTP request body encoding.  Accepted values: "json", "binary".
+
+  json_bytes_mapping (string, default: "hexid")
+      How binary data is encoded in JSON output.  Accepted values: "hexid",
+      "hex", "base64".
+
+  use_json_name (boolean, default: false)
+      Use JSON field names instead of protobuf field names.
+
+  debug (boolean, default: false)
+      Enable debug logging for HTTP requests.  When enabled, the SDK internal
+      log level is also raised to Debug.
+
+  timeout (integer, default: 10, range: 1-60)
+      Request timeout in seconds.
+
+  http_headers (map, default: none)
+      Custom HTTP headers sent with each request.  Specified as a YAML sequence
+      of key-value pairs:
+
+        http_headers:
+          - X-Custom-Header: "value"
+          - Authorization:   "Bearer token"
+
+  max_concurrent_requests (integer, default: 64, range: 1-1024)
+      Maximum number of concurrent HTTP requests.
+
+  max_requests_per_connection (integer, default: 8, range: 1-1024)
+      Maximum number of requests sent over a single HTTP connection before
+      reconnecting.
+
+  background_thread_wait_for (integer, default: 0, range: 0-3600000)
+      How long the curl background thread waits (in milliseconds) after its last
+      request before exiting.  A value of 0 keeps the thread alive indefinitely,
+      which prevents crashes caused by thread respawn failures in the SDK's
+      noexcept MaybeSpawnBackgroundThread() call.  Requires the corresponding
+      SDK patch (see scripts/build/).
+
+  ssl_insecure_skip_verify (boolean, default: false)
+      Skip TLS certificate verification.
+
+  ssl_ca_cert_path (string, default: "")
+      Path to a CA certificate file for server verification.
+
+  ssl_ca_cert_string (string, default: "")
+      CA certificate content provided as an inline string.
+
+  ssl_client_key_path (string, default: "")
+      Path to the client private key.
+
+  ssl_client_key_string (string, default: "")
+      Client private key as an inline string.
+
+  ssl_client_cert_path (string, default: "")
+      Path to the client certificate.
+
+  ssl_client_cert_string (string, default: "")
+      Client certificate as an inline string.
+
+  ssl_min_tls (string, default: "")
+      Minimum TLS protocol version (e.g., "1.2").
+
+  ssl_max_tls (string, default: "")
+      Maximum TLS protocol version (e.g., "1.3").
+
+  ssl_cipher (string, default: "")
+      TLS cipher list for TLS 1.2 and earlier.
+
+  ssl_cipher_suite (string, default: "")
+      TLS ciphersuites for TLS 1.3.
+
+  compression (string, default: "")
+      Compression algorithm (e.g., "gzip").
+
+
+OStream exporter (ostream)
+
+Writes human-readable telemetry data to a C++ output stream (stdout, stderr,
+or a file).
+
+  type (string, mandatory)
+      Must be "ostream".
+
+  filename (string, default: "stdout")
+      Output destination.  Accepted values: "stdout", "stderr", or a file path.
+
+
+In-Memory exporter (memory)
+
+Stores telemetry data in a circular memory buffer.  Supported for traces and
+metrics only.
+
+  type (string, mandatory)
+      Must be "memory".
+
+  buffer_size (integer, range: 16-65536)
+      Maximum number of records in the circular buffer.  Defaults to the SDK's
+      MAX_BUFFER_SIZE value.
+
+
+Zipkin exporter (zipkin)
+
+Sends trace data to a Zipkin backend.  Supported for traces only.
+
+  type (string, mandatory)
+      Must be "zipkin".
+
+  endpoint (string, default: "http://localhost:9411/api/v2/spans")
+      Zipkin collector endpoint URL.
+
+  format (string, default: "")
+      Transport format.  Accepted values: "json", "protobuf".  When empty, the
+      SDK default is used.
+
+  service_name (string, default: "default-service")
+      Service name reported to Zipkin.
+
+  ipv4 (string, default: "")
+      IPv4 address of the service endpoint.
+
+  ipv6 (string, default: "")
+      IPv6 address of the service endpoint.
+
+
+Elasticsearch exporter (elasticsearch)
+
+Sends log records to an Elasticsearch cluster.  Supported for logs only.
+
+  type (string, mandatory)
+      Must be "elasticsearch".
+
+  host (string, default: "localhost")
+      Elasticsearch server hostname.
+
+  port (integer, default: 9200, range: 1-65535)
+      Elasticsearch server port.
+
+  index (string, default: "logs")
+      Index name where log records are stored.
+
+  response_timeout (integer, default: 30, range: 1-3600)
+      Response timeout in seconds.
+
+  debug (boolean, default: false)
+      Enable debug logging for Elasticsearch requests.
+
+  http_headers (map, default: none)
+      Custom HTTP headers.  Uses the same YAML format as the OTLP HTTP
+      exporter's http_headers option.
+
+
+6.3. Samplers
+------------------------------------------------------------------------------
+
+Samplers control which traces are recorded and exported.  They are configured
+in the top-level 'samplers' section and referenced from the traces signal.  Only
+one sampler is active per tracer.
+
+  type (string, default: "trace_id_ratio_based")
+      Sampler type.  Accepted values: "always_on", "always_off",
+      "trace_id_ratio_based", "parent_based".
+
+Type "always_on" samples every trace unconditionally.  No additional
+configuration keys.
+
+Type "always_off" rejects every trace unconditionally.  No additional
+configuration keys.
+
+Type "trace_id_ratio_based" samples traces based on a configurable
+probability.  Additional key:
+
+  ratio (double, default: 1.0, range: 0.0-1.0)
+      Probability that a trace is sampled.  A value of 0.0 means no traces are
+      sampled; 1.0 means all traces are sampled.
+
+Type "parent_based" delegates the sampling decision based on the parent span's
+context.  When no parent span exists, the delegate sampler is used.  Additional
+keys:
+
+  delegate (string, default: "always_on")
+      Root sampler used when there is no parent span.  Accepted values:
+      "always_on", "always_off", "trace_id_ratio_based".
+
+  ratio (double, default: 1.0, range: 0.0-1.0)
+      Sampling ratio for the delegate, used only when delegate is set to
+      "trace_id_ratio_based".
+
+  remote_sampled (string, default: "always_on")
+      Sampler applied when the remote parent has the sampled flag set.
+      Accepted values: "always_on", "always_off".
+
+  remote_not_sampled (string, default: "always_off")
+      Sampler applied when the remote parent does not have the sampled flag.
+      Accepted values: "always_on", "always_off".
+
+  local_sampled (string, default: "always_on")
+      Sampler applied when the local parent has the sampled flag set.
+      Accepted values: "always_on", "always_off".
+
+  local_not_sampled (string, default: "always_off")
+      Sampler applied when the local parent does not have the sampled flag.
+      Accepted values: "always_on", "always_off".
+
+
+6.4. Processors
+------------------------------------------------------------------------------
+
+Processors control how telemetry records are batched and delivered to exporters.
+They are used by the traces and logs signals.  Metrics use readers instead of
+processors (see section 6.5).
+
+  type (string, mandatory)
+      Processor type.  Accepted values: "batch", "single".
+
+  thread_name (string, default: "")
+      Name assigned to the processor's background thread (only meaningful in
+      batch mode).
+
+Type "batch" buffers records in a bounded circular queue and exports them in
+batches at regular intervals.  Additional keys:
+
+  max_queue_size (integer, default: 2048, range: 64-65536)
+      Maximum number of records the queue can hold.  Must be greater than or
+      equal to max_export_batch_size.
+
+  schedule_delay (integer, range: 1-60000)
+      Time in milliseconds between consecutive export cycles.
+      Default: 5000 for traces, 1000 for logs.
+
+  export_timeout (integer, default: 30000, range: 1-60000)
+      Maximum time in milliseconds allowed for a single export operation.
+
+  max_export_batch_size (integer, default: 512, range: 1-65536)
+      Maximum number of records per export batch.
+
+When the queue fills up, new records are silently dropped.  The library provides
+otelc_processor_dropped_count() to monitor drop rates (see section 11 for
+details).
+
+Type "single" exports each record immediately without batching.  No additional
+configuration keys beyond 'type' and 'thread_name'.
+
+
+6.5. Readers
+------------------------------------------------------------------------------
+
+Readers configure periodic metric collection and export.  They are used
+exclusively by the metrics signal and pair with exporters to form metric
+pipelines.
+
+  thread_name (string, default: "")
+      Name assigned to the reader's background thread.
+
+  export_interval (integer, default: 60000, range: 100-3600000)
+      Time in milliseconds between consecutive metric exports.
+      Must be greater than or equal to export_timeout.
+
+  export_timeout (integer, default: 30000, range: 100-3600000)
+      Maximum time in milliseconds allowed for a single metric export operation.
+
+
+6.6. Providers
+------------------------------------------------------------------------------
+
+Providers define resource attributes that are attached to all telemetry emitted
+by a signal.  These attributes identify the service producing the data and are
+carried in every span, metric data point, and log record.
+
+  resources (map)
+      A YAML sequence of key-value pairs specifying resource attributes:
+
+        providers:
+          my_provider:
+            resources:
+              - service.name:        "my-service"
+              - service.version:     "1.0.0"
+              - service.namespace:   "production"
+              - service.instance.id: "host-1"
+
+      Any string key-value pair is accepted.  Common attributes follow
+      the OpenTelemetry semantic conventions and include service.name,
+      service.version, service.namespace, and service.instance.id.
+
+Resource attributes from the YAML file are merged with attributes detected from
+environment variables (see section 6.8).  YAML attributes take precedence over
+environment attributes for duplicate keys.
+
+
+6.7. Signals
+------------------------------------------------------------------------------
+
+The 'signals' section is the central binding point that ties pipeline components
+together.  Each signal -- traces, metrics, or logs -- references the named
+components it needs from the other top-level sections.
+
+When exporters and processors (or readers) are specified as YAML lists, each
+entry forms a separate pipeline within the same provider.  The library pairs
+list entries by position: for traces and logs, processor[i] is paired with
+exporter[i]; for metrics, exporter[i] is paired with reader[i].  When one list
+is shorter than the other, its last entry is reused for the remaining pairs.
+A single scalar name (not a list) is also accepted.
+
+
+Traces signal
+
+  scope_name (string, mandatory)
+      Instrumentation scope name for the tracer.
+
+  exporters (string or list of strings)
+      Exporter name(s) from the top-level 'exporters' section.
+
+  samplers (string)
+      Sampler name from the top-level 'samplers' section.
+
+  processors (string or list of strings)
+      Processor name(s) from the top-level 'processors' section.
+
+  providers (string)
+      Provider name from the top-level 'providers' section.
+
+
+Metrics signal
+
+  scope_name (string, mandatory)
+      Instrumentation scope name for the meter.
+
+  exporters (string or list of strings)
+      Exporter name(s) from the top-level 'exporters' section.
+
+  readers (string or list of strings)
+      Reader name(s) from the top-level 'readers' section.
+
+  providers (string)
+      Provider name from the top-level 'providers' section.
+
+
+Logs signal
+
+  scope_name (string, mandatory)
+      Instrumentation scope name for the logger.
+
+  exporters (string or list of strings)
+      Exporter name(s) from the top-level 'exporters' section.
+
+  processors (string or list of strings)
+      Processor name(s) from the top-level 'processors' section.
+
+  providers (string)
+      Provider name from the top-level 'providers' section.
+
+  min_severity (string, default: "TRACE")
+      Minimum log severity level.  Log records below this severity are discarded
+      before reaching the processor.  Accepted values (case-sensitive): TRACE,
+      TRACE2, TRACE3, TRACE4, DEBUG, DEBUG2, DEBUG3, DEBUG4, INFO, INFO2, INFO3,
+      INFO4, WARN, WARN2, WARN3, WARN4, ERROR, ERROR2, ERROR3, ERROR4, FATAL,
+      FATAL2, FATAL3, FATAL4.
+
+
+6.8. Environment variables
+------------------------------------------------------------------------------
+
+Resource attributes can also be set through environment variables, independently
+of the YAML file.  Attributes from environment variables are detected at startup
+and merged with those specified in the YAML providers section.  YAML values take
+precedence for duplicate keys.
+
+  OTEL_RESOURCE_ATTRIBUTES
+      Comma-separated list of key=value pairs to use as resource attributes.
+
+      Example:
+        export OTEL_RESOURCE_ATTRIBUTES="service.name=test,version=1.0"
+
+  OTEL_SERVICE_NAME
+      Sets the service.name resource attribute.  Takes precedence over a
+      service.name value in OTEL_RESOURCE_ATTRIBUTES.
 
 
 7. Tracing example
