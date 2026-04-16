@@ -128,16 +128,22 @@
 		otel_exporter_otlp::arg_base##Options        options{};                                                                 \
 		otel_exporter_otlp::arg_base##RuntimeOptions rt_options{};                                                              \
 		char                                         endpoint[OTEL_YAML_BUFSIZ] = OTEL_##arg_sig##_EXPORTER_OTLP_HTTP_ENDPOINT; \
+		int64_t                                      background_thread_wait_for = 0;                                            \
 		                                                                                                                        \
 		if (otel_exporter_set_otlp_http_options(OTEL_##arg_sig##_EXPORTER_DESC,                                                 \
 		                                        OTEL_YAML_##arg_sig##_PREFIX OTEL_YAML_EXPORTERS,                               \
-		                                        endpoint, options, rt_options, (arg_err), name) == OTELC_RET_ERROR)             \
+		                                        endpoint, options, rt_options, &background_thread_wait_for,                     \
+		                                        (arg_err), name) == OTELC_RET_ERROR)                                            \
 			OTELC_RETURN_INT(OTELC_RET_ERROR);                                                                              \
 		exporter_maybe = otel::make_unique_nothrow<otel_exporter_otlp::arg_base>(options, rt_options);                          \
 		if (OTEL_NULL(exporter_maybe))                                                                                          \
 			OTEL_##arg_sig##_ERROR(OTEL_##arg_sig##_EXPORTER_FAILED("OTLP HTTP"));                                          \
-		else                                                                                                                    \
-			OTEL_CAST_STATIC(otel_exporter_otlp::arg_base *, exporter_maybe.get())->MaybeSpawnBackgroundThread();           \
+		else {                                                                                                                  \
+			auto *exporter_ptr = OTEL_CAST_STATIC(otel_exporter_otlp::arg_base *, exporter_maybe.get());                    \
+			exporter_ptr->SetBackgroundWaitFor(std::chrono::milliseconds((background_thread_wait_for > 0) ?                 \
+			                                   background_thread_wait_for : std::chrono::milliseconds::max().count()));     \
+			exporter_ptr->MaybeSpawnBackgroundThread();                                                                     \
+		}                                                                                                                       \
 	}
 #else
   #define OTEL_EXPORTER_CASE_OTLP_HTTP(arg_sig, arg_base, arg_err)                            \

@@ -258,7 +258,7 @@ static int otel_exporter_set_otlp_grpc_options(const char *desc, const char *pat
  *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR on failure.
  */
 template <typename T, typename R>
-static int otel_exporter_set_otlp_http_options(const char *desc, const char *path, char *endpoint, T &options, R &rt_options, char **err, const char *name = nullptr)
+static int otel_exporter_set_otlp_http_options(const char *desc, const char *path, char *endpoint, T &options, R &rt_options, int64_t *thread_wait_time, char **err, const char *name = nullptr)
 {
 	/***
 	 * The default values are defined in the include file
@@ -274,9 +274,9 @@ static int otel_exporter_set_otlp_http_options(const char *desc, const char *pat
 	char                             ssl_min_tls[OTEL_YAML_BUFSIZ] = "", ssl_max_tls[OTEL_YAML_BUFSIZ] = "";
 	char                             ssl_cipher[OTEL_YAML_BUFSIZ] = "", ssl_cipher_suite[OTEL_YAML_BUFSIZ] = "", compression[OTEL_YAML_BUFSIZ] = "";
 	int                              rc, use_json_name = false, debug = false, ssl_insecure_skip_verify = false;
-	int64_t                          timeout = 10, max_concurrent_requests = 64, max_requests_per_connection = 8;
+	int64_t                          timeout = 10, max_concurrent_requests = 64, max_requests_per_connection = 8, background_thread_wait_for = 0;
 
-	OTELC_FUNC("\"%s\", \"%s\", \"%s\", <options>, %p:%p, \"%s\"", OTELC_STR_ARG(desc), OTELC_STR_ARG(path), OTELC_STR_ARG(endpoint), OTELC_DPTR_ARGS(err), OTELC_STR_ARG(name));
+	OTELC_FUNC("\"%s\", \"%s\", \"%s\", <options>, %p, %p:%p, \"%s\"", OTELC_STR_ARG(desc), OTELC_STR_ARG(path), OTELC_STR_ARG(endpoint), thread_wait_time, OTELC_DPTR_ARGS(err), OTELC_STR_ARG(name));
 
 	if (OTEL_NULL(desc))
 		OTEL_ERR_RETURN_INT("Exporter description not specified");
@@ -296,6 +296,7 @@ static int otel_exporter_set_otlp_http_options(const char *desc, const char *pat
 	                   OTEL_YAML_ARG_MAP(0, EXPORTERS, http_headers),
 	                   OTEL_YAML_ARG_INT64(0, EXPORTERS, max_concurrent_requests, 1, 1024),
 	                   OTEL_YAML_ARG_INT64(0, EXPORTERS, max_requests_per_connection, 1, 1024),
+	                   OTEL_YAML_ARG_INT64(0, EXPORTERS, background_thread_wait_for, 0, 3600000),
 	                   OTEL_YAML_ARG_BOOL(0, EXPORTERS, ssl_insecure_skip_verify),
 	                   OTEL_YAML_ARG_STR(0, EXPORTERS, ssl_ca_cert_path),
 	                   OTEL_YAML_ARG_STR(0, EXPORTERS, ssl_ca_cert_string),
@@ -368,6 +369,9 @@ static int otel_exporter_set_otlp_http_options(const char *desc, const char *pat
 		if (!OTEL_NULL(thread_instrumentation))
 			rt_options.thread_instrumentation = thread_instrumentation;
 	}
+
+	if (!OTEL_NULL(thread_wait_time))
+		*thread_wait_time = background_thread_wait_for;
 
 	OTELC_RETURN_INT(OTELC_RET_OK);
 }
