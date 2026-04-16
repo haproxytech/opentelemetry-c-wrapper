@@ -1,0 +1,220 @@
+From a3eca26ce187d66e201434048887d3ff7b926f5d Mon Sep 17 00:00:00 2001
+From: Miroslav Zagorac <mzagorac@haproxy.com>
+Date: Thu, 16 Apr 2026 07:25:46 +0200
+Subject: [PATCH 6/6] Exposed SetBackgroundWaitFor() through OTLP/HTTP
+ exporters
+
+Added a virtual SetBackgroundWaitFor() method to the base HttpClient
+interface, allowing the curl background thread idle timeout to be
+configured from the exporter level.  The method propagates through
+OtlpHttpClient and the three OTLP HTTP exporters (traces, metrics,
+logs) down to the underlying curl::HttpClient.  Made the existing
+curl::HttpClient SetBackgroundWaitFor() a noexcept override of the
+new base class method.
+
+Fixed an integer overflow in the background thread idle-wait comparison:
+when background_thread_wait_for_ was set to milliseconds::max(), the
+comparison against the elapsed system_clock::duration caused an implicit
+conversion to nanoseconds, overflowing int64_t and making the thread exit
+immediately after starting.
+---
+ .../opentelemetry/exporters/otlp/otlp_http_client.h        | 7 +++++++
+ .../opentelemetry/exporters/otlp/otlp_http_exporter.h      | 7 +++++++
+ .../exporters/otlp/otlp_http_log_record_exporter.h         | 7 +++++++
+ .../exporters/otlp/otlp_http_metric_exporter.h             | 7 +++++++
+ exporters/otlp/src/otlp_http_client.cc                     | 5 +++++
+ exporters/otlp/src/otlp_http_exporter.cc                   | 5 +++++
+ exporters/otlp/src/otlp_http_log_record_exporter.cc        | 5 +++++
+ exporters/otlp/src/otlp_http_metric_exporter.cc            | 5 +++++
+ .../opentelemetry/ext/http/client/curl/http_client_curl.h  | 2 +-
+ ext/include/opentelemetry/ext/http/client/http_client.h    | 2 ++
+ ext/src/http/client/curl/http_client_curl.cc               | 4 ++--
+ 11 files changed, 53 insertions(+), 3 deletions(-)
+
+diff --git a/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_http_client.h b/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_http_client.h
+index 410656a..9371750 100644
+--- a/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_http_client.h
++++ b/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_http_client.h
+@@ -230,6 +230,13 @@ class OtlpHttpClient
+    */
+   bool MaybeSpawnBackgroundThread() noexcept;
+ 
++  /**
++   * Set the idle timeout for the HTTP background thread.
++   * @param ms how long the thread lingers after its last request;
++   *           milliseconds::max() means the thread never exits on its own.
++   */
++  void SetBackgroundWaitFor(std::chrono::milliseconds ms) noexcept;
++
+   /**
+    * Get options of current OTLP http client.
+    * @return options of current OTLP http client.
+diff --git a/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_http_exporter.h b/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_http_exporter.h
+index dcccde0..27bb8cc 100644
+--- a/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_http_exporter.h
++++ b/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_http_exporter.h
+@@ -80,6 +80,13 @@ class OPENTELEMETRY_EXPORT OtlpHttpExporter final : public opentelemetry::sdk::t
+    */
+   bool MaybeSpawnBackgroundThread() noexcept;
+ 
++  /**
++   * Set the idle timeout for the HTTP background thread.
++   * @param ms how long the thread lingers after its last request;
++   *           milliseconds::max() means the thread never exits on its own.
++   */
++  void SetBackgroundWaitFor(std::chrono::milliseconds ms) noexcept;
++
+ private:
+   // The configuration options associated with this exporter.
+   OtlpHttpExporterOptions options_;
+diff --git a/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_http_log_record_exporter.h b/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_http_log_record_exporter.h
+index 9384877..b0cc50c 100644
+--- a/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_http_log_record_exporter.h
++++ b/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_http_log_record_exporter.h
+@@ -81,6 +81,13 @@ class OtlpHttpLogRecordExporter final : public opentelemetry::sdk::logs::LogReco
+    */
+   bool MaybeSpawnBackgroundThread() noexcept;
+ 
++  /**
++   * Set the idle timeout for the HTTP background thread.
++   * @param ms how long the thread lingers after its last request;
++   *           milliseconds::max() means the thread never exits on its own.
++   */
++  void SetBackgroundWaitFor(std::chrono::milliseconds ms) noexcept;
++
+ private:
+   // Configuration options for the exporter
+   OtlpHttpLogRecordExporterOptions options_;
+diff --git a/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_http_metric_exporter.h b/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_http_metric_exporter.h
+index 4b13b81..df713f7 100644
+--- a/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_http_metric_exporter.h
++++ b/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_http_metric_exporter.h
+@@ -71,6 +71,13 @@ class OtlpHttpMetricExporter final : public opentelemetry::sdk::metrics::PushMet
+    */
+   bool MaybeSpawnBackgroundThread() noexcept;
+ 
++  /**
++   * Set the idle timeout for the HTTP background thread.
++   * @param ms how long the thread lingers after its last request;
++   *           milliseconds::max() means the thread never exits on its own.
++   */
++  void SetBackgroundWaitFor(std::chrono::milliseconds ms) noexcept;
++
+ private:
+   // Configuration options for the exporter
+   OtlpHttpMetricExporterOptions options_;
+diff --git a/exporters/otlp/src/otlp_http_client.cc b/exporters/otlp/src/otlp_http_client.cc
+index 7b8cb7e..8e88cfc 100644
+--- a/exporters/otlp/src/otlp_http_client.cc
++++ b/exporters/otlp/src/otlp_http_client.cc
+@@ -1051,6 +1051,11 @@ bool OtlpHttpClient::cleanupGCSessions() noexcept
+   return !gc_sessions_.empty();
+ }
+ 
++void OtlpHttpClient::SetBackgroundWaitFor(std::chrono::milliseconds ms) noexcept
++{
++  http_client_->SetBackgroundWaitFor(ms);
++}
++
+ bool OtlpHttpClient::IsShutdown() const noexcept
+ {
+   return is_shutdown_.load(std::memory_order_acquire);
+diff --git a/exporters/otlp/src/otlp_http_exporter.cc b/exporters/otlp/src/otlp_http_exporter.cc
+index b0f2a2c..72719ea 100644
+--- a/exporters/otlp/src/otlp_http_exporter.cc
++++ b/exporters/otlp/src/otlp_http_exporter.cc
+@@ -223,6 +223,11 @@ bool OtlpHttpExporter::MaybeSpawnBackgroundThread() noexcept
+   return http_client_->MaybeSpawnBackgroundThread();
+ }
+ 
++void OtlpHttpExporter::SetBackgroundWaitFor(std::chrono::milliseconds ms) noexcept
++{
++  http_client_->SetBackgroundWaitFor(ms);
++}
++
+ }  // namespace otlp
+ }  // namespace exporter
+ OPENTELEMETRY_END_NAMESPACE
+diff --git a/exporters/otlp/src/otlp_http_log_record_exporter.cc b/exporters/otlp/src/otlp_http_log_record_exporter.cc
+index 3689075..520d422 100644
+--- a/exporters/otlp/src/otlp_http_log_record_exporter.cc
++++ b/exporters/otlp/src/otlp_http_log_record_exporter.cc
+@@ -222,6 +222,11 @@ bool OtlpHttpLogRecordExporter::MaybeSpawnBackgroundThread() noexcept
+   return http_client_->MaybeSpawnBackgroundThread();
+ }
+ 
++void OtlpHttpLogRecordExporter::SetBackgroundWaitFor(std::chrono::milliseconds ms) noexcept
++{
++  http_client_->SetBackgroundWaitFor(ms);
++}
++
+ }  // namespace otlp
+ }  // namespace exporter
+ OPENTELEMETRY_END_NAMESPACE
+diff --git a/exporters/otlp/src/otlp_http_metric_exporter.cc b/exporters/otlp/src/otlp_http_metric_exporter.cc
+index e64a299..9cbd8ab 100644
+--- a/exporters/otlp/src/otlp_http_metric_exporter.cc
++++ b/exporters/otlp/src/otlp_http_metric_exporter.cc
+@@ -231,6 +231,11 @@ bool OtlpHttpMetricExporter::MaybeSpawnBackgroundThread() noexcept
+   return http_client_->MaybeSpawnBackgroundThread();
+ }
+ 
++void OtlpHttpMetricExporter::SetBackgroundWaitFor(std::chrono::milliseconds ms) noexcept
++{
++  http_client_->SetBackgroundWaitFor(ms);
++}
++
+ }  // namespace otlp
+ }  // namespace exporter
+ OPENTELEMETRY_END_NAMESPACE
+diff --git a/ext/include/opentelemetry/ext/http/client/curl/http_client_curl.h b/ext/include/opentelemetry/ext/http/client/curl/http_client_curl.h
+index aaaebcb..db20ebb 100644
+--- a/ext/include/opentelemetry/ext/http/client/curl/http_client_curl.h
++++ b/ext/include/opentelemetry/ext/http/client/curl/http_client_curl.h
+@@ -352,7 +352,7 @@ class HttpClient : public opentelemetry::ext::http::client::HttpClient
+   void ScheduleAbortSession(uint64_t session_id);
+   void ScheduleRemoveSession(uint64_t session_id, HttpCurlEasyResource &&resource);
+ 
+-  void SetBackgroundWaitFor(std::chrono::milliseconds ms);
++  void SetBackgroundWaitFor(std::chrono::milliseconds ms) noexcept override;
+ 
+   void WaitBackgroundThreadExit();
+ 
+diff --git a/ext/include/opentelemetry/ext/http/client/http_client.h b/ext/include/opentelemetry/ext/http/client/http_client.h
+index cc2b65b..8a2cdbd 100644
+--- a/ext/include/opentelemetry/ext/http/client/http_client.h
++++ b/ext/include/opentelemetry/ext/http/client/http_client.h
+@@ -416,6 +416,8 @@ class HttpClient
+ 
+   virtual bool MaybeSpawnBackgroundThread() noexcept { return false; }
+ 
++  virtual void SetBackgroundWaitFor(std::chrono::milliseconds) noexcept {}
++
+   virtual ~HttpClient() = default;
+ };
+ 
+diff --git a/ext/src/http/client/curl/http_client_curl.cc b/ext/src/http/client/curl/http_client_curl.cc
+index 551a0cf..f025024 100644
+--- a/ext/src/http/client/curl/http_client_curl.cc
++++ b/ext/src/http/client/curl/http_client_curl.cc
+@@ -577,7 +577,7 @@ bool HttpClient::MaybeSpawnBackgroundThread() noexcept
+             wait_for = std::chrono::milliseconds::zero();
+           }
+ 
+-          if (now - last_free_job_timepoint < wait_for)
++          if (std::chrono::duration_cast<std::chrono::milliseconds>(now - last_free_job_timepoint) < wait_for)
+           {
+             need_wait_more = true;
+             continue;
+@@ -683,7 +683,7 @@ void HttpClient::ScheduleRemoveSession(uint64_t session_id, HttpCurlEasyResource
+   wakeupBackgroundThread();
+ }
+ 
+-void HttpClient::SetBackgroundWaitFor(std::chrono::milliseconds ms)
++void HttpClient::SetBackgroundWaitFor(std::chrono::milliseconds ms) noexcept
+ {
+   background_thread_wait_for_ = ms;
+ }
+-- 
+2.43.0
+
