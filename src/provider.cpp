@@ -170,6 +170,7 @@ int otel_meter_reader_create(struct otelc_meter *meter, std::unique_ptr<otel_sdk
 	otel_sdk_metrics::PeriodicExportingMetricReaderRuntimeOptions rt_options{};
 	char                                                          thread_name[OTEL_YAML_BUFSIZ] = "";
 	int64_t                                                       export_interval = 60000, export_timeout = 30000;
+	int64_t                                                       cpu_id = -1;
 	int                                                           rc;
 
 	OTELC_FUNC("%p, <exporter>, <reader>", meter);
@@ -179,6 +180,7 @@ int otel_meter_reader_create(struct otelc_meter *meter, std::unique_ptr<otel_sdk
 
 	rc = yaml_get_node(otelc_fyd, &(meter->err), 0, "OpenTelemetry meter reader", OTEL_YAML_METER_PREFIX OTEL_YAML_READERS, name,
 	                   OTEL_YAML_ARG_STR(0, READERS, thread_name),
+	                   OTEL_YAML_ARG_INT64(0, READERS, cpu_id, -1, OTEL_MAX_CPU_ID),
 	                   OTEL_YAML_ARG_INT64(0, READERS, export_interval, 100, 3600000),
 	                   OTEL_YAML_ARG_INT64(0, READERS, export_timeout, 100, 3600000),
 	                   OTEL_YAML_END);
@@ -192,7 +194,7 @@ int otel_meter_reader_create(struct otelc_meter *meter, std::unique_ptr<otel_sdk
 	options.export_timeout_millis  = std::chrono::milliseconds(export_timeout);
 
 	if (*thread_name != '\0') {
-		const auto thread_instrumentation = otel::make_shared_nothrow<otel_thread_instrumentation>(thread_name);
+		const auto thread_instrumentation = otel::make_shared_nothrow<otel_thread_instrumentation>(thread_name, OTEL_CAST_STATIC(int, cpu_id));
 		if (!OTEL_NULL(thread_instrumentation))
 			rt_options.periodic_thread_instrumentation = thread_instrumentation;
 	}

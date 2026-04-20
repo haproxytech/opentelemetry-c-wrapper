@@ -24,6 +24,9 @@
 #ifdef HAVE_INTTYPES_H
 #  include <inttypes.h>
 #endif
+#ifdef HAVE_SCHED_H
+#  include <sched.h>
+#endif
 #ifdef HAVE_UNISTD_H
 #  include <unistd.h>
 #endif

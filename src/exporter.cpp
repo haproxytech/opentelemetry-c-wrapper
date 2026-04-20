@@ -85,6 +85,7 @@ static int otel_exporter_set_otlp_file_options(const char *desc, const char *pat
 	char                                                thread_name[OTEL_YAML_BUFSIZ] = "";
 	char                                                file_pattern[OTEL_YAML_BUFSIZ] = OTEL_EXPORTER_OTLP_FILE_PATTERN, alias_pattern[OTEL_YAML_BUFSIZ] = "";
 	int64_t                                             flush_interval = 30000000, flush_count = 256, file_size = 1024 * 1024 * 20, rotate_size = 3;
+	int64_t                                             cpu_id = -1;
 	int                                                 rc;
 
 	OTELC_FUNC("\"%s\", \"%s\", <options>, %p:%p, \"%s\"", OTELC_STR_ARG(desc), OTELC_STR_ARG(path), OTELC_DPTR_ARGS(err), OTELC_STR_ARG(name));
@@ -96,6 +97,7 @@ static int otel_exporter_set_otlp_file_options(const char *desc, const char *pat
 
 	rc = yaml_get_node(otelc_fyd, err, 1, desc, path, name,
 	                   OTEL_YAML_ARG_STR(0, EXPORTERS, thread_name),
+	                   OTEL_YAML_ARG_INT64(0, EXPORTERS, cpu_id, -1, OTEL_MAX_CPU_ID),
 	                   OTEL_YAML_ARG_STR(0, EXPORTERS, file_pattern),
 	                   OTEL_YAML_ARG_STR(0, EXPORTERS, alias_pattern),
 	                   OTEL_YAML_ARG_INT64(0, EXPORTERS, flush_interval, 100000, 60000000),
@@ -121,7 +123,7 @@ static int otel_exporter_set_otlp_file_options(const char *desc, const char *pat
 	options.backend_options   = fs_options;
 
 	if (*thread_name != '\0') {
-		const auto thread_instrumentation = otel::make_shared_nothrow<otel_thread_instrumentation>(thread_name);
+		const auto thread_instrumentation = otel::make_shared_nothrow<otel_thread_instrumentation>(thread_name, OTEL_CAST_STATIC(int, cpu_id));
 		if (!OTEL_NULL(thread_instrumentation))
 			rt_options.thread_instrumentation = thread_instrumentation;
 	}
@@ -174,6 +176,7 @@ static int otel_exporter_set_otlp_grpc_options(const char *desc, const char *pat
 #endif
 	int     rc, use_ssl_credentials = false;
 	int64_t timeout = 10, max_threads = 0, max_concurrent_requests = 0;
+	int64_t cpu_id = -1;
 
 	OTELC_FUNC("\"%s\", \"%s\", \"%s\", <options>, %p:%p, \"%s\"", OTELC_STR_ARG(desc), OTELC_STR_ARG(path), OTELC_STR_ARG(endpoint), OTELC_DPTR_ARGS(err), OTELC_STR_ARG(name));
 
@@ -186,6 +189,7 @@ static int otel_exporter_set_otlp_grpc_options(const char *desc, const char *pat
 
 	rc = yaml_get_node(otelc_fyd, err, 1, desc, path, name,
 	                   OTEL_YAML_ARG_STR(0, EXPORTERS, thread_name),
+	                   OTEL_YAML_ARG_INT64(0, EXPORTERS, cpu_id, -1, OTEL_MAX_CPU_ID),
 	                   OTEL_YAML_ARG_STR_PTR(0, EXPORTERS, endpoint, OTEL_YAML_BUFSIZ),
 	                   OTEL_YAML_ARG_BOOL(0, EXPORTERS, use_ssl_credentials),
 	                   OTEL_YAML_ARG_STR(0, EXPORTERS, ssl_credentials_cacert_path),
@@ -274,7 +278,7 @@ static int otel_exporter_set_otlp_http_options(const char *desc, const char *pat
 	char                             ssl_min_tls[OTEL_YAML_BUFSIZ] = "", ssl_max_tls[OTEL_YAML_BUFSIZ] = "";
 	char                             ssl_cipher[OTEL_YAML_BUFSIZ] = "", ssl_cipher_suite[OTEL_YAML_BUFSIZ] = "", compression[OTEL_YAML_BUFSIZ] = "";
 	int                              rc, use_json_name = false, debug = false, ssl_insecure_skip_verify = false;
-	int64_t                          timeout = 10, max_concurrent_requests = 64, max_requests_per_connection = 8, background_thread_wait_for = 0;
+	int64_t                          timeout = 10, max_concurrent_requests = 64, max_requests_per_connection = 8, background_thread_wait_for = 0, cpu_id = -1;
 
 	OTELC_FUNC("\"%s\", \"%s\", \"%s\", <options>, %p, %p:%p, \"%s\"", OTELC_STR_ARG(desc), OTELC_STR_ARG(path), OTELC_STR_ARG(endpoint), thread_wait_time, OTELC_DPTR_ARGS(err), OTELC_STR_ARG(name));
 
@@ -287,6 +291,7 @@ static int otel_exporter_set_otlp_http_options(const char *desc, const char *pat
 
 	rc = yaml_get_node(otelc_fyd, err, 1, desc, path, name,
 	                   OTEL_YAML_ARG_STR(0, EXPORTERS, thread_name),
+	                   OTEL_YAML_ARG_INT64(0, EXPORTERS, cpu_id, -1, OTEL_MAX_CPU_ID),
 	                   OTEL_YAML_ARG_STR_PTR(0, EXPORTERS, endpoint, OTEL_YAML_BUFSIZ),
 	                   OTEL_YAML_ARG_STR(0, EXPORTERS, content_type),
 	                   OTEL_YAML_ARG_STR(0, EXPORTERS, json_bytes_mapping),
@@ -365,7 +370,7 @@ static int otel_exporter_set_otlp_http_options(const char *desc, const char *pat
 		otel_sdk_internal_log::GlobalLogHandler::SetLogLevel(otel_sdk_internal_log::LogLevel::Debug);
 
 	if (*thread_name != '\0') {
-		const auto thread_instrumentation = otel::make_shared_nothrow<otel_thread_instrumentation>(thread_name);
+		const auto thread_instrumentation = otel::make_shared_nothrow<otel_thread_instrumentation>(thread_name, OTEL_CAST_STATIC(int, cpu_id));
 		if (!OTEL_NULL(thread_instrumentation))
 			rt_options.thread_instrumentation = thread_instrumentation;
 	}

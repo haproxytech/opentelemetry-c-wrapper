@@ -2,6 +2,7 @@ exporters:
   exporter_traces_otlp_file:
     type:           otlp_file
     thread_name:    "OTLP/file trace"
+#   cpu_id:         -1
     file_pattern:   "__traces_log-%F-%N"
     alias_pattern:  "__traces_log-latest"
     flush_interval: 30000000
@@ -12,6 +13,7 @@ exporters:
   exporter_traces_otlp_grpc:
     type:                             otlp_grpc
     thread_name:                      "OTLP/gRPC trace"
+#   cpu_id:                           -1
     endpoint:                         "http://localhost:4317/v1/traces"
     use_ssl_credentials:              false
 #   ssl_credentials_cacert_path:      ""
@@ -29,6 +31,7 @@ exporters:
   exporter_traces_otlp_http:
     type:                        otlp_http
     thread_name:                 "OTLP/HTTP trace"
+#   cpu_id:                      -1
     endpoint:                    "http://localhost:4318/v1/traces"
     content_type:                json
     json_bytes_mapping:          hexid
@@ -75,6 +78,7 @@ exporters:
   exporter_metrics_otlp_file:
     type:           otlp_file
     thread_name:    "OTLP/file metr"
+#   cpu_id:         -1
     file_pattern:   "__metrics_log-%F-%N"
     alias_pattern:  "__metrics_log-latest"
     flush_interval: 30000000
@@ -85,12 +89,14 @@ exporters:
   exporter_metrics_otlp_grpc:
     type:                otlp_grpc
     thread_name:         "OTLP/gRPC metr"
+#   cpu_id:              -1
     endpoint:            "http://localhost:4317/v1/metrics"
     use_ssl_credentials: false
 
   exporter_metrics_otlp_http:
     type:                        otlp_http
     thread_name:                 "OTLP/HTTP metr"
+#   cpu_id:                      -1
     endpoint:                    "http://localhost:4318/v1/metrics"
     content_type:                json
     debug:                       false
@@ -117,6 +123,7 @@ exporters:
   exporter_logs_otlp_file:
     type:           otlp_file
     thread_name:    "OTLP/file logs"
+#   cpu_id:         -1
     file_pattern:   "__logs_log-%F-%N"
     alias_pattern:  "__logs_log-latest"
     flush_interval: 30000000
@@ -127,12 +134,14 @@ exporters:
   exporter_logs_otlp_grpc:
     type:                otlp_grpc
     thread_name:         "OTLP/gRPC logs"
+#   cpu_id:              -1
     endpoint:            "http://localhost:4317/v1/logs"
     use_ssl_credentials: false
 
   exporter_logs_otlp_http:
     type:                        otlp_http
     thread_name:                 "OTLP/HTTP logs"
+#   cpu_id:                      -1
     endpoint:                    "http://localhost:4318/v1/logs"
     content_type:                json
     debug:                       false
@@ -166,11 +175,13 @@ exporters:
 readers:
   reader_metrics:
     thread_name:     "reader metr"
+#   cpu_id:          -1
     export_interval: 20000
     export_timeout:  10000
 
   reader_metrics_fast:
     thread_name:     "reader fast"
+#   cpu_id:          -1
     export_interval: 2000
     export_timeout:  1000
 
@@ -187,6 +198,7 @@ processors:
   processor_traces_batch:
     type:                  batch
     thread_name:           "proc/batch trac"
+#   cpu_id:                -1
     # Note: when the queue is half full, a preemptive notification is sent
     # to start the export call.
     max_queue_size:        2048
@@ -201,6 +213,7 @@ processors:
   processor_logs_batch:
     type:                  batch
     thread_name:           "proc/batch logs"
+#   cpu_id:                -1
     max_queue_size:        2048
     schedule_delay:        5000
     max_export_batch_size: 512

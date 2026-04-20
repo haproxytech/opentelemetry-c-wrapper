@@ -310,6 +310,7 @@ int otel_tracer_processor_create(struct otelc_tracer *tracer, std::unique_ptr<ot
 	int                                            rc;
 	char                                           type[OTEL_YAML_BUFSIZ] = "", thread_name[OTEL_YAML_BUFSIZ] = "";
 	int64_t                                        max_queue_size = 2048, schedule_delay = 5000, export_timeout = 30000, max_export_batch_size = 512;
+	int64_t                                        cpu_id = -1;
 	bool                                           flag_batch = true;
 
 	OTELC_FUNC("%p, <exporter>, <processor>, \"%s\"", tracer, OTELC_STR_ARG(name));
@@ -326,6 +327,7 @@ int otel_tracer_processor_create(struct otelc_tracer *tracer, std::unique_ptr<ot
 	rc = yaml_get_node(otelc_fyd, &(tracer->err), 0, "OpenTelemetry traces processor", OTEL_YAML_TRACER_PREFIX OTEL_YAML_PROCESSORS, name,
 	                   OTEL_YAML_ARG_STR(1, PROCESSORS, type),
 	                   OTEL_YAML_ARG_STR(0, PROCESSORS, thread_name),
+	                   OTEL_YAML_ARG_INT64(0, PROCESSORS, cpu_id, -1, OTEL_MAX_CPU_ID),
 	                   OTEL_YAML_ARG_INT64(0, PROCESSORS, max_queue_size, 64, 65536),
 	                   OTEL_YAML_ARG_INT64(0, PROCESSORS, schedule_delay, 1, 60000),
 	                   OTEL_YAML_ARG_INT64(0, PROCESSORS, export_timeout, 1, 60000),
@@ -362,7 +364,7 @@ int otel_tracer_processor_create(struct otelc_tracer *tracer, std::unique_ptr<ot
 		options.max_export_batch_size = max_export_batch_size;
 
 		if (*thread_name != '\0') {
-			const auto thread_instrumentation = otel::make_shared_nothrow<otel_thread_instrumentation>(thread_name);
+			const auto thread_instrumentation = otel::make_shared_nothrow<otel_thread_instrumentation>(thread_name, OTEL_CAST_STATIC(int, cpu_id));
 			if (!OTEL_NULL(thread_instrumentation))
 				rt_options.thread_instrumentation = thread_instrumentation;
 		}
@@ -423,6 +425,7 @@ int otel_logger_processor_create(struct otelc_logger *logger, std::unique_ptr<ot
 	int                                                rc;
 	char                                               type[OTEL_YAML_BUFSIZ] = "", thread_name[OTEL_YAML_BUFSIZ] = "";
 	int64_t                                            max_queue_size = 2048, schedule_delay = 1000, export_timeout = 30000, max_export_batch_size = 512;
+	int64_t                                            cpu_id = -1;
 	bool                                               flag_batch = true;
 
 	OTELC_FUNC("%p, <exporter>, <processor>, \"%s\"", logger, OTELC_STR_ARG(name));
@@ -440,6 +443,7 @@ int otel_logger_processor_create(struct otelc_logger *logger, std::unique_ptr<ot
 	rc = yaml_get_node(otelc_fyd, &(logger->err), 0, "OpenTelemetry logs processor", OTEL_YAML_LOGGER_PREFIX OTEL_YAML_PROCESSORS, name,
 	                   OTEL_YAML_ARG_STR(1, PROCESSORS, type),
 	                   OTEL_YAML_ARG_STR(0, PROCESSORS, thread_name),
+	                   OTEL_YAML_ARG_INT64(0, PROCESSORS, cpu_id, -1, OTEL_MAX_CPU_ID),
 	                   OTEL_YAML_ARG_INT64(0, PROCESSORS, max_queue_size, 64, 65536),
 	                   OTEL_YAML_ARG_INT64(0, PROCESSORS, schedule_delay, 1, 60000),
 	                   OTEL_YAML_ARG_INT64(0, PROCESSORS, export_timeout, 1, 60000),
@@ -476,7 +480,7 @@ int otel_logger_processor_create(struct otelc_logger *logger, std::unique_ptr<ot
 		options.max_export_batch_size = max_export_batch_size;
 
 		if (*thread_name != '\0') {
-			const auto thread_instrumentation = otel::make_shared_nothrow<otel_thread_instrumentation>(thread_name);
+			const auto thread_instrumentation = otel::make_shared_nothrow<otel_thread_instrumentation>(thread_name, OTEL_CAST_STATIC(int, cpu_id));
 			if (!OTEL_NULL(thread_instrumentation))
 				rt_options.thread_instrumentation = thread_instrumentation;
 		}

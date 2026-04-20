@@ -86,7 +86,9 @@ otel_thread_instrumentation::~otel_thread_instrumentation()
  *   Called when a managed thread starts execution.  If a thread name
  *   has been configured, sets the operating system thread name using
  *   pthread_setname_np(), truncating the name to fit the platform limit
- *   of OTEL_THREAD_NAME_SIZE characters.
+ *   of OTEL_THREAD_NAME_SIZE characters.  If a CPU identifier has been
+ *   configured (cpu_id >= 0), bounds the thread to that CPU core using
+ *   pthread_setaffinity_np().
  *
  * RETURN VALUE
  *   This function does not return a value.
@@ -99,6 +101,20 @@ void otel_thread_instrumentation::OnStart(void)
 
 	if (!thread_name.empty())
 		(void)pthread_setname_np(pthread_self(), thread_name.substr(0, OTEL_THREAD_NAME_SIZE - 1).c_str());
+
+#ifdef HAVE_SCHED_H
+	/* If binding the thread to a CPU fails, only the error is logged. */
+	if (cpu_id >= 0) {
+		cpu_set_t cpuset;
+		int       rc;
+
+		CPU_ZERO(&cpuset);
+		CPU_SET(cpu_id, &cpuset);
+		rc = pthread_setaffinity_np(pthread_self(), sizeof(cpuset), &cpuset);
+		if (rc != 0)
+			OTELC_DBG(DEBUG, "Failed to bound thread to cpu %d: %s", cpu_id, otel_strerror(rc));
+	}
+#endif
 
 	OTELC_RETURN();
 }

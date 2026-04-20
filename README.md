@@ -312,6 +312,31 @@ signals:
 
 A complete example covering all three signals is in `test/otel-cfg.yml`.
 
+### Thread Settings
+
+Components that spawn background threads (batch processors, OTLP File and HTTP
+exporters, and periodic metric readers) accept two optional settings:
+
+| Setting       | Description                                                     |
+|---------------|-----------------------------------------------------------------|
+| `thread_name` | OS thread name (truncated to 15 characters)                     |
+| `cpu_id`      | Bound thread to a CPU core (0-OTEL_MAX_CPU_ID, or -1 for unset) |
+
+Example:
+
+```yaml
+processors:
+  my_processor:
+    type:        batch
+    thread_name: "proc/batch trac"
+    cpu_id:      2
+```
+
+The `cpu_id` setting uses `pthread_setaffinity_np()` and is only effective on
+Linux (requires `sched.h`).  The OTLP/gRPC exporter accepts both settings for
+configuration consistency, but they are not applied because the OTel C++ SDK
+does not provide runtime options for gRPC exporter threads.
+
 ### Supported Exporters
 
 | Exporter      | Traces | Metrics | Logs |
@@ -336,6 +361,10 @@ startup and shutdown.
 
 Applications can provide a custom thread-ID function via `otelc_ext_init()`
 before calling `otelc_init()`.
+
+SDK background threads can optionally be bound to a specific CPU core via the
+`cpu_id` YAML setting.  See the [Thread Settings](#thread-settings) section
+for details.
 
 ## Documentation
 

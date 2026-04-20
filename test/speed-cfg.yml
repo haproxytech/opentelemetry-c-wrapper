@@ -14,6 +14,7 @@ exporters:
 readers:
   reader_metrics:
     thread_name:     "reader metr"
+#   cpu_id:          -1
     export_interval: 10000
     export_timeout:  5000
 
@@ -26,6 +27,7 @@ processors:
   processor_traces_batch:
     type:                  batch
     thread_name:           "proc/batch trac"
+#   cpu_id:                -1
     max_queue_size:        2048
     schedule_delay:        5000
     max_export_batch_size: 512
@@ -33,6 +35,7 @@ processors:
   processor_logs_batch:
     type:                  batch
     thread_name:           "proc/batch logs"
+#   cpu_id:                -1
     max_queue_size:        2048
     schedule_delay:        5000
     max_export_batch_size: 512

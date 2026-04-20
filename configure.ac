@@ -90,7 +90,7 @@ AC_SUBST([LIBTOOL_DEPS])
 
 dnl Checks for header files.
 dnl
-AC_CHECK_HEADERS([fcntl.h inttypes.h malloc.h stdint.h stdlib.h string.h strings.h sys/time.h unistd.h])
+AC_CHECK_HEADERS([fcntl.h inttypes.h malloc.h sched.h stdint.h stdlib.h string.h strings.h sys/time.h unistd.h])
 
 dnl Checks for typedefs, structures, and compiler characteristics.
 dnl

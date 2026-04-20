@@ -456,6 +456,32 @@ Here is a minimal configuration that exports traces to stdout:
 A complete configuration covering all three signals and multiple exporter types
 can be found in the file test/otel-cfg.yml.
 
+Components that spawn background threads (batch processors, OTLP File and HTTP
+exporters, and periodic metric readers) accept two optional settings that
+control the operating system thread properties:
+
+  * thread_name - sets the OS thread name via pthread_setname_np(), truncated
+                  to 15 characters.  Useful for identifying SDK threads in
+                  debuggers and monitoring tools.
+
+  * cpu_id      - bounds the thread to a specific CPU core via
+                  pthread_setaffinity_np().  Accepts a core number
+                  (0-OTEL_MAX_CPU_ID) or -1 to leave the affinity unset
+                  (the default).  This setting requires sched.h and is only
+                  effective on Linux.
+
+Both settings are configured per component.  For example:
+
+  processors:
+    my_processor:
+      type:        batch
+      thread_name: "proc/batch trac"
+      cpu_id:      2
+
+The OTLP/gRPC exporter accepts these settings in the YAML file for
+configuration consistency, but they are not applied because the OTel
+C++ SDK does not provide runtime options for gRPC exporter threads.
+
 
 6.2. Exporters
 ------------------------------------------------------------------------------
@@ -1154,6 +1180,11 @@ concurrently with data-plane operations.
 Each thread is identified internally by a numeric ID.  Applications can provide
 a custom thread-ID function via otelc_ext_init() before calling otelc_init();
 otherwise, the library uses its own internal assignment.
+
+SDK background threads (batch processor export threads, OTLP File and HTTP
+exporter threads, periodic metric reader threads) can optionally be bound to
+a specific CPU core via the cpu_id YAML setting.  See the YAML configuration
+section for details.
 
 
 11. Known bugs and limitations

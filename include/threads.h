@@ -18,8 +18,17 @@
 
 /* NOTE: The offset from the demangled name was determined empirically. */
 #define OTEL_THREAD_INSTRUMENTATION_DEMANGLED_NAME   (typeid(otel_thread_instrumentation).name() + 2)
-#define OTEL_DBG_THREAD_INSTRUMENTATION()            OTELC_DBG(DEBUG, "thread: '%s'", thread_name.c_str())
+#define OTEL_DBG_THREAD_INSTRUMENTATION()            OTELC_DBG(DEBUG, "thread: '%s' cpu_id: %d", thread_name.c_str(), cpu_id)
 #define OTEL_THREAD_GET_ID(s)                        OTELC_DBG_IFDEF(std::ostringstream s; s << std::this_thread::get_id(), )
+
+/* Maximum CPU ID for thread affinity.  The OTEL_MAX_CPU_IDL and
+ * OTEL_MAX_CPU_IDLL macros guard against INT64_C() token-pasting:
+ * INT64_C(OTEL_MAX_CPU_ID) may expand to OTEL_MAX_CPU_IDL on LP64
+ * platforms (L suffix) or OTEL_MAX_CPU_IDLL on ILP32/LLP64
+ * platforms (LL suffix). */
+constexpr int64_t OTEL_MAX_CPU_ID = 4095;
+#define OTEL_MAX_CPU_IDL                             OTEL_MAX_CPU_ID
+#define OTEL_MAX_CPU_IDLL                            OTEL_MAX_CPU_ID
 
 constexpr size_t OTEL_THREAD_NAME_SIZE = 16; /* Including the terminating null character. */
 
@@ -27,8 +36,8 @@ class otel_thread_instrumentation final : public otel_sdk_common::ThreadInstrume
 public:
 	otel_thread_instrumentation();
 
-	otel_thread_instrumentation(const std::string &thread_name_)
-		: thread_name(thread_name_)
+	otel_thread_instrumentation(const std::string &thread_name_, int cpu_id_ = -1)
+		: thread_name(thread_name_), cpu_id(cpu_id_)
 	{
 		OTELC_FUNCPP("", OTEL_THREAD_INSTRUMENTATION_DEMANGLED_NAME);
 
@@ -50,6 +59,7 @@ public:
 
 private:
 	std::string thread_name;
+	int         cpu_id = -1;
 };
 
 #endif /* _OPENTELEMETRY_C_WRAPPER_THREADS_H_ */
