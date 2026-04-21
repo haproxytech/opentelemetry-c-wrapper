@@ -252,15 +252,20 @@ check_include_file(sys/types.h HAVE_SYS_TYPES_H)
 check_include_file(unistd.h    HAVE_UNISTD_H)
 check_include_file(wchar.h     HAVE_WCHAR_H)
 
+## check_symbol_exists needs _GNU_SOURCE for strndup visibility.
+set(CMAKE_REQUIRED_DEFINITIONS -D_GNU_SOURCE)
+
 check_function_exists(clock_gettime HAVE_CLOCK_GETTIME)
 check_function_exists(gettimeofday  HAVE_GETTIMEOFDAY)
-check_function_exists(mallinfo      HAVE_MALLINFO)
-check_function_exists(mallinfo2     HAVE_MALLINFO2)
-check_function_exists(memset        HAVE_MEMSET)
-check_function_exists(strcasecmp    HAVE_STRCASECMP)
-check_function_exists(strndup       HAVE_STRNDUP)
-check_function_exists(strrchr       HAVE_STRRCHR)
-check_function_exists(strtol        HAVE_STRTOL)
+check_symbol_exists(mallinfo   "malloc.h"  HAVE_MALLINFO)
+check_symbol_exists(mallinfo2  "malloc.h"  HAVE_MALLINFO2)
+check_symbol_exists(memset     "string.h"  HAVE_MEMSET)
+check_symbol_exists(strcasecmp "strings.h" HAVE_STRCASECMP)
+check_symbol_exists(strndup    "string.h"  HAVE_STRNDUP)
+check_symbol_exists(strrchr    "string.h"  HAVE_STRRCHR)
+check_symbol_exists(strtol     "stdlib.h"  HAVE_STRTOL)
+
+unset(CMAKE_REQUIRED_DEFINITIONS)
 
 check_symbol_exists(strerror_r "string.h" HAVE_STRERROR_R)
 if(HAVE_STRERROR_R)
