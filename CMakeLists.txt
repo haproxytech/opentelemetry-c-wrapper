@@ -57,6 +57,7 @@ include(CheckSymbolExists)
 ## ---------------------------------------------------------------------------
 ## Options
 ## ---------------------------------------------------------------------------
+option(BUILD_STATIC    "Build a static library instead of shared" OFF)
 option(ENABLE_DEBUG    "Include debugging options"           OFF)
 option(ENABLE_WARNINGS "Enable additional compiler warnings" OFF)
 option(ENABLE_THREADS  "Enable multi-thread support"          ON)
@@ -416,6 +417,136 @@ probe_exporter(OTLP_HTTP
 probe_exporter(ZIPKIN
     opentelemetry_exporter_zipkin_trace)
 
+## For static builds, convert exporter full paths (/opt/lib/libfoo.so) to
+## plain names (foo) so the exported CMake target stays portable.
+if(BUILD_STATIC AND EXPORTER_LIBRARIES)
+    set(_exp_names "")
+    foreach(_path IN LISTS EXPORTER_LIBRARIES)
+        get_filename_component(_fname "${_path}" NAME_WE)
+        string(REGEX REPLACE "^lib" "" _fname "${_fname}")
+        list(APPEND _exp_names "${_fname}")
+    endforeach()
+    set(EXPORTER_LIBRARIES "${_exp_names}")
+endif()
+
+## ---------------------------------------------------------------------------
+## SDK and system libraries  (needed for static linking)
+## ---------------------------------------------------------------------------
+set(SDK_LIBRARIES       "")
+set(SYSLIB_LIBRARIES    "")
+set(SYSLIB_LIBRARY_DIRS "")
+
+if(BUILD_STATIC)
+    message(STATUS "Probing OpenTelemetry SDK libraries:")
+
+    macro(probe_sdk_lib _lib)
+        find_library(_loc_${_lib} NAMES ${_lib}
+            HINTS ${_otel_lib_dirs}
+            NO_DEFAULT_PATH
+        )
+        find_library(_loc_${_lib} NAMES ${_lib})
+        if(_loc_${_lib})
+            list(APPEND SDK_LIBRARIES "${_lib}")
+            message(STATUS "  ${_lib}: found")
+        else()
+            message(STATUS "  ${_lib}: not found")
+        endif()
+    endmacro()
+
+    ## Exporter client / builder libraries
+    probe_sdk_lib(opentelemetry_exporter_otlp_file_client)
+    probe_sdk_lib(opentelemetry_exporter_otlp_file_builder)
+    probe_sdk_lib(opentelemetry_exporter_otlp_file_log_builder)
+    probe_sdk_lib(opentelemetry_exporter_otlp_file_metric_builder)
+    probe_sdk_lib(opentelemetry_exporter_otlp_grpc_client)
+    probe_sdk_lib(opentelemetry_exporter_otlp_grpc_builder)
+    probe_sdk_lib(opentelemetry_exporter_otlp_grpc_log_builder)
+    probe_sdk_lib(opentelemetry_exporter_otlp_grpc_metric_builder)
+    probe_sdk_lib(opentelemetry_exporter_otlp_http_client)
+    probe_sdk_lib(opentelemetry_exporter_otlp_http_builder)
+    probe_sdk_lib(opentelemetry_exporter_otlp_http_log_builder)
+    probe_sdk_lib(opentelemetry_exporter_otlp_http_metric_builder)
+    probe_sdk_lib(opentelemetry_exporter_otlp_builder_utils)
+    probe_sdk_lib(opentelemetry_exporter_ostream_span_builder)
+    probe_sdk_lib(opentelemetry_exporter_ostream_metrics_builder)
+    probe_sdk_lib(opentelemetry_exporter_ostream_logs_builder)
+
+    ## Core SDK libraries
+    probe_sdk_lib(opentelemetry_otlp_recordable)
+    probe_sdk_lib(opentelemetry_http_client_curl)
+    probe_sdk_lib(opentelemetry_trace)
+    probe_sdk_lib(opentelemetry_metrics)
+    probe_sdk_lib(opentelemetry_logs)
+    probe_sdk_lib(opentelemetry_proto)
+    probe_sdk_lib(opentelemetry_proto_grpc)
+    probe_sdk_lib(opentelemetry_resources)
+    probe_sdk_lib(opentelemetry_common)
+    probe_sdk_lib(opentelemetry_configuration)
+    probe_sdk_lib(opentelemetry_version)
+
+    ## System libraries that OTel SDK components depend on (protobuf, curl,
+    ## gRPC).  Use non-static pkg-config --libs so the linker picks up shared
+    ## libraries that resolve their own transitive deps at runtime (avoids
+    ## chasing libunistring, etc.).
+    macro(probe_syslib_pkg _label _pkg)
+        execute_process(
+            COMMAND pkg-config --libs ${_pkg}
+            OUTPUT_VARIABLE _syslib_flags
+            OUTPUT_STRIP_TRAILING_WHITESPACE
+            RESULT_VARIABLE _syslib_rc
+        )
+        if(_syslib_rc EQUAL 0 AND _syslib_flags)
+            ## Split the flags string into a list.
+            separate_arguments(_syslib_list UNIX_COMMAND "${_syslib_flags}")
+            foreach(_flag IN LISTS _syslib_list)
+                if(_flag MATCHES "^-L(.+)")
+                    list(APPEND SYSLIB_LIBRARY_DIRS "${CMAKE_MATCH_1}")
+                elseif(_flag MATCHES "^-l(.+)")
+                    list(APPEND SYSLIB_LIBRARIES "${CMAKE_MATCH_1}")
+                endif()
+            endforeach()
+            message(STATUS "  ${_label}: found")
+        else()
+            message(STATUS "  ${_label}: not found")
+        endif()
+    endmacro()
+
+    probe_syslib_pkg("protobuf" protobuf)
+    probe_syslib_pkg("libcurl"  libcurl)
+    probe_syslib_pkg("grpc++"   grpc++)
+    probe_syslib_pkg("zlib"     zlib)
+    ## TLS/crypto -- both AWS-LC and OpenSSL provide these.
+    probe_syslib_pkg("libssl"    libssl)
+    probe_syslib_pkg("libcrypto" libcrypto)
+    probe_syslib_pkg("libsystemd" libsystemd)
+
+    ## gRPC internal libraries (upb, re2, c-ares, ...).  Must come after grpc++
+    ## on the link line since grpc++ references them.
+    set(_grpc_internal_libs
+        address_sorting re2 cares
+        upb upb_textformat_lib upb_json_lib upb_lex_lib
+        upb_mini_descriptor_lib upb_mini_table_lib
+        upb_reflection_lib upb_wire_lib upb_message_lib
+        upb_hash_lib upb_mem_lib upb_base_lib
+        utf8_range utf8_range_lib utf8_validity
+    )
+    foreach(_lib IN LISTS _grpc_internal_libs)
+        find_library(_loc_syslib_${_lib} NAMES ${_lib}
+            HINTS ${_otel_lib_dirs}
+            NO_DEFAULT_PATH
+        )
+        find_library(_loc_syslib_${_lib} NAMES ${_lib})
+        if(_loc_syslib_${_lib})
+            list(APPEND SYSLIB_LIBRARIES "${_lib}")
+        endif()
+    endforeach()
+
+    ## Only deduplicate directories; library names must keep their per-package
+    ## order so the linker resolves symbols correctly (e.g. abseil must appear
+    ## after both protobuf and grpc++).
+    list(REMOVE_DUPLICATES SYSLIB_LIBRARY_DIRS)
+endif()
+
 ## ---------------------------------------------------------------------------
 ## YAML backend
 ## ---------------------------------------------------------------------------
@@ -460,7 +591,12 @@ elseif(WITH_RAPIDYAML)
 
     set(HAVE_RYML_STD_HPP 1)
     set(YAML_INCLUDE_DIRS "${RYML_INCLUDE_DIR}")
-    set(YAML_LIBRARIES    "${RYML_LIBRARY}")
+    if(BUILD_STATIC)
+        set(YAML_LIBRARIES "ryml")
+        get_filename_component(YAML_LIBRARY_DIRS "${RYML_LIBRARY}" DIRECTORY)
+    else()
+        set(YAML_LIBRARIES "${RYML_LIBRARY}")
+    endif()
     message(STATUS "YAML backend: rapidyaml")
 else()
     message(STATUS "YAML backend: none")
@@ -598,11 +734,50 @@ set(exec_prefix "${CMAKE_INSTALL_PREFIX}")
 set(libdir      "${CMAKE_INSTALL_FULL_LIBDIR}")
 set(includedir  "${CMAKE_INSTALL_FULL_INCLUDEDIR}")
 
-configure_file(
-    "${CMAKE_CURRENT_SOURCE_DIR}/${_pc_template}"
-    "${CMAKE_CURRENT_BINARY_DIR}/${_pc_output}"
-    @ONLY
-)
+if(BUILD_STATIC)
+    ## Build Libs.private from all transitive dependencies.
+    set(_pc_libs_private "")
+    foreach(_dir IN LISTS OPENTELEMETRY_LIBRARY_DIRS YAML_LIBRARY_DIRS
+                          SYSLIB_LIBRARY_DIRS)
+        string(APPEND _pc_libs_private " -L${_dir}")
+    endforeach()
+    foreach(_lib IN LISTS OPENTELEMETRY_LIBRARIES EXPORTER_LIBRARIES
+                          SDK_LIBRARIES SYSLIB_LIBRARIES YAML_LIBRARIES)
+        string(APPEND _pc_libs_private " -l${_lib}")
+    endforeach()
+    if(ENABLE_THREADS)
+        string(APPEND _pc_libs_private " -lpthread")
+    endif()
+    string(STRIP "${_pc_libs_private}" _pc_libs_private)
+
+    if(ENABLE_DEBUG)
+        set(_pc_cflags "-I\${includedir} -DOTELC_DBG_MEM")
+    else()
+        set(_pc_cflags "-I\${includedir}")
+    endif()
+
+    file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/${_pc_output}"
+"prefix=${prefix}
+exec_prefix=${exec_prefix}
+libdir=${libdir}
+includedir=${includedir}
+
+Name: ${_lib_name}
+Description: The OpenTelemetry C wrapper library (static).
+Version: ${VERSION}
+
+Requires:
+Libs: -L\${libdir} -l${_lib_name}
+Libs.private: ${_pc_libs_private}
+Cflags: ${_pc_cflags}
+")
+else()
+    configure_file(
+        "${CMAKE_CURRENT_SOURCE_DIR}/${_pc_template}"
+        "${CMAKE_CURRENT_BINARY_DIR}/${_pc_output}"
+        @ONLY
+    )
+endif()
 
 ## ---------------------------------------------------------------------------
 ## Library sources
@@ -643,14 +818,20 @@ add_custom_target(build-counter
 ## ---------------------------------------------------------------------------
 ## Library target
 ## ---------------------------------------------------------------------------
-add_library(${_lib_name} SHARED ${_lib_sources})
+if(BUILD_STATIC)
+    add_library(${_lib_name} STATIC ${_lib_sources})
+    set_target_properties(${_lib_name} PROPERTIES
+        POSITION_INDEPENDENT_CODE ON
+    )
+else()
+    add_library(${_lib_name} SHARED ${_lib_sources})
+    set_target_properties(${_lib_name} PROPERTIES
+        VERSION   ${_lib_version}
+        SOVERSION ${_so_version}
+        LINK_FLAGS "-Wl,--version-script=${_version_map} -Wl,-z,nodelete"
+    )
+endif()
 add_dependencies(${_lib_name} build-counter)
-
-set_target_properties(${_lib_name} PROPERTIES
-    VERSION   ${_lib_version}
-    SOVERSION ${_so_version}
-    LINK_FLAGS "-Wl,--version-script=${_version_map} -Wl,-z,nodelete"
-)
 
 target_include_directories(${_lib_name}
     PUBLIC
@@ -675,19 +856,30 @@ if(ENABLE_DEBUG)
     )
 endif()
 
-target_link_directories(${_lib_name} PRIVATE
+## Static archives do not carry their own dependencies, so consumers must link
+## them transitively.  Use PUBLIC visibility for static builds.
+if(BUILD_STATIC)
+    set(_link_vis PUBLIC)
+else()
+    set(_link_vis PRIVATE)
+endif()
+
+target_link_directories(${_lib_name} ${_link_vis}
     ${OPENTELEMETRY_LIBRARY_DIRS}
     ${YAML_LIBRARY_DIRS}
+    ${SYSLIB_LIBRARY_DIRS}
 )
 
-target_link_libraries(${_lib_name} PRIVATE
+target_link_libraries(${_lib_name} ${_link_vis}
     ${OPENTELEMETRY_LIBRARIES}
     ${EXPORTER_LIBRARIES}
+    ${SDK_LIBRARIES}
+    ${SYSLIB_LIBRARIES}
     ${YAML_LIBRARIES}
 )
 
 if(ENABLE_THREADS)
-    target_link_libraries(${_lib_name} PRIVATE Threads::Threads)
+    target_link_libraries(${_lib_name} ${_link_vis} Threads::Threads)
 endif()
 
 ## ---------------------------------------------------------------------------
@@ -780,9 +972,11 @@ add_custom_target(test DEPENDS
 ## ---------------------------------------------------------------------------
 ## Installation RPATH
 ## ---------------------------------------------------------------------------
-set_target_properties(${_lib_name} PROPERTIES
-    INSTALL_RPATH "${CMAKE_INSTALL_FULL_LIBDIR}"
-)
+if(NOT BUILD_STATIC)
+    set_target_properties(${_lib_name} PROPERTIES
+        INSTALL_RPATH "${CMAKE_INSTALL_FULL_LIBDIR}"
+    )
+endif()
 set_target_properties(${_test_bin_name} PROPERTIES
     INSTALL_RPATH "${CMAKE_INSTALL_FULL_LIBDIR}"
 )
@@ -794,6 +988,7 @@ set_target_properties(${_test_bin_name} PROPERTIES
 install(TARGETS ${_lib_name}
     EXPORT ${_lib_name}Targets
     LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}"
+    ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}"
 )
 
 ## CMake export file
@@ -877,6 +1072,11 @@ generate_config_from_cmakefile()
 message(STATUS "")
 message(STATUS "=== ${PROJECT_NAME} ${PROJECT_VERSION} (build ${PACKAGE_BUILD}) ===")
 message(STATUS "  Library version : ${LIB_VERSION}  (SO ${_so_version}, file ${_lib_version})")
+if(BUILD_STATIC)
+    message(STATUS "  Library type    : static")
+else()
+    message(STATUS "  Library type    : shared")
+endif()
 message(STATUS "  OTel C++ SDK    : ${OTELCPP_VERSION}")
 message(STATUS "  Debug           : ${ENABLE_DEBUG}")
 message(STATUS "  Threads         : ${ENABLE_THREADS}")
