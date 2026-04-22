@@ -7,6 +7,9 @@ SH_PKG_URL="https://github.com/open-telemetry/opentelemetry-cpp/archive/refs/tag
 . "$(realpath "$(dirname "${0}")")/common.sh"
 
 
+test "${SH_ARG_LIB_TYPE}" = "dynamic" && SH_SHARED_LIBS="ON"
+test "${SH_ARG_LIB_TYPE}" = "static"  && SH_SHARED_LIBS="OFF"
+
 # CMAKE_POLICY_VERSION_MINIMUM=3.5 is an added option in case cmake version 4.1
 # (the latest) is used.
 #
@@ -30,7 +33,7 @@ sh_configure_cmake \
 	-DWITH_OTLP_HTTP_COMPRESSION=ON \
 	-DWITH_ZIPKIN=ON \
 	-DWITH_ELASTICSEARCH=ON \
-	-DOTELCPP_VERSIONED_LIBS=ON \
+	-DOTELCPP_VERSIONED_LIBS=${SH_SHARED_LIBS} \
 	-DWITH_ASYNC_EXPORT_PREVIEW=ON \
 	-DWITH_THREAD_INSTRUMENTATION_PREVIEW=ON \
 	-DWITH_METRICS_EXEMPLAR_PREVIEW=ON \
@@ -39,7 +42,7 @@ sh_configure_cmake \
 	-DWITH_EXAMPLES=OFF \
 	-DWITH_FUNC_TESTS=OFF \
 	-DBUILD_TESTING=OFF \
-	-DBUILD_SHARED_LIBS=ON \
+	-DBUILD_SHARED_LIBS=${SH_SHARED_LIBS} \
 	-DCMAKE_BUILD_TYPE=Release
 sh_make
 

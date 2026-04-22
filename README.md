@@ -44,8 +44,12 @@ into `/opt` (or another prefix of your choice):
 
 ```sh
 cd scripts/build
-./build-bundle.sh [prefix-dir]
+./build-bundle.sh [prefix-dir [install-dir [lib-type]]]
 ```
+
+The `lib-type` argument controls how the OTel C++ SDK is built: `dynamic`
+(default) produces shared libraries, `static` produces static archives.  Use
+`static` when the OTel C wrapper itself will be linked statically.
 
 By default, libraries are installed under `/opt`.  A sequential alternative
 (`build.sh`) is also available.
@@ -90,6 +94,25 @@ make install
 ```
 
 Add `-DENABLE_DEBUG=ON` for the debug variant.
+
+**Static library build:**
+
+The wrapper can be built as a static archive (`.a`) instead of a shared library.
+This requires the OTel C++ SDK to be compiled as static libraries as well (see
+`lib-type` argument above).
+
+With autotools, both static and shared libraries are built by default.  To build
+only a static library, pass `--disable-shared`:
+
+```sh
+./configure --prefix=/opt --with-opentelemetry=/opt --disable-shared
+```
+
+With CMake, use the `BUILD_STATIC` option:
+
+```sh
+cmake -DCMAKE_INSTALL_PREFIX=/opt -DOPENTELEMETRY_DIR=/opt -DBUILD_STATIC=ON ..
+```
 
 ### YAML Parser Selection
 

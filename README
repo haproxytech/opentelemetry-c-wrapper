@@ -137,7 +137,12 @@ defines the location of the root directory for installation.  However, it is not
 recommended to set the 'install-dir' argument, as it is intended solely for
 debugging purposes.
 
-  # ./build-bundle.sh [ prefix-dir [ install-dir ] ]
+  # ./build-bundle.sh [ prefix-dir [ install-dir [ lib-type ] ] ]
+
+The lib-type argument controls how the OTel C++ SDK libraries are built.
+Accepted values are "dynamic" (default) and "static".  When set to "static", the
+SDK is compiled as static archives (.a) instead of shared libraries (.so); this
+is required when the OTel C wrapper itself will be linked statically.
 
 By default, libraries are installed in the /opt directory (prefix = '/opt').
 
@@ -240,6 +245,21 @@ Alternatively, the library can be compiled using CMake:
 
 To build the debug version, add the -DENABLE_DEBUG=ON option to the cmake
 command above.
+
+The wrapper library can also be built as a static archive (.a) instead of a
+shared library (.so).  This requires the OTel C++ SDK to be compiled as static
+libraries as well (see section 2.2, lib-type argument).
+
+With autotools, both static and shared libraries are built by default.  To build
+only a static library, pass --disable-shared:
+
+  % ./configure --prefix=/opt --with-opentelemetry=/opt \
+        --disable-shared
+
+With CMake, use the BUILD_STATIC option:
+
+  % cmake -DCMAKE_INSTALL_PREFIX=/opt -DOPENTELEMETRY_DIR=/opt \
+        -DBUILD_STATIC=ON ..
 
 
 3. Testing the operation of the library

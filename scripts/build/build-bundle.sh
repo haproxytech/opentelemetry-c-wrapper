@@ -8,6 +8,7 @@
 #
 export  SH_ARG_PREFIX="${1:-/opt}"
 export SH_ARG_INSTDIR="${2:-/}"
+export SH_ARG_LIB_TYPE="${3:-dynamic}"
 
 SH_DIR="$(realpath "$(dirname "${0}")")"
 
