@@ -182,8 +182,8 @@ static void otelc_dbg_mem_alloc(const char *func, int line, void *old_ptr, void 
 		 * used at all so far.  If such is not found, an attempt is made
 		 * to find the first available location.
 		 */
-		if (dbg_mem->unused < dbg_mem->count) {
-			idx = dbg_mem->unused++;
+		if (dbg_mem->assigned < dbg_mem->count) {
+			idx = dbg_mem->assigned++;
 		} else {
 			do {
 				if (dbg_mem->reused >= dbg_mem->count)
@@ -676,7 +676,7 @@ void otelc_dbg_mem_info(void)
 
 	OTELC_DBG(INFO, "--- Memory info -------------------------------------");
 	OTELC_DBG(INFO, "  alloc/realloc: %" PRIu64 "/%" PRIu64 ", free/release: %" PRIu64 "/%" PRIu64, dbg_mem->op_cnt[0], dbg_mem->op_cnt[1], dbg_mem->op_cnt[2], dbg_mem->op_cnt[3]);
-	OTELC_DBG(INFO, "  unused: %zu, reused: %zu, count: %zu", dbg_mem->unused, dbg_mem->reused, dbg_mem->count);
+	OTELC_DBG(INFO, "  assigned: %zu, reused: %zu, count: %zu", dbg_mem->assigned, dbg_mem->reused, dbg_mem->count);
 	for (size_t i = 0; i < dbg_mem->count; i++)
 		if (dbg_mem->data[i].used) {
 			OTELC_DBG(INFO, "  %zu %s(%p %zu)", chunks, dbg_mem->data[i].func, DBG_MEM_PTR(dbg_mem->data[i].ptr), dbg_mem->data[i].size);
