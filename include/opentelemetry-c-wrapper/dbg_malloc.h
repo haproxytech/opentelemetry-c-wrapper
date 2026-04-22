@@ -90,7 +90,7 @@ struct otelc_dbg_mem_data {
 struct otelc_dbg_mem {
 	struct otelc_dbg_mem_data *data;                         /* Array of allocation metadata records. */
 	size_t                     count;                        /* Total number of records in the data array. */
-	size_t                     unused;                       /* Number of currently unused records. */
+	size_t                     assigned;                     /* High-water mark: index of the next never-used record. */
 	size_t                     reused;                       /* Number of records reused after being freed. */
 	uint64_t                   size;                         /* Total size of currently allocated memory (bytes). */
 	uint64_t                   op_cnt[OTELC_DBG_MEM_OP_MAX]; /* Operation counters (alloc, realloc, free, release). */
