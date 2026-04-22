@@ -9,4 +9,5 @@ Version: @VERSION@
 
 Requires:
 Libs: -L${libdir} -Wl,--rpath,${libdir} -lopentelemetry-c-wrapper
+Libs.private: @LIBS_PRIVATE@
 Cflags: -I${includedir}

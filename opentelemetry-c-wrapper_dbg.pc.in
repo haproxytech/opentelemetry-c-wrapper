@@ -9,4 +9,5 @@ Version: @VERSION@
 
 Requires:
 Libs: -L${libdir} -Wl,--rpath,${libdir} -lopentelemetry-c-wrapper_dbg
+Libs.private: @LIBS_PRIVATE@
 Cflags: -I${includedir} -DOTELC_DBG_MEM
