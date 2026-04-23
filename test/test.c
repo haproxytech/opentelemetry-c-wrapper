@@ -41,6 +41,7 @@ static struct {
 	int                  threads;
 #endif
 	const char          *cfg_file;
+	const char          *pid_file;
 	struct otelc_tracer *otel_tracer;
 	struct otelc_meter  *otel_meter;
 	struct otelc_logger *otel_logger;
@@ -860,6 +861,7 @@ static void usage(const char *program_name, bool_t flag_verbose)
 		(void)printf("  -d, --debug=LEVEL        " _ "Debug level (default: 0x%04x).\n", DEFAULT_DEBUG_LEVEL);
 #endif
 		(void)printf("  -h, --help               " _ "Show this text.\n");
+		(void)printf("  -p, --pidfile=FILE       " _ "Write the process ID to FILE.\n");
 		(void)printf("  -R, --runcount=VALUE     " _ "Number of passes to run (default: %d, 0 = unlimited).\n", DEFAULT_RUNCOUNT);
 		(void)printf("  -r, --runtime=TIME       " _ "Run time in ms (0 = unlimited).\n");
 		(void)printf("  -s, --random-seed=VALUE  " _ "Set the random seed for reproducible results.\n");
@@ -878,6 +880,60 @@ static void usage(const char *program_name, bool_t flag_verbose)
 		(void)printf("For help type: %s -h\n\n", program_name);
 	}
 #undef _
+}
+
+
+/***
+ * NAME
+ *   pidfile - writes the current process ID to a file
+ *
+ * SYNOPSIS
+ *   static int pidfile(const char *file)
+ *
+ * ARGUMENTS
+ *   file - path of the pidfile to create
+ *
+ * DESCRIPTION
+ *   Creates the named file exclusively with mode 0644 and writes the calling
+ *   process ID into it as a decimal string.  If file is NULL the function does
+ *   nothing and reports success.  When the file cannot be created or the write
+ *   fails an error is logged; on a write failure the partially created file is
+ *   also unlinked before the descriptor is closed.
+ *
+ * RETURN VALUE
+ *   Returns OTELC_RET_OK on success or when file is NULL, OTELC_RET_ERROR on
+ *   creation or write failure.
+ */
+static int pidfile(const char *file)
+{
+	int fd, retval = OTELC_RET_OK;
+
+	OTELC_FUNC("\"%s\"", OTELC_STR_ARG(file));
+
+	if (_NULL(file))
+		OTELC_RETURN_INT(retval);
+
+	fd = open(file, O_WRONLY | O_CREAT | O_EXCL, 0644);
+	if (fd == -1) {
+		OTELC_LOG(stderr, "ERROR: %s: %s", file, strerror(errno));
+
+		retval = OTELC_RET_ERROR;
+	} else {
+		char buffer[BUFSIZ];
+
+		(void)snprintf(buffer, sizeof(buffer), "%" PRI_PIDT, getpid());
+		if (write(fd, buffer, strlen(buffer)) == -1) {
+			OTELC_LOG(stderr, "ERROR: %s: %s", file, strerror(errno));
+
+			(void)unlink(file);
+
+			retval = OTELC_RET_ERROR;
+		}
+
+		(void)close(fd);
+	}
+
+	OTELC_RETURN_INT(retval);
 }
 
 
@@ -909,6 +965,7 @@ int main(int argc, char **argv)
 		{ "debug",               required_argument, NULL, 'd' },
 #endif
 		{ "help",                no_argument,       NULL, 'h' },
+		{ "pidfile",             required_argument, NULL, 'p' },
 		{ "runcount",            required_argument, NULL, 'R' },
 		{ "runtime",             required_argument, NULL, 'r' },
 		{ "trigger-debug-throw", no_argument,       NULL, 'T' },
@@ -920,7 +977,7 @@ int main(int argc, char **argv)
 	static struct otelc_dbg_mem_data  dbg_mem_data[1000000];
 	struct otelc_dbg_mem              dbg_mem;
 #endif
-	const char                       *shortopts = "c:D:d:hR:r:s:Tt:V";
+	const char                       *shortopts = "c:D:d:hp:R:r:s:Tt:V";
 	char                             *otel_err = NULL;
 	int                               rc, c, longopts_idx = -1, retval = EX_OK;
 	bool_t                            flag_error = 0;
@@ -968,6 +1025,8 @@ int main(int argc, char **argv)
 #endif
 		else if (c == 'h')
 			cfg.opt_flags |= FLAG_OPT_HELP;
+		else if (c == 'p')
+			cfg.pid_file = optarg;
 		else if (c == 'R')
 			cfg.runcount = atoi(optarg);
 		else if (c == 'r')
@@ -1098,6 +1157,12 @@ int main(int argc, char **argv)
 		retval = EX_SOFTWARE;
 	}
 	else {
+		/*
+		 * Pidfile creation and write failures are non-fatal: an error
+		 * is logged but the test continues to run.
+		 */
+		(void)pidfile(cfg.pid_file);
+
 		otelc_log_set_handler(log_handler_cb, NULL, false);
 
 		retval = worker_run();
