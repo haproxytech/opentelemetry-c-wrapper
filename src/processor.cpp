@@ -324,7 +324,7 @@ int otel_tracer_processor_create(struct otelc_tracer *tracer, std::unique_ptr<ot
 	 * NOTE: The export_timeout member of the BatchSpanProcessorOptions
 	 * structure is defined but not yet utilized.
 	 */
-	rc = yaml_get_node(otelc_fyd, &(tracer->err), 0, "OpenTelemetry traces processor", OTEL_YAML_TRACER_PREFIX OTEL_YAML_PROCESSORS, name,
+	rc = yaml_get_node(tracer->ctx->fyd, &(tracer->err), 0, "OpenTelemetry traces processor", OTEL_YAML_TRACER_PREFIX OTEL_YAML_PROCESSORS, name,
 	                   OTEL_YAML_ARG_STR(1, PROCESSORS, type),
 	                   OTEL_YAML_ARG_STR(0, PROCESSORS, thread_name),
 	                   OTEL_YAML_ARG_INT64(0, PROCESSORS, cpu_id, -1, OTEL_MAX_CPU_ID),
@@ -440,7 +440,7 @@ int otel_logger_processor_create(struct otelc_logger *logger, std::unique_ptr<ot
 	 * BatchLogRecordProcessorOptions structure is defined but not yet
 	 * utilized.
 	 */
-	rc = yaml_get_node(otelc_fyd, &(logger->err), 0, "OpenTelemetry logs processor", OTEL_YAML_LOGGER_PREFIX OTEL_YAML_PROCESSORS, name,
+	rc = yaml_get_node(logger->ctx->fyd, &(logger->err), 0, "OpenTelemetry logs processor", OTEL_YAML_LOGGER_PREFIX OTEL_YAML_PROCESSORS, name,
 	                   OTEL_YAML_ARG_STR(1, PROCESSORS, type),
 	                   OTEL_YAML_ARG_STR(0, PROCESSORS, thread_name),
 	                   OTEL_YAML_ARG_INT64(0, PROCESSORS, cpu_id, -1, OTEL_MAX_CPU_ID),

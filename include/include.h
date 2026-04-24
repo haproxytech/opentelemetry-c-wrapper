@@ -120,6 +120,7 @@
 #endif
 #include "opentelemetry-c-wrapper/include.h"
 #include "std.h"
+#include "yaml.h"
 #include "util.h"
 #include "exporter.h"
 #include "processor.h"
@@ -132,7 +133,6 @@
 #include "meter.h"
 #include "threads.h"
 #include "tracer.h"
-#include "yaml.h"
 #include "static_assert.h"
 
 #endif /* _OPENTELEMETRY_C_WRAPPER_INCLUDE_H_ */
