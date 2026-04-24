@@ -256,10 +256,11 @@ struct otelc_tracer_ops {
  * The tracer instance data.
  */
 struct otelc_tracer {
-	char                          *err;        /* Character array containing the last library error. */
-	char                          *scope_name; /* Tracer instrumentation scope name. */
-	const struct otelc_tracer_ops *ops;        /* Pointer to the operations vtable. */
-	const struct otelc_ctx        *ctx;        /* Owning library context; provides the YAML configuration. */
+	char                          *err;         /* Character array containing the last library error. */
+	char                          *scope_name;  /* Tracer instrumentation scope name. */
+	char                          *yaml_prefix; /* Resolved YAML path of the tracer signal configuration. */
+	const struct otelc_tracer_ops *ops;         /* Pointer to the operations vtable. */
+	const struct otelc_ctx        *ctx;         /* Owning library context; provides the YAML configuration. */
 };
 
 

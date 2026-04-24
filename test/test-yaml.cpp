@@ -1333,6 +1333,178 @@ static void test_yaml_get_sequence_value_negative(OTEL_YAML_DOC *doc)
 
 /***
  * NAME
+ *   test_yaml_resolve_prefix_named - resolves a present named entry
+ *
+ * SYNOPSIS
+ *   static void test_yaml_resolve_prefix_named(OTEL_YAML_DOC *doc)
+ *
+ * ARGUMENTS
+ *   doc - parsed YAML document
+ *
+ * DESCRIPTION
+ *   Verifies that yaml_resolve_prefix() returns the "<base>/<name>" path when
+ *   that node is present in the document.
+ *
+ * RETURN VALUE
+ *   This function does not return a value.
+ */
+static void test_yaml_resolve_prefix_named(OTEL_YAML_DOC *doc)
+{
+	char *prefix = nullptr, *err = nullptr;
+	int   rc, result = TEST_FAIL;
+
+	rc = yaml_resolve_prefix(doc, &err, "/nodes", "my_node", "default", &prefix);
+	if ((rc == OTELC_RET_OK) && (strcmp(prefix, "/nodes/my_node") == 0))
+		result = TEST_PASS;
+
+	OTELC_SFREE(prefix);
+	OTELC_SFREE(err);
+
+	test_report("yaml_resolve_prefix named entry", result);
+}
+
+
+/***
+ * NAME
+ *   test_yaml_resolve_prefix_fallback - falls back when the named entry is missing
+ *
+ * SYNOPSIS
+ *   static void test_yaml_resolve_prefix_fallback(OTEL_YAML_DOC *doc)
+ *
+ * ARGUMENTS
+ *   doc - parsed YAML document
+ *
+ * DESCRIPTION
+ *   Verifies that yaml_resolve_prefix() returns the "<base>/<fallback>" path
+ *   when the requested name is absent but the fallback node exists.
+ *
+ * RETURN VALUE
+ *   This function does not return a value.
+ */
+static void test_yaml_resolve_prefix_fallback(OTEL_YAML_DOC *doc)
+{
+	char *prefix = nullptr, *err = nullptr;
+	int   rc, result = TEST_FAIL;
+
+	rc = yaml_resolve_prefix(doc, &err, "/nodes", "missing", "my_node", &prefix);
+	if ((rc == OTELC_RET_OK) && (strcmp(prefix, "/nodes/my_node") == 0))
+		result = TEST_PASS;
+
+	OTELC_SFREE(prefix);
+	OTELC_SFREE(err);
+
+	test_report("yaml_resolve_prefix fallback", result);
+}
+
+
+/***
+ * NAME
+ *   test_yaml_resolve_prefix_none - reports an error when neither candidate exists
+ *
+ * SYNOPSIS
+ *   static void test_yaml_resolve_prefix_none(OTEL_YAML_DOC *doc)
+ *
+ * ARGUMENTS
+ *   doc - parsed YAML document
+ *
+ * DESCRIPTION
+ *   Verifies that yaml_resolve_prefix() returns OTELC_RET_ERROR and sets an
+ *   error message when neither the named nor the fallback node is present.
+ *
+ * RETURN VALUE
+ *   This function does not return a value.
+ */
+static void test_yaml_resolve_prefix_none(OTEL_YAML_DOC *doc)
+{
+	char *prefix = nullptr, *err = nullptr;
+	int   rc, result = TEST_FAIL;
+
+	rc = yaml_resolve_prefix(doc, &err, "/nodes", "missing", "also_missing", &prefix);
+	if ((rc == OTELC_RET_ERROR) && _nNULL(err))
+		result = TEST_PASS;
+
+	OTELC_SFREE(prefix);
+	OTELC_SFREE(err);
+
+	test_report("yaml_resolve_prefix none found", result);
+}
+
+
+/***
+ * NAME
+ *   test_yaml_resolve_prefix_null_name - skips a null name and uses the fallback
+ *
+ * SYNOPSIS
+ *   static void test_yaml_resolve_prefix_null_name(OTEL_YAML_DOC *doc)
+ *
+ * ARGUMENTS
+ *   doc - parsed YAML document
+ *
+ * DESCRIPTION
+ *   Verifies that yaml_resolve_prefix() treats a nullptr name as absent and
+ *   uses the fallback when the fallback node exists.
+ *
+ * RETURN VALUE
+ *   This function does not return a value.
+ */
+static void test_yaml_resolve_prefix_null_name(OTEL_YAML_DOC *doc)
+{
+	char *prefix = nullptr, *err = nullptr;
+	int   rc, result = TEST_FAIL;
+
+	rc = yaml_resolve_prefix(doc, &err, "/nodes", nullptr, "my_node", &prefix);
+	if ((rc == OTELC_RET_OK) && (strcmp(prefix, "/nodes/my_node") == 0))
+		result = TEST_PASS;
+
+	OTELC_SFREE(prefix);
+	OTELC_SFREE(err);
+
+	test_report("yaml_resolve_prefix null name", result);
+}
+
+
+/***
+ * NAME
+ *   test_yaml_resolve_prefix_invalid_args - rejects invalid argument values
+ *
+ * SYNOPSIS
+ *   static void test_yaml_resolve_prefix_invalid_args(OTEL_YAML_DOC *doc)
+ *
+ * ARGUMENTS
+ *   doc - parsed YAML document
+ *
+ * DESCRIPTION
+ *   Verifies that yaml_resolve_prefix() returns OTELC_RET_ERROR when the
+ *   document, base path, or output buffer arguments are invalid.
+ *
+ * RETURN VALUE
+ *   This function does not return a value.
+ */
+static void test_yaml_resolve_prefix_invalid_args(OTEL_YAML_DOC *doc)
+{
+	char *prefix = nullptr, *err = nullptr;
+	int   result = TEST_PASS;
+
+	if (yaml_resolve_prefix(nullptr, &err, "/nodes", "my_node", "default", &prefix) != OTELC_RET_ERROR)
+		result = TEST_FAIL;
+	OTELC_SFREE(prefix);
+	OTELC_SFREE_CLEAR(err);
+
+	if (yaml_resolve_prefix(doc, &err, nullptr, "my_node", "default", &prefix) != OTELC_RET_ERROR)
+		result = TEST_FAIL;
+	OTELC_SFREE(prefix);
+	OTELC_SFREE_CLEAR(err);
+
+	if (yaml_resolve_prefix(doc, &err, "/nodes", "my_node", "default", nullptr) != OTELC_RET_ERROR)
+		result = TEST_FAIL;
+	OTELC_SFREE_CLEAR(err);
+
+	test_report("yaml_resolve_prefix invalid args", result);
+}
+
+
+/***
+ * NAME
  *   test_otelc_init_valid - tests library initialization with a valid file
  *
  * SYNOPSIS
@@ -1632,6 +1804,17 @@ int main(int argc, char **argv)
 	OTELC_LOG(stdout, "");
 	OTELC_LOG(stdout, "[yaml_get_node (path)]");
 	test_yaml_get_node_str(doc);
+
+	/***
+	 * yaml_resolve_prefix tests.
+	 */
+	OTELC_LOG(stdout, "");
+	OTELC_LOG(stdout, "[yaml_resolve_prefix]");
+	test_yaml_resolve_prefix_named(doc);
+	test_yaml_resolve_prefix_fallback(doc);
+	test_yaml_resolve_prefix_none(doc);
+	test_yaml_resolve_prefix_null_name(doc);
+	test_yaml_resolve_prefix_invalid_args(doc);
 
 	yaml_close(&doc);
 
