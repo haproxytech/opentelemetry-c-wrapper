@@ -185,12 +185,22 @@ readers:
     export_interval: 2000
     export_timeout:  1000
 
+  reader_metrics_speed_test:
+    thread_name:     "reader metr"
+#   cpu_id:          -1
+    export_interval: 10000
+    export_timeout:  5000
+
 samplers:
   sampler_traces:
 #   type:  always_on
 #   type:  always_off
 #   type:  trace_id_ratio_based
 #   ratio: 1.0
+    type:     parent_based
+    delegate: always_on
+
+  sampler_traces_speed_test:
     type:     parent_based
     delegate: always_on
 
@@ -210,6 +220,14 @@ processors:
   processor_traces_single:
     type:                  single
 
+  processor_traces_batch_speed_test:
+    type:                  batch
+    thread_name:           "proc/batch trac"
+#   cpu_id:                -1
+    max_queue_size:        2048
+    schedule_delay:        5000
+    max_export_batch_size: 512
+
   processor_logs_batch:
     type:                  batch
     thread_name:           "proc/batch logs"
@@ -220,6 +238,14 @@ processors:
 
   processor_logs_single:
     type:                  single
+
+  processor_logs_batch_speed_test:
+    type:                  batch
+    thread_name:           "proc/batch logs"
+#   cpu_id:                -1
+    max_queue_size:        2048
+    schedule_delay:        5000
+    max_export_batch_size: 512
 
 providers:
   provider_traces:
@@ -245,32 +271,54 @@ providers:
 
 signals:
   traces:
-    scope_name: "OTEL C wrapper - traces"
-    exporters:
-      - exporter_traces_ostream
-      - exporter_traces_otlp_file
-    samplers:   sampler_traces
-    processors:
-      - processor_traces_batch
-      - processor_traces_single
-    providers:  provider_traces
+    default:
+      scope_name: "OTEL C wrapper - traces"
+      exporters:
+        - exporter_traces_ostream
+        - exporter_traces_otlp_file
+      samplers:   sampler_traces
+      processors:
+        - processor_traces_batch
+        - processor_traces_single
+      providers:  provider_traces
+
+    speed_test:
+      scope_name: "OTEL C wrapper - traces"
+      exporters:  exporter_traces_dev_null
+      samplers:   sampler_traces_speed_test
+      processors: processor_traces_batch_speed_test
+      providers:  provider_traces
 
   metrics:
-    scope_name: "OTEL C wrapper - metrics"
-    exporters:
-      - exporter_metrics_ostream
-      - exporter_metrics_otlp_file
-    readers:
-      - reader_metrics
-      - reader_metrics_fast
-    providers:  provider_metrics
+    default:
+      scope_name: "OTEL C wrapper - metrics"
+      exporters:
+        - exporter_metrics_ostream
+        - exporter_metrics_otlp_file
+      readers:
+        - reader_metrics
+        - reader_metrics_fast
+      providers:  provider_metrics
+
+    speed_test:
+      scope_name: "OTEL C wrapper - metrics"
+      exporters:  exporter_metrics_dev_null
+      readers:    reader_metrics_speed_test
+      providers:  provider_metrics
 
   logs:
-    scope_name: "OTEL C wrapper - logs"
-    exporters:
-      - exporter_logs_ostream
-      - exporter_logs_otlp_file
-    processors:
-      - processor_logs_batch
-      - processor_logs_single
-    providers:  provider_logs
+    default:
+      scope_name: "OTEL C wrapper - logs"
+      exporters:
+        - exporter_logs_ostream
+        - exporter_logs_otlp_file
+      processors:
+        - processor_logs_batch
+        - processor_logs_single
+      providers:  provider_logs
+
+    speed_test:
+      scope_name: "OTEL C wrapper - logs"
+      exporters: exporter_logs_dev_null
+      processors: processor_logs_batch_speed_test
+      providers:  provider_logs
