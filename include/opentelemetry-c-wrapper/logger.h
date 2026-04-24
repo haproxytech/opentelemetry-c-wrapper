@@ -349,6 +349,7 @@ struct otelc_logger_ops {
 struct otelc_logger {
 	char                          *err;          /* Character array containing the last library error. */
 	char                          *scope_name;   /* Logger instrumentation scope name. */
+	char                          *yaml_prefix;  /* Resolved YAML path of the logger signal configuration. */
 	otelc_log_severity_t           min_severity; /* Minimum allowed log severity level. */
 	const struct otelc_logger_ops *ops;          /* Pointer to the operations vtable. */
 	const struct otelc_ctx        *ctx;          /* Owning library context; provides the YAML configuration. */
