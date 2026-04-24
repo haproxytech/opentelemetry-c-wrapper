@@ -20,6 +20,8 @@
 #define OTEL_YAML_BUFSIZ                  (OTEL_YAML_BUFSIZ_1 + 1)
 #define OTEL_YAML_BUFLEN                  OTELC_STRINGIFY(OTEL_YAML_BUFSIZ_1)
 
+#define OTEL_YAML_NAME_DEFAULT            "default"
+
 #define OTEL_YAML_ARG_STR(m,p,n)          OTEL_YAML_STR,    (m), OTEL_YAML_##p "/%s/" #n, (n), OTEL_CAST_STATIC(int, sizeof(n))
 #define OTEL_YAML_ARG_STR_PTR(m,p,n,s)    OTEL_YAML_STR,    (m), OTEL_YAML_##p "/%s/" #n, (n), (s)
 #define OTEL_YAML_ARG_BOOL(m,p,n)         OTEL_YAML_BOOL,   (m), OTEL_YAML_##p "/%s/" #n, &(n)
@@ -41,9 +43,6 @@ typedef enum {
 #else
 #  define OTEL_YAML_DOC                   ryml::Tree
 #endif
-
-
-extern OTEL_YAML_DOC *otelc_fyd;
 
 
 OTEL_YAML_DOC *yaml_open(const char *file, char **err);

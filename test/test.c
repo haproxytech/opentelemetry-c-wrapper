@@ -17,6 +17,7 @@
 
 
 #define DEFAULT_CFG_FILE          "otel-cfg.yml"
+#define DEFAULT_CTX_NAME          "default"
 #define DEFAULT_DEBUG_LEVEL       0b11101111111
 #define DEFAULT_RUNCOUNT          10
 #define DEFAULT_THREADS_COUNT     8
@@ -42,6 +43,8 @@ static struct {
 #endif
 	const char          *cfg_file;
 	const char          *pid_file;
+	const char          *ctx_name;
+	struct otelc_ctx    *otel_ctx;
 	struct otelc_tracer *otel_tracer;
 	struct otelc_meter  *otel_meter;
 	struct otelc_logger *otel_logger;
@@ -53,6 +56,7 @@ static struct {
 	.threads    = DEFAULT_THREADS_COUNT,
 #endif
 	.cfg_file   = DEFAULT_CFG_FILE,
+	.ctx_name   = DEFAULT_CTX_NAME,
 };
 
 enum WORKER_SPAN_enum {
@@ -861,6 +865,7 @@ static void usage(const char *program_name, bool_t flag_verbose)
 		(void)printf("  -d, --debug=LEVEL        " _ "Debug level (default: 0x%04x).\n", DEFAULT_DEBUG_LEVEL);
 #endif
 		(void)printf("  -h, --help               " _ "Show this text.\n");
+		(void)printf("  -n, --name=NAME          " _ "Context name used for signal lookup (default: %s).\n", DEFAULT_CTX_NAME);
 		(void)printf("  -p, --pidfile=FILE       " _ "Write the process ID to FILE.\n");
 		(void)printf("  -R, --runcount=VALUE     " _ "Number of passes to run (default: %d, 0 = unlimited).\n", DEFAULT_RUNCOUNT);
 		(void)printf("  -r, --runtime=TIME       " _ "Run time in ms (0 = unlimited).\n");
@@ -965,6 +970,7 @@ int main(int argc, char **argv)
 		{ "debug",               required_argument, NULL, 'd' },
 #endif
 		{ "help",                no_argument,       NULL, 'h' },
+		{ "name",                required_argument, NULL, 'n' },
 		{ "pidfile",             required_argument, NULL, 'p' },
 		{ "runcount",            required_argument, NULL, 'R' },
 		{ "runtime",             required_argument, NULL, 'r' },
@@ -977,7 +983,7 @@ int main(int argc, char **argv)
 	static struct otelc_dbg_mem_data  dbg_mem_data[1000000];
 	struct otelc_dbg_mem              dbg_mem;
 #endif
-	const char                       *shortopts = "c:D:d:hp:R:r:s:Tt:V";
+	const char                       *shortopts = "c:D:d:hn:p:R:r:s:Tt:V";
 	char                             *otel_err = NULL;
 	int                               rc, c, longopts_idx = -1, retval = EX_OK;
 	bool_t                            flag_error = 0;
@@ -1025,6 +1031,8 @@ int main(int argc, char **argv)
 #endif
 		else if (c == 'h')
 			cfg.opt_flags |= FLAG_OPT_HELP;
+		else if (c == 'n')
+			cfg.ctx_name = optarg;
 		else if (c == 'p')
 			cfg.pid_file = optarg;
 		else if (c == 'R')
@@ -1121,12 +1129,12 @@ int main(int argc, char **argv)
 	if (flag_error || (cfg.opt_flags & (FLAG_OPT_HELP | FLAG_OPT_VERSION)))
 		OTELC_RETURN_INT(flag_error ? EX_USAGE : EX_OK);
 
-	if (otelc_init(cfg.cfg_file, &otel_err) == OTELC_RET_ERROR) {
+	if (_NULL(cfg.otel_ctx = otelc_init(cfg.cfg_file, cfg.ctx_name, &otel_err))) {
 		OTELC_LOG(stderr, "ERROR: %s", _NULL(otel_err) ? "Unable to init library" : otel_err);
 
 		retval = EX_SOFTWARE;
 	}
-	else if (_NULL(cfg.otel_tracer = otelc_tracer_create(&otel_err))) {
+	else if (_NULL(cfg.otel_tracer = otelc_tracer_create(cfg.otel_ctx, &otel_err))) {
 		OTELC_LOG(stderr, "ERROR: %s", _NULL(otel_err) ? "Unable to init traces" : otel_err);
 
 		retval = EX_SOFTWARE;
@@ -1136,7 +1144,7 @@ int main(int argc, char **argv)
 
 		retval = EX_SOFTWARE;
 	}
-	else if (_NULL(cfg.otel_meter = otelc_meter_create(&otel_err))) {
+	else if (_NULL(cfg.otel_meter = otelc_meter_create(cfg.otel_ctx, &otel_err))) {
 		OTELC_LOG(stderr, "ERROR: %s", _NULL(otel_err) ? "Unable to init metrics" : otel_err);
 
 		retval = EX_SOFTWARE;
@@ -1146,7 +1154,7 @@ int main(int argc, char **argv)
 
 		retval = EX_SOFTWARE;
 	}
-	else if (_NULL(cfg.otel_logger = otelc_logger_create(&otel_err))) {
+	else if (_NULL(cfg.otel_logger = otelc_logger_create(cfg.otel_ctx, &otel_err))) {
 		OTELC_LOG(stderr, "ERROR: %s", _NULL(otel_err) ? "Unable to init logs" : otel_err);
 
 		retval = EX_SOFTWARE;
@@ -1168,7 +1176,7 @@ int main(int argc, char **argv)
 		retval = worker_run();
 	}
 
-	otelc_deinit(&(cfg.otel_tracer), &(cfg.otel_meter), &(cfg.otel_logger));
+	otelc_deinit(&(cfg.otel_ctx), &(cfg.otel_tracer), &(cfg.otel_meter), &(cfg.otel_logger));
 
 	OTELC_SFREE(otel_err);
 	OTELC_LOG(stdout, "Program runtime: %" PRId64 " ms", OTELC_RUNTIME_MS());

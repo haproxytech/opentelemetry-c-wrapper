@@ -16,9 +16,11 @@
 #include "test-util.h"
 
 
+static struct otelc_ctx    **registered_ctx    = NULL;
 static struct otelc_tracer **registered_tracer = NULL;
 static struct otelc_meter  **registered_meter  = NULL;
 static struct otelc_logger **registered_logger = NULL;
+static const char           *ctx_name          = DEFAULT_CTX_NAME;
 
 int tests_run = 0, tests_passed = 0, tests_failed = 0;
 
@@ -76,6 +78,7 @@ void test_usage(const char *program_name)
 	(void)printf("Options are:\n");
 	(void)printf("  -c, --config=FILE   OpenTelemetry configuration file (default: %s).\n", DEFAULT_CFG_FILE);
 	(void)printf("  -h, --help          Show this text.\n");
+	(void)printf("  -n, --name=NAME     Context name used for signal lookup (default: %s).\n", DEFAULT_CTX_NAME);
 	(void)printf("  -V, --version       Show program version.\n\n");
 }
 
@@ -109,6 +112,7 @@ int test_init(int argc, char **argv, const char *banner, const char **cfg_file)
 	static const struct option longopts[] = {
 		{ "config",  required_argument, NULL, 'c' },
 		{ "help",    no_argument,       NULL, 'h' },
+		{ "name",    required_argument, NULL, 'n' },
 		{ "version", no_argument,       NULL, 'V' },
 		{ NULL,      0,                 NULL, 0   }
 	};
@@ -119,7 +123,7 @@ int test_init(int argc, char **argv, const char *banner, const char **cfg_file)
 	(void)setvbuf(stdout, NULL, _IOLBF, 0);
 	(void)setvbuf(stderr, NULL, _IOLBF, 0);
 
-	while ((c = getopt_long(argc, argv, "c:hV", longopts, NULL)) != EOF) {
+	while ((c = getopt_long(argc, argv, "c:hn:V", longopts, NULL)) != EOF) {
 		if (c == 'c')
 			cfg = optarg;
 		else if (c == 'h') {
@@ -127,6 +131,8 @@ int test_init(int argc, char **argv, const char *banner, const char **cfg_file)
 
 			return EX_OK;
 		}
+		else if (c == 'n')
+			ctx_name = optarg;
 		else if (c == 'V') {
 			(void)printf("%s v%s\n", basename(argv[0]), OTELC_PACKAGE_VERSION);
 
@@ -165,6 +171,7 @@ int test_init(int argc, char **argv, const char *banner, const char **cfg_file)
 
 	OTELC_LOG(stdout, "--- OpenTelemetry C Wrapper: %s ---", banner);
 	OTELC_LOG(stdout, "Config: %s", cfg);
+	OTELC_LOG(stdout, "Name:   %s", ctx_name);
 
 #ifdef OTELC_DBG_MEM
 	{
@@ -185,6 +192,54 @@ int test_init(int argc, char **argv, const char *banner, const char **cfg_file)
 	*cfg_file = cfg;
 
 	return -1;
+}
+
+
+/***
+ * NAME
+ *   test_get_ctx_name - returns the configured context name
+ *
+ * SYNOPSIS
+ *   const char *test_get_ctx_name(void)
+ *
+ * ARGUMENTS
+ *   This function takes no arguments.
+ *
+ * DESCRIPTION
+ *   Returns the context name selected on the command line via the -n /
+ *   --name option, or DEFAULT_CTX_NAME when none was supplied.  The
+ *   returned string is owned by the caller-supplied argv or by static
+ *   storage and must not be freed.
+ *
+ * RETURN VALUE
+ *   Returns a pointer to the active context name.
+ */
+const char *test_get_ctx_name(void)
+{
+	return ctx_name;
+}
+
+
+/***
+ * NAME
+ *   test_set_ctx - registers a library context for automatic cleanup
+ *
+ * SYNOPSIS
+ *   void test_set_ctx(struct otelc_ctx **ctx)
+ *
+ * ARGUMENTS
+ *   ctx - address of the context pointer variable
+ *
+ * DESCRIPTION
+ *   Registers a context pointer so that test_done() can release it
+ *   automatically during cleanup.
+ *
+ * RETURN VALUE
+ *   This function does not return a value.
+ */
+void test_set_ctx(struct otelc_ctx **ctx)
+{
+	registered_ctx = ctx;
 }
 
 
@@ -279,7 +334,7 @@ void test_set_logger(struct otelc_logger **logger)
  */
 int test_done(int retval, char *otel_err)
 {
-	otelc_deinit(registered_tracer, registered_meter, registered_logger);
+	otelc_deinit(registered_ctx, registered_tracer, registered_meter, registered_logger);
 
 	OTELC_SFREE(otel_err);
 

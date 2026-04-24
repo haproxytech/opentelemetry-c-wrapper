@@ -18,10 +18,11 @@
 
 __CPLUSPLUS_DECL_BEGIN
 
-#define OTELC_DBG_LOGGER(l,h,p)                                              \
-	OTELC_DBG_STRUCT(_##l, h, h " %p:{ %p:\"%s\" %p:\"%s\" %d }", (p),   \
-	                 (p)->err, OTELC_STR_ARG((p)->err), (p)->scope_name, \
-	                 OTELC_STR_ARG((p)->scope_name), (p)->min_severity)
+#define OTELC_DBG_LOGGER(l,h,p)                                                  \
+	OTELC_DBG_STRUCT(_##l, h, h " %p:{ %p:\"%s\" %p:\"%s\" %d %p %p }", (p), \
+	                 (p)->err, OTELC_STR_ARG((p)->err), (p)->scope_name,     \
+	                 OTELC_STR_ARG((p)->scope_name), (p)->min_severity,      \
+	                 (p)->ops, (p)->ctx)
 
 /* <opentelemetry/logs/severity.h> */
 #define OTELC_LOG_SEVERITY_DEFINES                \
@@ -358,6 +359,7 @@ struct otelc_logger {
 	char                          *scope_name;   /* Logger instrumentation scope name. */
 	otelc_log_severity_t           min_severity; /* Minimum allowed log severity level. */
 	const struct otelc_logger_ops *ops;          /* Pointer to the operations vtable. */
+	const struct otelc_ctx        *ctx;          /* Owning library context; provides the YAML configuration. */
 };
 
 
@@ -366,24 +368,26 @@ struct otelc_logger {
  *   otelc_logger_create - creates and returns a new logger instance
  *
  * SYNOPSIS
- *   struct otelc_logger *otelc_logger_create(char **err)
+ *   struct otelc_logger *otelc_logger_create(const struct otelc_ctx *ctx, char **err)
  *
  * ARGUMENTS
+ *   ctx - library context providing the YAML configuration
  *   err - address of a pointer to store an error message on failure
  *
  * DESCRIPTION
- *   Allocates and initializes a new logger instance by calling
- *   otel_logger_new().  The minimum log severity threshold defaults to
- *   OTELC_LOG_SEVERITY_TRACE (all severity levels allowed) and can be
- *   overridden via the YAML configuration or changed at runtime through the
- *   set_min_severity operation.  On failure, an error message may be written
- *   to *err if provided.
+ *   Allocates and initializes a new logger instance via otel_logger_new().  The
+ *   minimum log severity threshold defaults to OTELC_LOG_SEVERITY_TRACE (all
+ *   severity levels allowed) and can be overridden via the YAML configuration
+ *   or changed at runtime through the set_min_severity operation.  On failure,
+ *   an error message may be written to *err if it is provided.  The supplied
+ *   context must be non-NULL and is retained by the logger and used for later
+ *   configuration lookups.
  *
  * RETURN VALUE
  *   Returns a pointer to a newly created logger instance on success, or nullptr
  *   on failure.
  */
-struct otelc_logger *otelc_logger_create(char **err);
+struct otelc_logger *otelc_logger_create(const struct otelc_ctx *ctx, char **err);
 
 /***
  * NAME

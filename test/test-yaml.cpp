@@ -1342,19 +1342,23 @@ static void test_yaml_get_sequence_value_negative(OTEL_YAML_DOC *doc)
  *   cfg_file - path to the YAML configuration file
  *
  * DESCRIPTION
- *   Verifies that otelc_init() succeeds with a valid configuration file.
+ *   Verifies that otelc_init() returns a non-null context when given a valid
+ *   configuration file and a context name, and releases the resulting context.
  *
  * RETURN VALUE
  *   This function does not return a value.
  */
 static void test_otelc_init_valid(const char *cfg_file)
 {
-	char *err = nullptr;
-	int   result = TEST_FAIL;
+	struct otelc_ctx *ctx;
+	char             *err = nullptr;
+	int               result = TEST_FAIL;
 
-	if (otelc_init(cfg_file, &err) == OTELC_RET_OK)
+	ctx = otelc_init(cfg_file, DEFAULT_CTX_NAME, &err);
+	if (_nNULL(ctx))
 		result = TEST_PASS;
 
+	otelc_deinit(&ctx, nullptr, nullptr, nullptr);
 	OTELC_SFREE(err);
 
 	test_report("otelc_init valid file", result);
@@ -1363,29 +1367,32 @@ static void test_otelc_init_valid(const char *cfg_file)
 
 /***
  * NAME
- *   test_otelc_init_null - tests library initialization with nullptr file
+ *   test_otelc_init_null_file - tests library initialization with a null file path
  *
  * SYNOPSIS
- *   static void test_otelc_init_null(void)
+ *   static void test_otelc_init_null_file(void)
  *
  * ARGUMENTS
  *   This function takes no arguments.
  *
  * DESCRIPTION
- *   Verifies that otelc_init() returns an error when given a nullptr
+ *   Verifies that otelc_init() returns nullptr when given a nullptr
  *   configuration file path.
  *
  * RETURN VALUE
  *   This function does not return a value.
  */
-static void test_otelc_init_null(void)
+static void test_otelc_init_null_file(void)
 {
-	char *err = nullptr;
-	int   result = TEST_FAIL;
+	struct otelc_ctx *ctx;
+	char             *err = nullptr;
+	int               result = TEST_FAIL;
 
-	if (otelc_init(nullptr, &err) == OTELC_RET_ERROR)
+	ctx = otelc_init(nullptr, DEFAULT_CTX_NAME, &err);
+	if (_NULL(ctx))
 		result = TEST_PASS;
 
+	otelc_deinit(&ctx, nullptr, nullptr, nullptr);
 	OTELC_SFREE(err);
 
 	test_report("otelc_init nullptr file", result);
@@ -1394,35 +1401,35 @@ static void test_otelc_init_null(void)
 
 /***
  * NAME
- *   test_otelc_init_double - tests double initialization
+ *   test_otelc_init_null_name - tests library initialization with a null name
  *
  * SYNOPSIS
- *   static void test_otelc_init_double(void)
+ *   static void test_otelc_init_null_name(const char *cfg_file)
  *
  * ARGUMENTS
- *   This function takes no arguments.
+ *   cfg_file - path to the YAML configuration file
  *
  * DESCRIPTION
- *   Verifies that otelc_init() returns an error when the library is already
- *   initialized.
+ *   Verifies that otelc_init() accepts a nullptr context name and
+ *   substitutes the default context name for it.
  *
  * RETURN VALUE
  *   This function does not return a value.
  */
-static void test_otelc_init_double(void)
+static void test_otelc_init_null_name(const char *cfg_file)
 {
-	char *err = nullptr;
-	int   result = TEST_FAIL;
+	struct otelc_ctx *ctx;
+	char             *err = nullptr;
+	int               result = TEST_FAIL;
 
-	/***
-	 * The library should already be initialized at this point.
-	 */
-	if (otelc_init("dummy.yml", &err) == OTELC_RET_ERROR)
+	ctx = otelc_init(cfg_file, nullptr, &err);
+	if (_nNULL(ctx))
 		result = TEST_PASS;
 
+	otelc_deinit(&ctx, nullptr, nullptr, nullptr);
 	OTELC_SFREE(err);
 
-	test_report("otelc_init double init", result);
+	test_report("otelc_init nullptr name", result);
 }
 
 
@@ -1437,22 +1444,27 @@ static void test_otelc_init_double(void)
  *   cfg_file - path to the YAML configuration file
  *
  * DESCRIPTION
- *   Verifies that otelc_deinit() followed by otelc_init() succeeds, confirming
- *   that the library can be reinitialized after shutdown.
+ *   Verifies that a context produced by otelc_init() can be released with
+ *   otelc_deinit() and that a fresh otelc_init() afterwards succeeds.
  *
  * RETURN VALUE
  *   This function does not return a value.
  */
 static void test_otelc_deinit_reinit(const char *cfg_file)
 {
-	char *err = nullptr;
-	int   result = TEST_FAIL;
+	struct otelc_ctx *ctx;
+	char             *err = nullptr;
+	int               result = TEST_FAIL;
 
-	otelc_deinit(nullptr, nullptr, nullptr);
+	ctx = otelc_init(cfg_file, DEFAULT_CTX_NAME, &err);
+	otelc_deinit(&ctx, nullptr, nullptr, nullptr);
+	OTELC_SFREE_CLEAR(err);
 
-	if (otelc_init(cfg_file, &err) == OTELC_RET_OK)
+	ctx = otelc_init(cfg_file, DEFAULT_CTX_NAME, &err);
+	if (_nNULL(ctx))
 		result = TEST_PASS;
 
+	otelc_deinit(&ctx, nullptr, nullptr, nullptr);
 	OTELC_SFREE(err);
 
 	test_report("otelc_deinit + reinit", result);
@@ -1629,8 +1641,8 @@ int main(int argc, char **argv)
 	OTELC_LOG(stdout, "");
 	OTELC_LOG(stdout, "[otelc_init / otelc_deinit]");
 	test_otelc_init_valid(cfg_file);
-	test_otelc_init_null();
-	test_otelc_init_double();
+	test_otelc_init_null_file();
+	test_otelc_init_null_name(cfg_file);
 	test_otelc_deinit_reinit(cfg_file);
 
 	(void)unlink(temp_path);
