@@ -6,7 +6,8 @@ SH_ARG_RUNTIME="60000"
 SH_ARG_RUNTYPE="dev_null"
         SH_DIR="$(dirname "${0}")"
        SH_TEST="${SH_DIR}/otel-c-wrapper-test"
-        SH_CFG="${SH_DIR}/speed-cfg.yml"
+        SH_CFG="${SH_DIR}/otel-cfg.yml"
+        SH_CTX="speed_test"
         SH_LOG="_log_speed-$(date +%Y%m%d-%H%M%S)"
     SH_PIDFILE="_pid_speed"
      SH_ERRLOG="${SH_LOG}-dropped"
@@ -22,7 +23,7 @@ sh_run_count()
 	mkfifo "${SH_STDERR}"
 	wc -l < "${SH_STDERR}" > "${SH_ERRLOG}" &
 
-	${SH_TEST} -D0 -c "${SH_CFG}" -p "${SH_PIDFILE}" -r${SH_ARG_RUNTIME} -t${_arg_threads} -s1 2>"${SH_STDERR}" | tee -a "${SH_LOG}"
+	${SH_TEST} -D0 -c "${SH_CFG}" -n "${SH_CTX}" -p "${SH_PIDFILE}" -r${SH_ARG_RUNTIME} -t${_arg_threads} -s1 2>"${SH_STDERR}" | tee -a "${SH_LOG}"
 	wait
 	_var_drop_cnt="$(cat "${SH_ERRLOG}")"
 	echo "Total spans dropped: ${_var_drop_cnt}"
@@ -35,7 +36,7 @@ sh_run_dev_null()
 {
 	local _arg_threads="${1}"
 
-	${SH_TEST} -D0 -c "${SH_CFG}" -p "${SH_PIDFILE}" -r${SH_ARG_RUNTIME} -t${_arg_threads} -s1 2>/dev/null | tee -a "${SH_LOG}"
+	${SH_TEST} -D0 -c "${SH_CFG}" -n "${SH_CTX}" -p "${SH_PIDFILE}" -r${SH_ARG_RUNTIME} -t${_arg_threads} -s1 2>/dev/null | tee -a "${SH_LOG}"
 }
 
 
