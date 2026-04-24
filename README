@@ -388,6 +388,8 @@ The typical usage follows this lifecycle:
   3. instance->ops->start(instance) - start the signal pipeline
   4. (use the signal)               - create spans, record metrics, logs
   5. otelc_deinit(...)              - shut down all signals, free memory
+  6. otelc_lib_shutdown()           - reset process-wide hooks; call once after
+                                      the final context
 
 The otelc_deinit() function accepts pointers to all three signal types and
 destroys whichever ones are non-NULL:
@@ -411,6 +413,7 @@ Additional utility functions complete the public API:
   * otelc_ext_init()            - register custom malloc/free/thread-ID
   * otelc_log_set_handler()     - install an SDK diagnostic log callback
   * otelc_log_set_level()       - set the SDK internal log level
+  * otelc_lib_shutdown()        - reset process-wide library hooks
   * otelc_pipeline_status()     - read the export-pipeline status
   * otelc_span_context_create() - construct a span context from raw IDs
 

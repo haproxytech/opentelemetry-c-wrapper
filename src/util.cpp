@@ -1773,32 +1773,53 @@ int otelc_statistics_check(int type, size_t size, int64_t id, int64_t alloc_fail
  *   otelc_init - initializes the OpenTelemetry C wrapper library
  *
  * SYNOPSIS
- *   int otelc_init(const char *cfgfile, char **err)
+ *   struct otelc_ctx *otelc_init(const char *cfgfile, const char *name, char **err)
  *
  * ARGUMENTS
  *   cfgfile - path to the YAML configuration file
+ *   name    - caller-provided name identifying the context
  *   err     - address of a pointer to store an error message on failure
  *
  * DESCRIPTION
  *   Initializes the OpenTelemetry C wrapper library using the specified YAML
  *   configuration file.  This function must be called before any other library
- *   functions are used.
+ *   functions are used.  Each call allocates a new library context that owns
+ *   the parsed YAML document and a duplicated copy of the supplied name.
  *
  * RETURN VALUE
- *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR on failure.
+ *   Returns a pointer to a newly created library context on success,
+ *   or nullptr on failure.
  */
-int otelc_init(const char *cfgfile, char **err)
+struct otelc_ctx *otelc_init(const char *cfgfile, const char *name, char **err)
 {
-	OTELC_FUNC("\"%s\", %p:%p", OTELC_STR_ARG(cfgfile), OTELC_DPTR_ARGS(err));
+	struct otelc_ctx *retptr = nullptr;
 
-	if (!OTEL_NULL(otelc_fyd))
-		OTEL_ERR_RETURN_INT("The OpenTelemetry C wrapper library is already initialized");
-	else if (OTEL_NULL(cfgfile))
-		OTEL_ERR_RETURN_INT("Invalid configuration file path");
+	OTELC_FUNC("\"%s\", \"%s\", %p:%p", OTELC_STR_ARG(cfgfile), OTELC_STR_ARG(name), OTELC_DPTR_ARGS(err));
 
-	otelc_fyd = yaml_open(cfgfile, err);
+	if (OTEL_NULL(cfgfile))
+		OTEL_ERR_RETURN_PTR("Invalid configuration file path");
 
-	OTELC_RETURN_INT(OTEL_NULL(otelc_fyd) ? OTELC_RET_ERROR : OTELC_RET_OK);
+	retptr = OTEL_CAST_STATIC(struct otelc_ctx *, OTELC_CALLOC(__func__, __LINE__, 1, sizeof(*retptr)));
+	if (OTEL_NULL(retptr))
+		OTEL_ERR_RETURN_PTR(OTEL_ERROR_MSG_ENOMEM("context"));
+
+	if (OTEL_NULL(name))
+		OTELC_DBG(DEBUG, "context name not set, using '%s'", OTEL_YAML_NAME_DEFAULT);
+
+	retptr->name = OTELC_STRDUP(__func__, __LINE__, OTEL_NULL(name) ? OTEL_YAML_NAME_DEFAULT : name);
+	if (OTEL_NULL(retptr->name)) {
+		OTELC_SFREE(retptr);
+
+		OTEL_ERR_RETURN_PTR(OTEL_ERROR_MSG_ENOMEM("context name"));
+	}
+
+	retptr->fyd = yaml_open(cfgfile, err);
+	if (OTEL_NULL(retptr->fyd)) {
+		OTELC_SFREE(retptr->name);
+		OTELC_SFREE_CLEAR(retptr);
+	}
+
+	OTELC_RETURN_PTR(retptr);
 }
 
 
@@ -1807,35 +1828,31 @@ int otelc_init(const char *cfgfile, char **err)
  *   otelc_deinit - deinitializes the OpenTelemetry C wrapper library
  *
  * SYNOPSIS
- *   void otelc_deinit(struct otelc_tracer **tracer, struct otelc_meter **meter, struct otelc_logger **logger)
+ *   void otelc_deinit(struct otelc_ctx **ctx, struct otelc_tracer **tracer, struct otelc_meter **meter, struct otelc_logger **logger)
  *
  * ARGUMENTS
+ *   ctx    - address of the context pointer to destroy, or NULL
  *   tracer - address of the tracer pointer to destroy, or NULL
  *   meter  - address of the meter pointer to destroy, or NULL
  *   logger - address of the logger pointer to destroy, or NULL
  *
  * DESCRIPTION
- *   Destroys the registered tracer, meter, and logger if they are non-NULL,
- *   closes the YAML configuration document, and shuts down the OpenTelemetry
- *   C wrapper library.  Each provider pointer is set to NULL after destruction.
- *   The SDK internal log handler is restored to the default and the external
- *   callback pointers registered via otelc_ext_init() are reset so that no
- *   references to the caller's code remain after this call.  This function
- *   should be called when the library is no longer needed, typically at
- *   application exit.
+ *   Tears down a library context previously returned by otelc_init() together
+ *   with any signal instances passed in.  Destroys the registered tracer,
+ *   meter, and logger if they are non-NULL, closes the YAML configuration
+ *   document attached to the context, frees the context, and clears each
+ *   pointer.  Only per-context state is touched: the SDK internal log handler
+ *   and the external callbacks registered via otelc_ext_init() are process-wide
+ *   and remain valid for any other live context.  Once the final context has
+ *   been destroyed, call otelc_lib_shutdown() to reset those process-wide
+ *   hooks.
  *
  * RETURN VALUE
  *   This function does not return a value.
  */
-void otelc_deinit(struct otelc_tracer **tracer, struct otelc_meter **meter, struct otelc_logger **logger)
+void otelc_deinit(struct otelc_ctx **ctx, struct otelc_tracer **tracer, struct otelc_meter **meter, struct otelc_logger **logger)
 {
-	OTELC_FUNC("%p:%p, %p:%p, %p:%p", OTELC_DPTR_ARGS(tracer), OTELC_DPTR_ARGS(meter), OTELC_DPTR_ARGS(logger));
-
-	if (!OTEL_NULL(otelc_fyd)) {
-		yaml_close(&otelc_fyd);
-
-		otelc_fyd = nullptr;
-	}
+	OTELC_FUNC("%p:%p, %p:%p, %p:%p, %p:%p", OTELC_DPTR_ARGS(ctx), OTELC_DPTR_ARGS(tracer), OTELC_DPTR_ARGS(meter), OTELC_DPTR_ARGS(logger));
 
 	if (!OTEL_NULL(logger) && !OTEL_NULL(*logger))
 		OTELC_OPSR(*logger, destroy);
@@ -1846,8 +1863,83 @@ void otelc_deinit(struct otelc_tracer **tracer, struct otelc_meter **meter, stru
 	if (!OTEL_NULL(tracer) && !OTEL_NULL(*tracer))
 		OTELC_OPSR(*tracer, destroy);
 
+	if (!OTEL_NULL(ctx) && !OTEL_NULL(*ctx)) {
+		if (!OTEL_NULL((*ctx)->fyd))
+			yaml_close(&((*ctx)->fyd));
+
+		OTELC_SFREE((*ctx)->name);
+		OTELC_SFREE_CLEAR(*ctx);
+	}
+
+	OTELC_RETURN();
+}
+
+
+/***
+ * NAME
+ *   otelc_lib_shutdown - resets process-wide library hooks to defaults
+ *
+ * SYNOPSIS
+ *   void otelc_lib_shutdown(void)
+ *
+ * ARGUMENTS
+ *   This function takes no arguments.
+ *
+ * DESCRIPTION
+ *   Restores the SDK internal log handler to the default and clears the
+ *   external malloc, free, and thread-id callbacks registered via
+ *   otelc_ext_init().  These hooks are process-wide and shared across all
+ *   library contexts, so this function must be called only after every
+ *   otelc_ctx and every signal instance has been destroyed; calling it while
+ *   any context is still alive yanks the hooks out from under live code.
+ *   After this call no references to caller-supplied callbacks remain inside
+ *   the library, allowing the caller to safely unload the code that owns them.
+ *   Calling this function is optional; processes that exit immediately after
+ *   the final otelc_deinit() may skip it.
+ *
+ * RETURN VALUE
+ *   This function does not return a value.
+ */
+void otelc_lib_shutdown(void)
+{
+	OTELC_FUNC("");
+
 	otelc_log_set_handler(nullptr, nullptr, false);
 	otelc_ext_init(nullptr, nullptr, nullptr);
+
+	OTELC_RETURN();
+}
+
+
+/***
+ * NAME
+ *   otelc_close_cfg - releases the parsed YAML configuration document
+ *
+ * SYNOPSIS
+ *   void otelc_close_cfg(struct otelc_ctx *ctx)
+ *
+ * ARGUMENTS
+ *   ctx - library context providing the YAML configuration
+ *
+ * DESCRIPTION
+ *   Closes the YAML configuration document attached to the context and releases
+ *   the underlying file descriptor along with any cached filesystem state held
+ *   by the parser.  This lets the caller drop all filesystem access once
+ *   initialization is complete, which is useful when the process is later
+ *   confined or chrooted.  The context itself remains valid and must still be
+ *   torn down with otelc_deinit() when no longer needed.  Calling this function
+ *   on a NULL context or on a context whose configuration document has already
+ *   been closed is a no-op.
+ *
+ * RETURN VALUE
+ *   This function does not return a value.
+ */
+void otelc_close_cfg(struct otelc_ctx *ctx)
+{
+	OTELC_FUNC("%p", ctx);
+
+	if (!OTEL_NULL(ctx) && !OTEL_NULL(ctx->fyd))
+		yaml_close(&(ctx->fyd));
 
 	OTELC_RETURN();
 }

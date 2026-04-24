@@ -16,9 +16,6 @@
 #include "include.h"
 
 
-OTEL_YAML_DOC *otelc_fyd = nullptr;
-
-
 #ifndef HAVE_LIBFYAML_H
 
 /***

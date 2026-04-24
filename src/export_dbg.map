@@ -19,6 +19,8 @@ global:
 	otelc_version;
 	otelc_init;
 	otelc_deinit;
+	otelc_lib_shutdown;
+	otelc_close_cfg;
 
 	otelc_value_strtonum;
 	otelc_value_add;
