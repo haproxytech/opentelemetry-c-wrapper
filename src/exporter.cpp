@@ -493,6 +493,7 @@ int otel_tracer_exporter_create(struct otelc_tracer *tracer, std::unique_ptr<ote
 {
 	std::unique_ptr<otel_sdk_trace::SpanExporter> exporter_maybe{};
 	char                                          type[OTEL_YAML_BUFSIZ] = "";
+	char                                          path[OTEL_YAML_BUFSIZ];
 	int                                           rc;
 
 	OTELC_FUNC("%p, <exporter>, \"%s\"", tracer, OTELC_STR_ARG(name));
@@ -500,7 +501,8 @@ int otel_tracer_exporter_create(struct otelc_tracer *tracer, std::unique_ptr<ote
 	if (OTEL_NULL(tracer))
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
 
-	rc = yaml_get_node(tracer->ctx->fyd, &(tracer->err), 1, OTEL_TRACER_EXPORTER_DESC, OTEL_YAML_TRACER_PREFIX OTEL_YAML_EXPORTERS, name,
+	OTEL_YAML_PATH(path, tracer, OTEL_YAML_EXPORTERS);
+	rc = yaml_get_node(tracer->ctx->fyd, &(tracer->err), 1, OTEL_TRACER_EXPORTER_DESC, path, name,
 	                   OTEL_YAML_ARG_STR(1, EXPORTERS, type),
 	                   OTEL_YAML_END);
 	if (rc == OTELC_RET_ERROR)
@@ -514,7 +516,7 @@ int otel_tracer_exporter_create(struct otelc_tracer *tracer, std::unique_ptr<ote
 		/* <opentelemetry/exporters/memory/in_memory_span_exporter.h> */
 		int64_t buffer_size = otel_exporter_memory::MAX_BUFFER_SIZE;
 
-		rc = yaml_get_node(tracer->ctx->fyd, &(tracer->err), 1, OTEL_TRACER_EXPORTER_DESC, OTEL_YAML_TRACER_PREFIX OTEL_YAML_EXPORTERS, name,
+		rc = yaml_get_node(tracer->ctx->fyd, &(tracer->err), 1, OTEL_TRACER_EXPORTER_DESC, path, name,
 		                   OTEL_YAML_ARG_INT64(0, EXPORTERS, buffer_size, 16, 65536),
 		                   OTEL_YAML_END);
 		if (rc == OTELC_RET_ERROR)
@@ -527,17 +529,17 @@ int otel_tracer_exporter_create(struct otelc_tracer *tracer, std::unique_ptr<ote
 		OTEL_TRACER_ERROR(OTEL_TRACER_EXPORTER_NOT_SUPPORTED("In-Memory"));
 #endif /* HAVE_OTEL_EXPORTER_IN_MEMORY */
 	}
-	OTEL_EXPORTER_CASE_OSTREAM(TRACER, otel_exporter_trace::OStreamSpanExporter, tracer, otel_tracer_logfile)
-	OTEL_EXPORTER_CASE_OTLP_FILE(TRACER, OtlpFileExporter, tracer)
-	OTEL_EXPORTER_CASE_OTLP_GRPC(TRACER, OtlpGrpcExporter, tracer)
-	OTEL_EXPORTER_CASE_OTLP_HTTP(TRACER, OtlpHttpExporter, tracer)
+	OTEL_EXPORTER_CASE_OSTREAM(TRACER, otel_exporter_trace::OStreamSpanExporter, tracer, path, otel_tracer_logfile)
+	OTEL_EXPORTER_CASE_OTLP_FILE(TRACER, OtlpFileExporter, tracer, path)
+	OTEL_EXPORTER_CASE_OTLP_GRPC(TRACER, OtlpGrpcExporter, tracer, path)
+	OTEL_EXPORTER_CASE_OTLP_HTTP(TRACER, OtlpHttpExporter, tracer, path)
 	else if (strcasecmp(type, OTEL_EXPORTER_ZIPKIN) == 0) {
 #ifdef HAVE_OTEL_EXPORTER_ZIPKIN
 		otel_exporter_zipkin::ZipkinExporterOptions options{};
 		char                                        endpoint[OTEL_YAML_BUFSIZ] = OTEL_TRACER_EXPORTER_ZIPKIN_ENDPOINT, format[OTEL_YAML_BUFSIZ] = "", service_name[OTEL_YAML_BUFSIZ] = "default-service";
 		char                                        ipv4[OTEL_YAML_BUFSIZ] = "", ipv6[OTEL_YAML_BUFSIZ] = "";
 
-		rc = yaml_get_node(tracer->ctx->fyd, &(tracer->err), 1, OTEL_TRACER_EXPORTER_DESC, OTEL_YAML_TRACER_PREFIX OTEL_YAML_EXPORTERS, name,
+		rc = yaml_get_node(tracer->ctx->fyd, &(tracer->err), 1, OTEL_TRACER_EXPORTER_DESC, path, name,
 		                   OTEL_YAML_ARG_STR(0, EXPORTERS, endpoint),
 		                   OTEL_YAML_ARG_STR(0, EXPORTERS, format),
 		                   OTEL_YAML_ARG_STR(0, EXPORTERS, service_name),
@@ -631,6 +633,7 @@ int otel_meter_exporter_create(struct otelc_meter *meter, std::unique_ptr<otel_s
 {
 	std::unique_ptr<otel_sdk_metrics::PushMetricExporter> exporter_maybe{};
 	char                                                  type[OTEL_YAML_BUFSIZ] = "";
+	char                                                  path[OTEL_YAML_BUFSIZ];
 	int                                                   rc;
 
 	OTELC_FUNC("%p, <exporter>, \"%s\"", meter, OTELC_STR_ARG(name));
@@ -638,7 +641,8 @@ int otel_meter_exporter_create(struct otelc_meter *meter, std::unique_ptr<otel_s
 	if (OTEL_NULL(meter))
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
 
-	rc = yaml_get_node(meter->ctx->fyd, &(meter->err), 1, OTEL_METER_EXPORTER_DESC, OTEL_YAML_METER_PREFIX OTEL_YAML_EXPORTERS, name,
+	OTEL_YAML_PATH(path, meter, OTEL_YAML_EXPORTERS);
+	rc = yaml_get_node(meter->ctx->fyd, &(meter->err), 1, OTEL_METER_EXPORTER_DESC, path, name,
 	                   OTEL_YAML_ARG_STR(1, EXPORTERS, type),
 	                   OTEL_YAML_END);
 	if (rc == OTELC_RET_ERROR)
@@ -652,7 +656,7 @@ int otel_meter_exporter_create(struct otelc_meter *meter, std::unique_ptr<otel_s
 		/* <opentelemetry/exporters/memory/in_memory_metric_data.h> */
 		int64_t buffer_size = otel_exporter_memory::MAX_BUFFER_SIZE;
 
-		rc = yaml_get_node(meter->ctx->fyd, &(meter->err), 1, OTEL_METER_EXPORTER_DESC, OTEL_YAML_METER_PREFIX OTEL_YAML_EXPORTERS, name,
+		rc = yaml_get_node(meter->ctx->fyd, &(meter->err), 1, OTEL_METER_EXPORTER_DESC, path, name,
 		                   OTEL_YAML_ARG_INT64(0, EXPORTERS, buffer_size, 16, 65536),
 		                   OTEL_YAML_END);
 		if (rc == OTELC_RET_ERROR)
@@ -668,10 +672,10 @@ int otel_meter_exporter_create(struct otelc_meter *meter, std::unique_ptr<otel_s
 		OTEL_METER_ERROR(OTEL_METER_EXPORTER_NOT_SUPPORTED("In-Memory"));
 #endif /* HAVE_OTEL_EXPORTER_IN_MEMORY */
 	}
-	OTEL_EXPORTER_CASE_OSTREAM(METER, otel_exporter_metrics::OStreamMetricExporter, meter, otel_meter_logfile)
-	OTEL_EXPORTER_CASE_OTLP_FILE(METER, OtlpFileMetricExporter, meter)
-	OTEL_EXPORTER_CASE_OTLP_GRPC(METER, OtlpGrpcMetricExporter, meter)
-	OTEL_EXPORTER_CASE_OTLP_HTTP(METER, OtlpHttpMetricExporter, meter)
+	OTEL_EXPORTER_CASE_OSTREAM(METER, otel_exporter_metrics::OStreamMetricExporter, meter, path, otel_meter_logfile)
+	OTEL_EXPORTER_CASE_OTLP_FILE(METER, OtlpFileMetricExporter, meter, path)
+	OTEL_EXPORTER_CASE_OTLP_GRPC(METER, OtlpGrpcMetricExporter, meter, path)
+	OTEL_EXPORTER_CASE_OTLP_HTTP(METER, OtlpHttpMetricExporter, meter, path)
 	else if (strcasecmp(type, OTEL_EXPORTER_ZIPKIN) == 0) {
 		OTEL_METER_ERROR(OTEL_METER_EXPORTER_NOT_SUPPORTED("Zipkin"));
 	}
@@ -740,6 +744,7 @@ int otel_logger_exporter_create(struct otelc_logger *logger, std::unique_ptr<ote
 {
 	std::unique_ptr<otel_sdk_logs::LogRecordExporter> exporter_maybe{};
 	char                                              type[OTEL_YAML_BUFSIZ] = "";
+	char                                              path[OTEL_YAML_BUFSIZ];
 	int                                               rc;
 
 	OTELC_FUNC("%p, <exporter>, \"%s\"", logger, OTELC_STR_ARG(name));
@@ -747,7 +752,8 @@ int otel_logger_exporter_create(struct otelc_logger *logger, std::unique_ptr<ote
 	if (OTEL_NULL(logger))
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
 
-	rc = yaml_get_node(logger->ctx->fyd, &(logger->err), 1, OTEL_LOGGER_EXPORTER_DESC, OTEL_YAML_LOGGER_PREFIX OTEL_YAML_EXPORTERS, name,
+	OTEL_YAML_PATH(path, logger, OTEL_YAML_EXPORTERS);
+	rc = yaml_get_node(logger->ctx->fyd, &(logger->err), 1, OTEL_LOGGER_EXPORTER_DESC, path, name,
 	                   OTEL_YAML_ARG_STR(1, EXPORTERS, type),
 	                   OTEL_YAML_END);
 	if (rc == OTELC_RET_ERROR)
@@ -766,7 +772,7 @@ int otel_logger_exporter_create(struct otelc_logger *logger, std::unique_ptr<ote
 		int64_t                                           port = 9200, response_timeout = 30;
 		int                                               debug = false;
 
-		rc = yaml_get_node(logger->ctx->fyd, &(logger->err), 1, OTEL_LOGGER_EXPORTER_DESC, OTEL_YAML_LOGGER_PREFIX OTEL_YAML_EXPORTERS, name,
+		rc = yaml_get_node(logger->ctx->fyd, &(logger->err), 1, OTEL_LOGGER_EXPORTER_DESC, path, name,
 		                   OTEL_YAML_ARG_STR(0, EXPORTERS, host),
 		                   OTEL_YAML_ARG_INT64(0, EXPORTERS, port, 1, 65535),
 		                   OTEL_YAML_ARG_STR(0, EXPORTERS, index),
@@ -806,10 +812,10 @@ int otel_logger_exporter_create(struct otelc_logger *logger, std::unique_ptr<ote
 	else if (strcasecmp(type, OTEL_EXPORTER_IN_MEMORY) == 0) {
 		OTEL_LOGGER_ERROR(OTEL_LOGGER_EXPORTER_NOT_SUPPORTED("In-Memory"));
 	}
-	OTEL_EXPORTER_CASE_OSTREAM(LOGGER, otel_exporter_logs::OStreamLogRecordExporter, logger, otel_logger_logfile)
-	OTEL_EXPORTER_CASE_OTLP_FILE(LOGGER, OtlpFileLogRecordExporter, logger)
-	OTEL_EXPORTER_CASE_OTLP_GRPC(LOGGER, OtlpGrpcLogRecordExporter, logger)
-	OTEL_EXPORTER_CASE_OTLP_HTTP(LOGGER, OtlpHttpLogRecordExporter, logger)
+	OTEL_EXPORTER_CASE_OSTREAM(LOGGER, otel_exporter_logs::OStreamLogRecordExporter, logger, path, otel_logger_logfile)
+	OTEL_EXPORTER_CASE_OTLP_FILE(LOGGER, OtlpFileLogRecordExporter, logger, path)
+	OTEL_EXPORTER_CASE_OTLP_GRPC(LOGGER, OtlpGrpcLogRecordExporter, logger, path)
+	OTEL_EXPORTER_CASE_OTLP_HTTP(LOGGER, OtlpHttpLogRecordExporter, logger, path)
 	else if (strcasecmp(type, OTEL_EXPORTER_ZIPKIN) == 0) {
 		OTEL_LOGGER_ERROR(OTEL_LOGGER_EXPORTER_NOT_SUPPORTED("Zipkin"));
 	}

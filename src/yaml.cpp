@@ -109,6 +109,122 @@ static void ryml_throw_error(const char *msg, size_t len, ryml::Location loc __m
 		throw std::runtime_error("Unknown YAML parsing error");
 }
 
+
+/***
+ * NAME
+ *   ryml_node_path - builds the full slash-separated path of a YAML node
+ *
+ * SYNOPSIS
+ *   static std::string ryml_node_path(const ryml::Tree *tree, ryml::id_type id)
+ *
+ * ARGUMENTS
+ *   tree - parsed YAML tree containing the node
+ *   id   - identifier of the node whose path is to be reconstructed
+ *
+ * DESCRIPTION
+ *   Walks up from the given node to the tree root, accumulating the map key
+ *   or sequence index of each ancestor.  The returned leading-slash path is
+ *   compatible with ryml_get_node_by_path().
+ *
+ * RETURN VALUE
+ *   Returns the reconstructed path, or an empty string if the tree is null.
+ */
+static std::string ryml_node_path(const ryml::Tree *tree, ryml::id_type id)
+{
+	std::string path;
+
+	if (OTEL_NULL(tree))
+		return path;
+
+	while ((id != ryml::NONE) && !tree->is_root(id)) {
+		std::string segment = "/";
+
+		if (tree->has_key(id)) {
+			const auto key = tree->key(id);
+
+			segment.append(key.str, key.len);
+		} else {
+			const auto parent = tree->parent(id);
+
+			if ((parent != ryml::NONE) && tree->is_seq(parent))
+				segment.append(std::to_string(tree->child_pos(parent, id)));
+		}
+
+		path = segment + path;
+		id   = tree->parent(id);
+	}
+
+	return path;
+}
+
+
+/***
+ * NAME
+ *   ryml_find_duplicate_keys - detects duplicate keys in YAML mappings
+ *
+ * SYNOPSIS
+ *   static int ryml_find_duplicate_keys(const ryml::Tree *tree, char **err)
+ *
+ * ARGUMENTS
+ *   tree - parsed YAML tree to inspect
+ *   err  - address of a pointer to store an error message on failure
+ *
+ * DESCRIPTION
+ *   ryml accepts duplicate keys in a mapping without complaint, with the later
+ *   value silently overwriting the earlier one.  This helper walks every map
+ *   node in the tree and reports the first sibling pair sharing a key.  In
+ *   debug builds the scan continues and any remaining duplicates are emitted
+ *   via OTELC_DBG.  Each report includes the full slash-separated path to the
+ *   offending node.
+ *
+ * RETURN VALUE
+ *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR on failure.
+ */
+static int ryml_find_duplicate_keys(const ryml::Tree *tree, char **err)
+{
+	int retval = OTELC_RET_OK;
+
+	OTELC_FUNC("%p, %p:%p", tree, OTELC_DPTR_ARGS(err));
+
+	if (OTEL_NULL(tree))
+		OTELC_RETURN_INT(OTELC_RET_OK);
+
+	for (ryml::id_type id = 0; id < tree->size(); id++) {
+		if (!tree->is_map(id))
+			continue;
+
+		for (ryml::id_type a = tree->first_child(id); a != ryml::NONE; a = tree->next_sibling(a)) {
+			if (!tree->has_key(a))
+				continue;
+
+			const auto key_a = tree->key(a);
+
+			for (ryml::id_type b = tree->next_sibling(a); b != ryml::NONE; b = tree->next_sibling(b)) {
+				if (!tree->has_key(b))
+					continue;
+				else if (key_a != tree->key(b))
+					continue;
+
+				const auto path = ryml_node_path(tree, a);
+
+#ifdef DEBUG
+				if (retval == OTELC_RET_OK) {
+					OTEL_SIGNAL_ERROR(*err, "Duplicate YAML key: \"%s\"", path.c_str());
+
+					retval = OTELC_RET_ERROR;
+				} else {
+					OTELC_DBG(OTEL, "Duplicate YAML key: \"%s\"", path.c_str());
+				}
+#else
+				OTEL_SIGNAL_RETURN_EX(*err, _INT, OTELC_RET_ERROR, "Duplicate YAML key: \"%s\"", path.c_str());
+#endif /* DEBUG */
+			}
+		}
+	}
+
+	OTELC_RETURN_INT(retval);
+}
+
 #endif /* !HAVE_LIBFYAML_H */
 
 
@@ -165,6 +281,9 @@ OTEL_YAML_DOC *yaml_open(const char *file, char **err)
 
 		ryml::parse_in_arena(ryml::to_csubstr(content), tree.get());
 
+		if (ryml_find_duplicate_keys(tree.get(), err) == OTELC_RET_ERROR)
+			OTELC_RETURN_PTR(retptr);
+
 		retptr = tree.release();
 	}
 	OTEL_CATCH_SIGNAL_RETURN( , OTEL_ERR_RETURN_PTR, "'%s': unable to parse OpenTelemetry configuration", file)
@@ -211,6 +330,85 @@ void yaml_close(OTEL_YAML_DOC **fyd)
 	*fyd = nullptr;
 
 	OTELC_RETURN();
+}
+
+
+/***
+ * NAME
+ *   yaml_resolve_prefix - resolves the per-instance signal configuration prefix
+ *
+ * SYNOPSIS
+ *   int yaml_resolve_prefix(OTEL_YAML_DOC *fyd, char **err, const char *base, const char *name, const char *fallback, char **prefix)
+ *
+ * ARGUMENTS
+ *   fyd      - parsed YAML configuration document
+ *   err      - address of a pointer to store an error message on failure
+ *   base     - base path of the signal section (e.g., "/signals/traces")
+ *   name     - preferred named entry to look for under base
+ *   fallback - fallback name used when name is missing or not present
+ *   prefix   - address of a pointer to store the resolved prefix on success
+ *
+ * DESCRIPTION
+ *   Composes "<base>/<name>" and probes the YAML document for that node.  If
+ *   it exists, the composed string is allocated and stored in *prefix and
+ *   OTELC_RET_OK is returned.  Otherwise the function composes
+ *   "<base>/<fallback>" and probes for that node; on success the fallback
+ *   prefix is allocated and stored in *prefix.  If neither node is present,
+ *   an error message is set and OTELC_RET_ERROR is returned.  Either name or
+ *   fallback may be NULL or empty to skip that context.  The caller is
+ *   responsible for freeing *prefix.
+ *
+ * RETURN VALUE
+ *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR on failure.
+ */
+int yaml_resolve_prefix(OTEL_YAML_DOC *fyd, char **err, const char *base, const char *name, const char *fallback, char **prefix)
+{
+	const char *contexts[2] = { name, fallback };
+	int         len, i;
+
+	OTELC_FUNC("%p, %p:%p, \"%s\", \"%s\", \"%s\", %p:%p", fyd, OTELC_DPTR_ARGS(err), OTELC_STR_ARG(base), OTELC_STR_ARG(name), OTELC_STR_ARG(fallback), OTELC_DPTR_ARGS(prefix));
+
+	if (OTEL_NULL(fyd))
+		OTEL_ERR_RETURN_INT("YAML document not specified");
+	else if (OTEL_NULL(base) || (*base == '\0'))
+		OTEL_ERR_RETURN_INT("YAML base path not specified");
+	else if (!OTELC_STR_IS_VALID(name) && !OTELC_STR_IS_VALID(fallback))
+		OTEL_ERR_RETURN_INT("At least one of name or fallback must be specified");
+	else if (OTEL_NULL(prefix))
+		OTEL_ERR_RETURN_INT("Prefix pointer not specified");
+
+	/* Avoid probing the same path twice when name == fallback. */
+	if (!OTEL_NULL(name) && !OTEL_NULL(fallback) && (strcmp(name, fallback) == 0))
+		contexts[0] = nullptr;
+
+	for (i = 0; i < OTEL_CAST_STATIC(int, OTELC_TABLESIZE(contexts)); i++) {
+		if (!OTELC_STR_IS_VALID(contexts[i]))
+			continue;
+
+		len = snprintf(NULL, 0, "%s/%s", base, contexts[i]);
+		if (len > 0) {
+			*prefix = OTEL_CAST_TYPEOF(*prefix, OTELC_MALLOC(__func__, __LINE__, len + 1));
+			if (OTEL_NULL(*prefix))
+				OTEL_ERR_RETURN_INT(OTEL_ERROR_MSG_ENOMEM("resolved prefix"));
+			else
+				(void)snprintf(*prefix, len + 1, "%s/%s", base, contexts[i]);
+		} else {
+			OTEL_ERR_RETURN_INT("Failed to compute prefix path length");
+		}
+
+#ifdef HAVE_LIBFYAML_H
+		if (!OTEL_NULL(fy_node_by_path(fy_document_root(fyd), *prefix, -1, FYNWF_DONT_FOLLOW)))
+			OTELC_RETURN_INT(OTELC_RET_OK);
+#else
+		if (!ryml_get_node_by_path(fyd, *prefix).invalid())
+			OTELC_RETURN_INT(OTELC_RET_OK);
+#endif /* HAVE_LIBFYAML_H */
+	}
+
+	if (OTELC_STR_IS_VALID(contexts[0]) && OTELC_STR_IS_VALID(contexts[1]))
+		OTEL_ERR_RETURN_INT("'%s': no '%s' or '%s' configuration found", base, name, fallback);
+
+	OTEL_ERR_RETURN_INT("'%s': no '%s' configuration found", base, OTELC_STR_IS_VALID(name) ? name : fallback);
 }
 
 
