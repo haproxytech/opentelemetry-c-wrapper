@@ -1224,6 +1224,181 @@ static void test_yaml_get_sequence_value_negative(OTEL_YAML_DOC *doc)
 
 /***
  * NAME
+ *   test_yaml_resolve_prefix_named - resolves a present named entry
+ *
+ * SYNOPSIS
+ *   static void test_yaml_resolve_prefix_named(OTEL_YAML_DOC *doc)
+ *
+ * ARGUMENTS
+ *   doc - parsed YAML document
+ *
+ * DESCRIPTION
+ *   Verifies that yaml_resolve_prefix() returns the "<base>/<name>" path when
+ *   that node is present in the document.
+ *
+ * RETURN VALUE
+ *   This function does not return a value.
+ */
+static void test_yaml_resolve_prefix_named(OTEL_YAML_DOC *doc)
+{
+	char buf[OTEL_YAML_BUFSIZ] = "";
+	char *err = nullptr;
+	int   rc, result = TEST_FAIL;
+
+	rc = yaml_resolve_prefix(doc, &err, "/nodes", "my_node", "default", buf, sizeof(buf));
+	if ((rc == OTELC_RET_OK) && (strcmp(buf, "/nodes/my_node") == 0))
+		result = TEST_PASS;
+
+	OTELC_SFREE(err);
+
+	test_report("yaml_resolve_prefix named entry", result);
+}
+
+
+/***
+ * NAME
+ *   test_yaml_resolve_prefix_fallback - falls back when the named entry is missing
+ *
+ * SYNOPSIS
+ *   static void test_yaml_resolve_prefix_fallback(OTEL_YAML_DOC *doc)
+ *
+ * ARGUMENTS
+ *   doc - parsed YAML document
+ *
+ * DESCRIPTION
+ *   Verifies that yaml_resolve_prefix() returns the "<base>/<fallback>" path
+ *   when the requested name is absent but the fallback node exists.
+ *
+ * RETURN VALUE
+ *   This function does not return a value.
+ */
+static void test_yaml_resolve_prefix_fallback(OTEL_YAML_DOC *doc)
+{
+	char buf[OTEL_YAML_BUFSIZ] = "";
+	char *err = nullptr;
+	int   rc, result = TEST_FAIL;
+
+	rc = yaml_resolve_prefix(doc, &err, "/nodes", "missing", "my_node", buf, sizeof(buf));
+	if ((rc == OTELC_RET_OK) && (strcmp(buf, "/nodes/my_node") == 0))
+		result = TEST_PASS;
+
+	OTELC_SFREE(err);
+
+	test_report("yaml_resolve_prefix fallback", result);
+}
+
+
+/***
+ * NAME
+ *   test_yaml_resolve_prefix_none - reports an error when neither candidate exists
+ *
+ * SYNOPSIS
+ *   static void test_yaml_resolve_prefix_none(OTEL_YAML_DOC *doc)
+ *
+ * ARGUMENTS
+ *   doc - parsed YAML document
+ *
+ * DESCRIPTION
+ *   Verifies that yaml_resolve_prefix() returns OTELC_RET_ERROR and sets an
+ *   error message when neither the named nor the fallback node is present.
+ *
+ * RETURN VALUE
+ *   This function does not return a value.
+ */
+static void test_yaml_resolve_prefix_none(OTEL_YAML_DOC *doc)
+{
+	char buf[OTEL_YAML_BUFSIZ] = "";
+	char *err = nullptr;
+	int   rc, result = TEST_FAIL;
+
+	rc = yaml_resolve_prefix(doc, &err, "/nodes", "missing", "also_missing", buf, sizeof(buf));
+	if ((rc == OTELC_RET_ERROR) && _nNULL(err))
+		result = TEST_PASS;
+
+	OTELC_SFREE(err);
+
+	test_report("yaml_resolve_prefix none found", result);
+}
+
+
+/***
+ * NAME
+ *   test_yaml_resolve_prefix_null_name - skips a null name and uses the fallback
+ *
+ * SYNOPSIS
+ *   static void test_yaml_resolve_prefix_null_name(OTEL_YAML_DOC *doc)
+ *
+ * ARGUMENTS
+ *   doc - parsed YAML document
+ *
+ * DESCRIPTION
+ *   Verifies that yaml_resolve_prefix() treats a nullptr name as absent and
+ *   uses the fallback when the fallback node exists.
+ *
+ * RETURN VALUE
+ *   This function does not return a value.
+ */
+static void test_yaml_resolve_prefix_null_name(OTEL_YAML_DOC *doc)
+{
+	char buf[OTEL_YAML_BUFSIZ] = "";
+	char *err = nullptr;
+	int   rc, result = TEST_FAIL;
+
+	rc = yaml_resolve_prefix(doc, &err, "/nodes", nullptr, "my_node", buf, sizeof(buf));
+	if ((rc == OTELC_RET_OK) && (strcmp(buf, "/nodes/my_node") == 0))
+		result = TEST_PASS;
+
+	OTELC_SFREE(err);
+
+	test_report("yaml_resolve_prefix null name", result);
+}
+
+
+/***
+ * NAME
+ *   test_yaml_resolve_prefix_invalid_args - rejects invalid argument values
+ *
+ * SYNOPSIS
+ *   static void test_yaml_resolve_prefix_invalid_args(OTEL_YAML_DOC *doc)
+ *
+ * ARGUMENTS
+ *   doc - parsed YAML document
+ *
+ * DESCRIPTION
+ *   Verifies that yaml_resolve_prefix() returns OTELC_RET_ERROR when the
+ *   document, base path, or output buffer arguments are invalid.
+ *
+ * RETURN VALUE
+ *   This function does not return a value.
+ */
+static void test_yaml_resolve_prefix_invalid_args(OTEL_YAML_DOC *doc)
+{
+	char buf[OTEL_YAML_BUFSIZ] = "";
+	char *err = nullptr;
+	int   result = TEST_PASS;
+
+	if (yaml_resolve_prefix(nullptr, &err, "/nodes", "my_node", "default", buf, sizeof(buf)) != OTELC_RET_ERROR)
+		result = TEST_FAIL;
+	OTELC_SFREE_CLEAR(err);
+
+	if (yaml_resolve_prefix(doc, &err, nullptr, "my_node", "default", buf, sizeof(buf)) != OTELC_RET_ERROR)
+		result = TEST_FAIL;
+	OTELC_SFREE_CLEAR(err);
+
+	if (yaml_resolve_prefix(doc, &err, "/nodes", "my_node", "default", nullptr, sizeof(buf)) != OTELC_RET_ERROR)
+		result = TEST_FAIL;
+	OTELC_SFREE_CLEAR(err);
+
+	if (yaml_resolve_prefix(doc, &err, "/nodes", "my_node", "default", buf, 0) != OTELC_RET_ERROR)
+		result = TEST_FAIL;
+	OTELC_SFREE_CLEAR(err);
+
+	test_report("yaml_resolve_prefix invalid args", result);
+}
+
+
+/***
+ * NAME
  *   test_otelc_init_valid - tests library initialization with a valid file
  *
  * SYNOPSIS
@@ -1233,19 +1408,23 @@ static void test_yaml_get_sequence_value_negative(OTEL_YAML_DOC *doc)
  *   cfg_file - path to the YAML configuration file
  *
  * DESCRIPTION
- *   Verifies that otelc_init() succeeds with a valid configuration file.
+ *   Verifies that otelc_init() returns a non-null context when given a valid
+ *   configuration file and a context name, and releases the resulting context.
  *
  * RETURN VALUE
  *   This function does not return a value.
  */
 static void test_otelc_init_valid(const char *cfg_file)
 {
-	char *err = nullptr;
-	int   result = TEST_FAIL;
+	struct otelc_ctx *ctx;
+	char             *err = nullptr;
+	int               result = TEST_FAIL;
 
-	if (otelc_init(cfg_file, &err) == OTELC_RET_OK)
+	ctx = otelc_init(cfg_file, DEFAULT_CTX_NAME, &err);
+	if (_nNULL(ctx))
 		result = TEST_PASS;
 
+	otelc_deinit(&ctx, nullptr, nullptr, nullptr);
 	OTELC_SFREE(err);
 
 	test_report("otelc_init valid file", result);
@@ -1254,29 +1433,32 @@ static void test_otelc_init_valid(const char *cfg_file)
 
 /***
  * NAME
- *   test_otelc_init_null - tests library initialization with nullptr file
+ *   test_otelc_init_null_file - tests library initialization with a null file path
  *
  * SYNOPSIS
- *   static void test_otelc_init_null(void)
+ *   static void test_otelc_init_null_file(void)
  *
  * ARGUMENTS
  *   This function takes no arguments.
  *
  * DESCRIPTION
- *   Verifies that otelc_init() returns an error when given a nullptr
+ *   Verifies that otelc_init() returns nullptr when given a nullptr
  *   configuration file path.
  *
  * RETURN VALUE
  *   This function does not return a value.
  */
-static void test_otelc_init_null(void)
+static void test_otelc_init_null_file(void)
 {
-	char *err = nullptr;
-	int   result = TEST_FAIL;
+	struct otelc_ctx *ctx;
+	char             *err = nullptr;
+	int               result = TEST_FAIL;
 
-	if (otelc_init(nullptr, &err) == OTELC_RET_ERROR)
+	ctx = otelc_init(nullptr, DEFAULT_CTX_NAME, &err);
+	if (_NULL(ctx))
 		result = TEST_PASS;
 
+	otelc_deinit(&ctx, nullptr, nullptr, nullptr);
 	OTELC_SFREE(err);
 
 	test_report("otelc_init nullptr file", result);
@@ -1285,35 +1467,35 @@ static void test_otelc_init_null(void)
 
 /***
  * NAME
- *   test_otelc_init_double - tests double initialization
+ *   test_otelc_init_null_name - tests library initialization with a null name
  *
  * SYNOPSIS
- *   static void test_otelc_init_double(void)
+ *   static void test_otelc_init_null_name(const char *cfg_file)
  *
  * ARGUMENTS
- *   This function takes no arguments.
+ *   cfg_file - path to the YAML configuration file
  *
  * DESCRIPTION
- *   Verifies that otelc_init() returns an error when the library is already
- *   initialized.
+ *   Verifies that otelc_init() returns nullptr when given a nullptr context
+ *   name, since the context must always carry a caller-provided name.
  *
  * RETURN VALUE
  *   This function does not return a value.
  */
-static void test_otelc_init_double(void)
+static void test_otelc_init_null_name(const char *cfg_file)
 {
-	char *err = nullptr;
-	int   result = TEST_FAIL;
+	struct otelc_ctx *ctx;
+	char             *err = nullptr;
+	int               result = TEST_FAIL;
 
-	/***
-	 * The library should already be initialized at this point.
-	 */
-	if (otelc_init("dummy.yml", &err) == OTELC_RET_ERROR)
+	ctx = otelc_init(cfg_file, nullptr, &err);
+	if (_NULL(ctx))
 		result = TEST_PASS;
 
+	otelc_deinit(&ctx, nullptr, nullptr, nullptr);
 	OTELC_SFREE(err);
 
-	test_report("otelc_init double init", result);
+	test_report("otelc_init nullptr name", result);
 }
 
 
@@ -1328,22 +1510,27 @@ static void test_otelc_init_double(void)
  *   cfg_file - path to the YAML configuration file
  *
  * DESCRIPTION
- *   Verifies that otelc_deinit() followed by otelc_init() succeeds, confirming
- *   that the library can be reinitialized after shutdown.
+ *   Verifies that a context produced by otelc_init() can be released with
+ *   otelc_deinit() and that a fresh otelc_init() afterwards succeeds.
  *
  * RETURN VALUE
  *   This function does not return a value.
  */
 static void test_otelc_deinit_reinit(const char *cfg_file)
 {
-	char *err = nullptr;
-	int   result = TEST_FAIL;
+	struct otelc_ctx *ctx;
+	char             *err = nullptr;
+	int               result = TEST_FAIL;
 
-	otelc_deinit(nullptr, nullptr, nullptr);
+	ctx = otelc_init(cfg_file, DEFAULT_CTX_NAME, &err);
+	otelc_deinit(&ctx, nullptr, nullptr, nullptr);
+	OTELC_SFREE_CLEAR(err);
 
-	if (otelc_init(cfg_file, &err) == OTELC_RET_OK)
+	ctx = otelc_init(cfg_file, DEFAULT_CTX_NAME, &err);
+	if (_nNULL(ctx))
 		result = TEST_PASS;
 
+	otelc_deinit(&ctx, nullptr, nullptr, nullptr);
 	OTELC_SFREE(err);
 
 	test_report("otelc_deinit + reinit", result);
@@ -1509,6 +1696,17 @@ int main(int argc, char **argv)
 	OTELC_LOG(stdout, "[yaml_get_node (path)]");
 	test_yaml_get_node_str(doc);
 
+	/***
+	 * yaml_resolve_prefix tests.
+	 */
+	OTELC_LOG(stdout, "");
+	OTELC_LOG(stdout, "[yaml_resolve_prefix]");
+	test_yaml_resolve_prefix_named(doc);
+	test_yaml_resolve_prefix_fallback(doc);
+	test_yaml_resolve_prefix_none(doc);
+	test_yaml_resolve_prefix_null_name(doc);
+	test_yaml_resolve_prefix_invalid_args(doc);
+
 	yaml_close(&doc);
 
 	/***
@@ -1517,8 +1715,8 @@ int main(int argc, char **argv)
 	OTELC_LOG(stdout, "");
 	OTELC_LOG(stdout, "[otelc_init / otelc_deinit]");
 	test_otelc_init_valid(cfg_file);
-	test_otelc_init_null();
-	test_otelc_init_double();
+	test_otelc_init_null_file();
+	test_otelc_init_null_name(cfg_file);
 	test_otelc_deinit_reinit(cfg_file);
 
 	(void)unlink(temp_path);
