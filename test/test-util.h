@@ -23,19 +23,22 @@ __CPLUSPLUS_DECL_BEGIN
 #define TEST_PASS          0
 #define TEST_FAIL          1
 #define DEFAULT_CFG_FILE   "otel-cfg.yml"
+#define DEFAULT_CTX_NAME   "default"
 
 
 extern int tests_run, tests_passed, tests_failed;
 
 
-void test_report(const char *name, int result);
-void test_usage(const char *program_name);
-int  test_init(int argc, char **argv, const char *banner, const char **cfg_file);
-void test_set_tracer(struct otelc_tracer **tracer);
-void test_set_meter(struct otelc_meter **meter);
-void test_set_logger(struct otelc_logger **logger);
-int  test_done(int retval, char *otel_err);
-int  test_summary(int retval);
+void        test_report(const char *name, int result);
+void        test_usage(const char *program_name);
+int         test_init(int argc, char **argv, const char *banner, const char **cfg_file);
+const char *test_get_ctx_name(void);
+void        test_set_ctx(struct otelc_ctx **ctx);
+void        test_set_tracer(struct otelc_tracer **tracer);
+void        test_set_meter(struct otelc_meter **meter);
+void        test_set_logger(struct otelc_logger **logger);
+int         test_done(int retval, char *otel_err);
+int         test_summary(int retval);
 
 __CPLUSPLUS_DECL_END
 #endif /* TEST_UTIL_H */

@@ -21,10 +21,10 @@
  *   test_tracer_create_destroy - tests tracer creation and destruction
  *
  * SYNOPSIS
- *   static void test_tracer_create_destroy(void)
+ *   static void test_tracer_create_destroy(struct otelc_ctx *ctx)
  *
  * ARGUMENTS
- *   This function takes no arguments.
+ *   ctx - library context returned by otelc_init()
  *
  * DESCRIPTION
  *   Verifies that a tracer can be created and destroyed without errors.  Also
@@ -33,13 +33,13 @@
  * RETURN VALUE
  *   This function does not return a value.
  */
-static void test_tracer_create_destroy(void)
+static void test_tracer_create_destroy(struct otelc_ctx *ctx)
 {
 	struct otelc_tracer *tracer;
 	char                *err = NULL;
 	int                  retval = TEST_FAIL;
 
-	tracer = otelc_tracer_create(&err);
+	tracer = otelc_tracer_create(ctx, &err);
 	if (_nNULL(tracer)) {
 		if (_nNULL(tracer->ops))
 			retval = TEST_PASS;
@@ -61,10 +61,10 @@ static void test_tracer_create_destroy(void)
  *   test_tracer_create_err_null - tests tracer creation with NULL err pointer
  *
  * SYNOPSIS
- *   static void test_tracer_create_err_null(void)
+ *   static void test_tracer_create_err_null(struct otelc_ctx *ctx)
  *
  * ARGUMENTS
- *   This function takes no arguments.
+ *   ctx - library context returned by otelc_init()
  *
  * DESCRIPTION
  *   Verifies that a tracer can be created when the err argument is NULL.
@@ -72,12 +72,12 @@ static void test_tracer_create_destroy(void)
  * RETURN VALUE
  *   This function does not return a value.
  */
-static void test_tracer_create_err_null(void)
+static void test_tracer_create_err_null(struct otelc_ctx *ctx)
 {
 	struct otelc_tracer *tracer;
 	int                  retval = TEST_FAIL;
 
-	tracer = otelc_tracer_create(NULL);
+	tracer = otelc_tracer_create(ctx, NULL);
 	if (_nNULL(tracer)) {
 		OTELC_OPSR(tracer, destroy);
 
@@ -2002,6 +2002,7 @@ static void test_multiple_spans(struct otelc_tracer *tracer)
  */
 int main(int argc, char **argv)
 {
+	struct otelc_ctx    *ctx    = NULL;
 	struct otelc_tracer *tracer = NULL;
 	const char          *cfg_file;
 	char                *otel_err = NULL;
@@ -2014,7 +2015,10 @@ int main(int argc, char **argv)
 	retval = EX_OK;
 	OTELC_LOG(stdout, "");
 
-	if (otelc_init(cfg_file, &otel_err) == OTELC_RET_ERROR) {
+	test_set_ctx(&ctx);
+
+	ctx = otelc_init(cfg_file, test_get_ctx_name(), &otel_err);
+	if (_NULL(ctx)) {
 		OTELC_LOG(stderr, "ERROR: %s", _NULL(otel_err) ? "Unable to init library" : otel_err);
 
 		return test_done(EX_SOFTWARE, otel_err);
@@ -2026,13 +2030,13 @@ int main(int argc, char **argv)
 	 * down global state (span/context maps).
 	 */
 	OTELC_LOG(stdout, "[tracer lifecycle]");
-	test_tracer_create_destroy();
-	test_tracer_create_err_null();
+	test_tracer_create_destroy(ctx);
+	test_tracer_create_err_null(ctx);
 
 	/***
 	 * Create and start the main tracer for the remaining tests.
 	 */
-	tracer = otelc_tracer_create(&otel_err);
+	tracer = otelc_tracer_create(ctx, &otel_err);
 	if (_NULL(tracer)) {
 		OTELC_LOG(stderr, "ERROR: %s", _NULL(otel_err) ? "Unable to create tracer" : otel_err);
 
