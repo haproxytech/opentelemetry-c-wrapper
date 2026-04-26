@@ -379,6 +379,16 @@ struct otel_handle {
 	                                                                                                                  \
 	OTEL_##arg_signal##_RETURN_INT(arg_msg);
 
+/***
+ * Internal definition of the library context.  Owns the parsed YAML
+ * configuration document.  Multiple instances may coexist within a single
+ * process, each loaded from a distinct configuration file.
+ */
+struct otelc_ctx {
+	OTEL_YAML_DOC *fyd;  /* Parsed YAML configuration document. */
+	char          *name; /* Caller-provided name identifying the context. */
+};
+
 
 extern otelc_ext_malloc_t otelc_ext_malloc;
 extern otelc_ext_free_t   otelc_ext_free;

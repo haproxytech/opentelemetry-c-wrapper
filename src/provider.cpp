@@ -47,7 +47,7 @@ int otel_tracer_provider_create(struct otelc_tracer *tracer, std::vector<std::un
 	if (OTEL_NULL(tracer))
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
 
-	if (otel_resource_create("OpenTelemetry tracer provider", OTEL_YAML_TRACER_PREFIX OTEL_YAML_PROVIDERS, resource, &(tracer->err)) == OTELC_RET_ERROR)
+	if (otel_resource_create(tracer->ctx, "OpenTelemetry tracer provider", OTEL_YAML_TRACER_PREFIX OTEL_YAML_PROVIDERS, resource, &(tracer->err)) == OTELC_RET_ERROR)
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
 
 #ifdef OTELC_USE_MULTIPLE_PROCESSORS
@@ -178,7 +178,7 @@ int otel_meter_reader_create(struct otelc_meter *meter, std::unique_ptr<otel_sdk
 	if (OTEL_NULL(meter))
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
 
-	rc = yaml_get_node(otelc_fyd, &(meter->err), 0, "OpenTelemetry meter reader", OTEL_YAML_METER_PREFIX OTEL_YAML_READERS, name,
+	rc = yaml_get_node(meter->ctx->fyd, &(meter->err), 0, "OpenTelemetry meter reader", OTEL_YAML_METER_PREFIX OTEL_YAML_READERS, name,
 	                   OTEL_YAML_ARG_STR(0, READERS, thread_name),
 	                   OTEL_YAML_ARG_INT64(0, READERS, cpu_id, -1, OTEL_MAX_CPU_ID),
 	                   OTEL_YAML_ARG_INT64(0, READERS, export_interval, 100, 3600000),
@@ -238,7 +238,7 @@ int otel_meter_provider_create(struct otelc_meter *meter, std::vector<std::uniqu
 	if (OTEL_NULL(meter))
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
 
-	if (otel_resource_create("OpenTelemetry meter provider", OTEL_YAML_METER_PREFIX OTEL_YAML_PROVIDERS, resource, &(meter->err)) == OTELC_RET_ERROR)
+	if (otel_resource_create(meter->ctx, "OpenTelemetry meter provider", OTEL_YAML_METER_PREFIX OTEL_YAML_PROVIDERS, resource, &(meter->err)) == OTELC_RET_ERROR)
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
 
 	auto views_maybe = otel::make_unique_nothrow<otel_sdk_metrics::ViewRegistry>();
@@ -325,7 +325,7 @@ int otel_logger_provider_create(struct otelc_logger *logger, std::vector<std::un
 	if (OTEL_NULL(logger))
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
 
-	if (otel_resource_create("OpenTelemetry logger provider", OTEL_YAML_LOGGER_PREFIX OTEL_YAML_PROVIDERS, resource, &(logger->err)) == OTELC_RET_ERROR)
+	if (otel_resource_create(logger->ctx, "OpenTelemetry logger provider", OTEL_YAML_LOGGER_PREFIX OTEL_YAML_PROVIDERS, resource, &(logger->err)) == OTELC_RET_ERROR)
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
 
 	if (processors.empty())

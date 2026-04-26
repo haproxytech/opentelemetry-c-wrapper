@@ -43,9 +43,6 @@ typedef enum {
 #endif
 
 
-extern OTEL_YAML_DOC *otelc_fyd;
-
-
 OTEL_YAML_DOC *yaml_open(const char *file, char **err);
 void           yaml_close(OTEL_YAML_DOC **fyd);
 char          *yaml_read(const char *file, char **err);

@@ -18,9 +18,11 @@
 
 __CPLUSPLUS_DECL_BEGIN
 
-#define OTELC_DBG_METER(l,h,p)                                          \
-	OTELC_DBG_STRUCT(_##l, h, h " %p:{ %p:\"%s\" %p:\"%s\" }", (p), \
-	                 (p)->err, OTELC_STR_ARG((p)->err), (p)->scope_name, OTELC_STR_ARG((p)->scope_name))
+#define OTELC_DBG_METER(l,h,p)                                                \
+	OTELC_DBG_STRUCT(_##l, h, h " %p:{ %p:\"%s\" %p:\"%s\" %p %p }", (p), \
+	                 (p)->err, OTELC_STR_ARG((p)->err),                   \
+	                 (p)->scope_name, OTELC_STR_ARG((p)->scope_name),     \
+			 (p)->ops, (p)->ctx)
 
 #define OTELC_DBG_METRIC_OBSERVABLE_CB(l,h,p) \
 	OTELC_DBG_STRUCT(_##l, h, h " %p:{ %p %p %p }", (p), (p)->func, (p)->value, (p)->data)
@@ -405,6 +407,7 @@ struct otelc_meter {
 	char                         *err;        /* Character array containing the last library error. */
 	char                         *scope_name; /* Meter instrumentation scope name. */
 	const struct otelc_meter_ops *ops;        /* Pointer to the operations vtable. */
+	const struct otelc_ctx       *ctx;        /* Owning library context; provides the YAML configuration. */
 };
 
 
@@ -413,21 +416,23 @@ struct otelc_meter {
  *   otelc_meter_create - creates and returns a new meter instance
  *
  * SYNOPSIS
- *   struct otelc_meter *otelc_meter_create(char **err)
+ *   struct otelc_meter *otelc_meter_create(const struct otelc_ctx *ctx, char **err)
  *
  * ARGUMENTS
+ *   ctx - context returned by otelc_init()
  *   err - address of a pointer to store an error message on failure
  *
  * DESCRIPTION
  *   Allocates and initializes a new meter instance by calling
  *   otel_meter_new().  On failure, an error message may be written
- *   to *err if provided.
+ *   to *err if provided.  The supplied context must be non-NULL and
+ *   is retained by the meter for later configuration lookups.
  *
  * RETURN VALUE
  *   Returns a pointer to a newly created meter instance on success, or
  *   nullptr on failure.
  */
-struct otelc_meter *otelc_meter_create(char **err);
+struct otelc_meter *otelc_meter_create(const struct otelc_ctx *ctx, char **err);
 
 /***
  * NAME

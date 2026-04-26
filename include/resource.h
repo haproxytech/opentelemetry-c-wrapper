@@ -16,7 +16,7 @@
 #ifndef _OPENTELEMETRY_C_WRAPPER_RESOURCE_H_
 #define _OPENTELEMETRY_C_WRAPPER_RESOURCE_H_
 
-int  otel_resource_create(const char *desc, const char *path, otel_sdk_resource::Resource &resource, char **err);
+int  otel_resource_create(const struct otelc_ctx *ctx, const char *desc, const char *path, otel_sdk_resource::Resource &resource, char **err);
 
 #ifdef DEBUG
 void otel_debug_attributes(const otel_sdk_resource::ResourceAttributes &attributes, const char *msg);

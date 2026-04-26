@@ -705,7 +705,7 @@ static int otel_tracer_start(struct otelc_tracer *tracer)
 	if (OTEL_NULL(tracer))
 		OTELC_RETURN_INT(retval);
 
-	retval = yaml_find(otelc_fyd, &(tracer->err), 1, "OpenTelemetry tracer instrumentation scope", OTEL_YAML_TRACER_PREFIX "/scope_name", scope_name, sizeof(scope_name));
+	retval = yaml_find(tracer->ctx->fyd, &(tracer->err), 1, "OpenTelemetry tracer instrumentation scope", OTEL_YAML_TRACER_PREFIX "/scope_name", scope_name, sizeof(scope_name));
 	if (retval < 1)
 		OTELC_RETURN_INT(retval);
 
@@ -717,12 +717,12 @@ static int otel_tracer_start(struct otelc_tracer *tracer)
 		OTELC_RETURN_INT(retval);
 
 	/* Build processors and exporters from YAML configuration. */
-	if (yaml_is_sequence(otelc_fyd, OTEL_YAML_TRACER_PREFIX OTEL_YAML_PROCESSORS)) {
-		const int count = yaml_get_sequence_len(otelc_fyd, &(tracer->err), OTEL_YAML_TRACER_PREFIX OTEL_YAML_PROCESSORS);
+	if (yaml_is_sequence(tracer->ctx->fyd, OTEL_YAML_TRACER_PREFIX OTEL_YAML_PROCESSORS)) {
+		const int count = yaml_get_sequence_len(tracer->ctx->fyd, &(tracer->err), OTEL_YAML_TRACER_PREFIX OTEL_YAML_PROCESSORS);
 		if (count < 0)
 			OTELC_RETURN_INT(OTELC_RET_ERROR);
 
-		int count_exporters = yaml_get_sequence_len(otelc_fyd, &(tracer->err), OTEL_YAML_TRACER_PREFIX OTEL_YAML_EXPORTERS);
+		int count_exporters = yaml_get_sequence_len(tracer->ctx->fyd, &(tracer->err), OTEL_YAML_TRACER_PREFIX OTEL_YAML_EXPORTERS);
 		if (count_exporters < 0)
 			count_exporters = 0;
 
@@ -732,18 +732,18 @@ static int otel_tracer_start(struct otelc_tracer *tracer)
 			std::unique_ptr<otel_sdk_trace::SpanProcessor> processor;
 			char                                           processor_name[OTEL_YAML_BUFSIZ], exporter_name[OTEL_YAML_BUFSIZ] = "";
 
-			if (yaml_get_sequence_value(otelc_fyd, &(tracer->err), OTEL_YAML_TRACER_PREFIX OTEL_YAML_PROCESSORS, i, processor_name, sizeof(processor_name)) != 1)
+			if (yaml_get_sequence_value(tracer->ctx->fyd, &(tracer->err), OTEL_YAML_TRACER_PREFIX OTEL_YAML_PROCESSORS, i, processor_name, sizeof(processor_name)) != 1)
 				OTELC_RETURN_INT(OTELC_RET_ERROR);
 
-			if (!yaml_is_sequence(otelc_fyd, OTEL_YAML_TRACER_PREFIX OTEL_YAML_EXPORTERS)) {
+			if (!yaml_is_sequence(tracer->ctx->fyd, OTEL_YAML_TRACER_PREFIX OTEL_YAML_EXPORTERS)) {
 				/* Do nothing. */
 			}
 			else if (i < count_exporters) {
-				if (yaml_get_sequence_value(otelc_fyd, &(tracer->err), OTEL_YAML_TRACER_PREFIX OTEL_YAML_EXPORTERS, i, exporter_name, sizeof(exporter_name)) != 1)
+				if (yaml_get_sequence_value(tracer->ctx->fyd, &(tracer->err), OTEL_YAML_TRACER_PREFIX OTEL_YAML_EXPORTERS, i, exporter_name, sizeof(exporter_name)) != 1)
 					OTELC_RETURN_INT(OTELC_RET_ERROR);
 			}
 			else if (count_exporters > 0) {
-				if (yaml_get_sequence_value(otelc_fyd, &(tracer->err), OTEL_YAML_TRACER_PREFIX OTEL_YAML_EXPORTERS, count_exporters - 1, exporter_name, sizeof(exporter_name)) != 1)
+				if (yaml_get_sequence_value(tracer->ctx->fyd, &(tracer->err), OTEL_YAML_TRACER_PREFIX OTEL_YAML_EXPORTERS, count_exporters - 1, exporter_name, sizeof(exporter_name)) != 1)
 					OTELC_RETURN_INT(OTELC_RET_ERROR);
 			}
 
@@ -977,28 +977,35 @@ static struct otelc_tracer *otel_tracer_new(void)
  *   otelc_tracer_create - creates and returns a new tracer instance
  *
  * SYNOPSIS
- *   struct otelc_tracer *otelc_tracer_create(char **err)
+ *   struct otelc_tracer *otelc_tracer_create(const struct otelc_ctx *ctx, char **err)
  *
  * ARGUMENTS
+ *   ctx - context returned by otelc_init()
  *   err - address of a pointer to store an error message on failure
  *
  * DESCRIPTION
  *   Allocates and initializes a new tracer instance by calling
  *   otel_tracer_new().  On failure, an error message may be written
- *   to *err if provided.
+ *   to *err if provided.  The supplied context must be non-NULL and
+ *   is retained by the tracer for later configuration lookups.
  *
  * RETURN VALUE
  *   Returns a pointer to a newly created tracer instance on success, or nullptr
  *   on failure.
  */
-struct otelc_tracer *otelc_tracer_create(char **err)
+struct otelc_tracer *otelc_tracer_create(const struct otelc_ctx *ctx, char **err)
 {
 	struct otelc_tracer *retptr = nullptr;
 
-	OTELC_FUNC("%p:%p", OTELC_DPTR_ARGS(err));
+	OTELC_FUNC("%p, %p:%p", ctx, OTELC_DPTR_ARGS(err));
+
+	if (OTEL_NULL(ctx))
+		OTEL_ERR_RETURN_PTR("Invalid context");
 
 	if (OTEL_NULL(retptr = otel_tracer_new()))
 		OTEL_ERR_RETURN_PTR(OTEL_ERROR_MSG_ENOMEM("tracer"));
+
+	retptr->ctx = ctx;
 
 #if defined(OTELC_USE_THREAD_SHARED_HANDLE) && !defined(OTELC_USE_STATIC_HANDLE)
 	if (otel_tracer_handle_init() == OTELC_RET_ERROR) {

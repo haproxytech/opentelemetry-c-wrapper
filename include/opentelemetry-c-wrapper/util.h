@@ -138,6 +138,14 @@ struct otelc_tracer;
 struct otelc_meter;
 struct otelc_logger;
 
+/***
+ * Opaque library context.  Owns a parsed YAML configuration document and a
+ * caller-provided name and acts as the parent object for tracer, meter, and
+ * logger instances created against it.  Multiple contexts may coexist within
+ * one process, each with its own configuration and its own set of providers.
+ */
+struct otelc_ctx;
+
 
 #ifdef OTELC_DBG_MEM
 typedef void *(*otelc_ext_malloc_t)(const char *, int, size_t);
@@ -182,8 +190,9 @@ struct otelc_kv       *otelc_kv_new(size_t n);
 int                    otelc_kv_add(struct otelc_kv **kv, size_t *kv_len, const char *key, const void *data, size_t data_size);
 void                   otelc_kv_destroy(struct otelc_kv **kv, size_t n);
 
-int                    otelc_init(const char *cfgfile, char **err);
-void                   otelc_deinit(struct otelc_tracer **tracer, struct otelc_meter **meter, struct otelc_logger **logger);
+struct otelc_ctx      *otelc_init(const char *cfgfile, const char *name, char **err);
+void                   otelc_close_cfg(struct otelc_ctx *ctx);
+void                   otelc_deinit(struct otelc_ctx **ctx, struct otelc_tracer **tracer, struct otelc_meter **meter, struct otelc_logger **logger);
 int64_t                otelc_processor_dropped_count(int type);
 
 void                   otelc_log_set_handler(otelc_log_handler_cb_t handler, void *ctx, bool forward_attr);

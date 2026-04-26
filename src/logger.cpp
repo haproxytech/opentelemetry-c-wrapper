@@ -602,7 +602,7 @@ static int otel_logger_start(struct otelc_logger *logger)
 	if (OTEL_NULL(logger))
 		OTELC_RETURN_INT(retval);
 
-	retval = yaml_find(otelc_fyd, &(logger->err), 1, "OpenTelemetry logger scope", OTEL_YAML_LOGGER_PREFIX "/scope_name", scope_name, sizeof(scope_name));
+	retval = yaml_find(logger->ctx->fyd, &(logger->err), 1, "OpenTelemetry logger scope", OTEL_YAML_LOGGER_PREFIX "/scope_name", scope_name, sizeof(scope_name));
 	if (retval < 1)
 		OTELC_RETURN_INT(retval);
 
@@ -610,7 +610,7 @@ static int otel_logger_start(struct otelc_logger *logger)
 	if (OTEL_NULL(logger->scope_name))
 		OTEL_LOGGER_RETURN_INT(OTEL_ERROR_MSG_ENOMEM("scope name"));
 
-	if (yaml_find(otelc_fyd, &(logger->err), 0, "OpenTelemetry logger min severity", OTEL_YAML_LOGGER_PREFIX "/min_severity", min_severity, sizeof(min_severity)) > 0) {
+	if (yaml_find(logger->ctx->fyd, &(logger->err), 0, "OpenTelemetry logger min severity", OTEL_YAML_LOGGER_PREFIX "/min_severity", min_severity, sizeof(min_severity)) > 0) {
 		const auto severity = otelc_logger_severity_parse(min_severity);
 		if (severity == OTELC_LOG_SEVERITY_INVALID)
 			OTEL_LOGGER_RETURN_INT("'%s': invalid minimum log severity level", min_severity);
@@ -619,12 +619,12 @@ static int otel_logger_start(struct otelc_logger *logger)
 	}
 
 	/* Build processors and exporters from YAML configuration. */
-	if (yaml_is_sequence(otelc_fyd, OTEL_YAML_LOGGER_PREFIX OTEL_YAML_PROCESSORS)) {
-		const int count = yaml_get_sequence_len(otelc_fyd, &(logger->err), OTEL_YAML_LOGGER_PREFIX OTEL_YAML_PROCESSORS);
+	if (yaml_is_sequence(logger->ctx->fyd, OTEL_YAML_LOGGER_PREFIX OTEL_YAML_PROCESSORS)) {
+		const int count = yaml_get_sequence_len(logger->ctx->fyd, &(logger->err), OTEL_YAML_LOGGER_PREFIX OTEL_YAML_PROCESSORS);
 		if (count < 0)
 			OTELC_RETURN_INT(OTELC_RET_ERROR);
 
-		int count_exporters = yaml_get_sequence_len(otelc_fyd, &(logger->err), OTEL_YAML_LOGGER_PREFIX OTEL_YAML_EXPORTERS);
+		int count_exporters = yaml_get_sequence_len(logger->ctx->fyd, &(logger->err), OTEL_YAML_LOGGER_PREFIX OTEL_YAML_EXPORTERS);
 		if (count_exporters < 0)
 			count_exporters = 0;
 
@@ -633,18 +633,18 @@ static int otel_logger_start(struct otelc_logger *logger)
 			std::unique_ptr<otel_sdk_logs::LogRecordProcessor> processor;
 			char                                               processor_name[OTEL_YAML_BUFSIZ], exporter_name[OTEL_YAML_BUFSIZ] = "";
 
-			if (yaml_get_sequence_value(otelc_fyd, &(logger->err), OTEL_YAML_LOGGER_PREFIX OTEL_YAML_PROCESSORS, i, processor_name, sizeof(processor_name)) != 1)
+			if (yaml_get_sequence_value(logger->ctx->fyd, &(logger->err), OTEL_YAML_LOGGER_PREFIX OTEL_YAML_PROCESSORS, i, processor_name, sizeof(processor_name)) != 1)
 				OTELC_RETURN_INT(OTELC_RET_ERROR);
 
-			if (!yaml_is_sequence(otelc_fyd, OTEL_YAML_LOGGER_PREFIX OTEL_YAML_EXPORTERS)) {
+			if (!yaml_is_sequence(logger->ctx->fyd, OTEL_YAML_LOGGER_PREFIX OTEL_YAML_EXPORTERS)) {
 				/* Do nothing. */
 			}
 			else if (i < count_exporters) {
-				if (yaml_get_sequence_value(otelc_fyd, &(logger->err), OTEL_YAML_LOGGER_PREFIX OTEL_YAML_EXPORTERS, i, exporter_name, sizeof(exporter_name)) != 1)
+				if (yaml_get_sequence_value(logger->ctx->fyd, &(logger->err), OTEL_YAML_LOGGER_PREFIX OTEL_YAML_EXPORTERS, i, exporter_name, sizeof(exporter_name)) != 1)
 					OTELC_RETURN_INT(OTELC_RET_ERROR);
 			}
 			else if (count_exporters > 0) {
-				if (yaml_get_sequence_value(otelc_fyd, &(logger->err), OTEL_YAML_LOGGER_PREFIX OTEL_YAML_EXPORTERS, count_exporters - 1, exporter_name, sizeof(exporter_name)) != 1)
+				if (yaml_get_sequence_value(logger->ctx->fyd, &(logger->err), OTEL_YAML_LOGGER_PREFIX OTEL_YAML_EXPORTERS, count_exporters - 1, exporter_name, sizeof(exporter_name)) != 1)
 					OTELC_RETURN_INT(OTELC_RET_ERROR);
 			}
 
@@ -798,9 +798,10 @@ static struct otelc_logger *otel_logger_new(void)
  *   otelc_logger_create - creates and returns a new logger instance
  *
  * SYNOPSIS
- *   struct otelc_logger *otelc_logger_create(char **err)
+ *   struct otelc_logger *otelc_logger_create(const struct otelc_ctx *ctx, char **err)
  *
  * ARGUMENTS
+ *   ctx - context returned by otelc_init()
  *   err - address of a pointer to store an error message on failure
  *
  * DESCRIPTION
@@ -809,20 +810,26 @@ static struct otelc_logger *otel_logger_new(void)
  *   OTELC_LOG_SEVERITY_TRACE (all severity levels allowed) and can be
  *   overridden via the YAML configuration or changed at runtime through the
  *   set_min_severity operation.  On failure, an error message may be written
- *   to *err if provided.
+ *   to *err if provided.  The supplied context must be non-NULL and
+ *   is retained by the logger for later configuration lookups.
  *
  * RETURN VALUE
  *   Returns a pointer to a newly created logger instance on success, or nullptr
  *   on failure.
  */
-struct otelc_logger *otelc_logger_create(char **err)
+struct otelc_logger *otelc_logger_create(const struct otelc_ctx *ctx, char **err)
 {
 	struct otelc_logger *retptr = nullptr;
 
-	OTELC_FUNC("%p:%p", OTELC_DPTR_ARGS(err));
+	OTELC_FUNC("%p, %p:%p", ctx, OTELC_DPTR_ARGS(err));
+
+	if (OTEL_NULL(ctx))
+		OTEL_ERR_RETURN_PTR("Invalid context");
 
 	if (OTEL_NULL(retptr = otel_logger_new()))
 		OTEL_ERR_RETURN_PTR(OTEL_ERROR_MSG_ENOMEM("logger"));
+
+	retptr->ctx = ctx;
 
 	OTELC_DBG_LOGGER(OTEL, "logger", retptr);
 

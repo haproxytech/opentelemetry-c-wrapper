@@ -111,9 +111,10 @@ static int otel_resource_detector(otel_sdk_resource::ResourceAttributes &attribu
  *   otel_resource_create - creates a resource from environment and YAML
  *
  * SYNOPSIS
- *   int otel_resource_create(const char *desc, const char *path, otel_sdk_resource::Resource &resource, char **err)
+ *   int otel_resource_create(const struct otelc_ctx *ctx, const char *desc, const char *path, otel_sdk_resource::Resource &resource, char **err)
  *
  * ARGUMENTS
+ *   ctx      - library context providing the YAML configuration
  *   desc     - description of the node, used in error messages
  *   path     - the path to the node in the YAML document
  *   resource - a reference to store the created resource
@@ -128,22 +129,24 @@ static int otel_resource_detector(otel_sdk_resource::ResourceAttributes &attribu
  *   Returns the number of attributes added from the YAML file,
  *   or OTELC_RET_ERROR on failure.
  */
-int otel_resource_create(const char *desc, const char *path, otel_sdk_resource::Resource &resource, char **err)
+int otel_resource_create(const struct otelc_ctx *ctx, const char *desc, const char *path, otel_sdk_resource::Resource &resource, char **err)
 {
 	otel_sdk_resource::ResourceAttributes  res_attr{};
 	struct otelc_text_map                 *resources = nullptr;
 	int                                    rc, retval = 0;
 
-	OTELC_FUNC("\"%s\", \"%s\", <resource>, %p:%p", OTELC_STR_ARG(desc), OTELC_STR_ARG(path), OTELC_DPTR_ARGS(err));
+	OTELC_FUNC("%p, \"%s\", \"%s\", <resource>, %p:%p", ctx, OTELC_STR_ARG(desc), OTELC_STR_ARG(path), OTELC_DPTR_ARGS(err));
 
-	if (OTEL_NULL(desc))
+	if (OTEL_NULL(ctx))
+		OTEL_ERR_RETURN_INT("Invalid context");
+	else if (OTEL_NULL(desc))
 		OTEL_ERR_RETURN_INT("Resource description not specified");
 	else if (OTEL_NULL(path))
 		OTEL_ERR_RETURN_INT("Resource path not specified");
 
 	(void)otel_resource_detector(res_attr);
 
-	rc = yaml_get_node(otelc_fyd, err, 0, desc, path, nullptr, OTEL_YAML_ARG_MAP(0, PROVIDERS, resources), OTEL_YAML_END);
+	rc = yaml_get_node(ctx->fyd, err, 0, desc, path, nullptr, OTEL_YAML_ARG_MAP(0, PROVIDERS, resources), OTEL_YAML_END);
 	OTEL_DEFER_DPTR_FREE(struct otelc_text_map, resources, otelc_text_map_destroy);
 	if (rc == OTELC_RET_ERROR)
 		OTELC_RETURN_INT(OTELC_RET_ERROR);

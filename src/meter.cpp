@@ -971,7 +971,7 @@ static int otel_meter_start(struct otelc_meter *meter)
 	if (OTEL_NULL(meter))
 		OTELC_RETURN_INT(retval);
 
-	retval = yaml_find(otelc_fyd, &(meter->err), 1, "OpenTelemetry meter instrumentation scope", OTEL_YAML_METER_PREFIX "/scope_name", scope_name, sizeof(scope_name));
+	retval = yaml_find(meter->ctx->fyd, &(meter->err), 1, "OpenTelemetry meter instrumentation scope", OTEL_YAML_METER_PREFIX "/scope_name", scope_name, sizeof(scope_name));
 	if (retval < 1)
 		OTELC_RETURN_INT(retval);
 
@@ -980,12 +980,12 @@ static int otel_meter_start(struct otelc_meter *meter)
 		OTEL_METER_RETURN_INT(OTEL_ERROR_MSG_ENOMEM("scope name"));
 
 	/* Build exporters and readers from YAML configuration. */
-	if (yaml_is_sequence(otelc_fyd, OTEL_YAML_METER_PREFIX OTEL_YAML_EXPORTERS)) {
-		const int count = yaml_get_sequence_len(otelc_fyd, &(meter->err), OTEL_YAML_METER_PREFIX OTEL_YAML_EXPORTERS);
+	if (yaml_is_sequence(meter->ctx->fyd, OTEL_YAML_METER_PREFIX OTEL_YAML_EXPORTERS)) {
+		const int count = yaml_get_sequence_len(meter->ctx->fyd, &(meter->err), OTEL_YAML_METER_PREFIX OTEL_YAML_EXPORTERS);
 		if (count < 0)
 			OTELC_RETURN_INT(OTELC_RET_ERROR);
 
-		int count_readers = yaml_get_sequence_len(otelc_fyd, &(meter->err), OTEL_YAML_METER_PREFIX OTEL_YAML_READERS);
+		int count_readers = yaml_get_sequence_len(meter->ctx->fyd, &(meter->err), OTEL_YAML_METER_PREFIX OTEL_YAML_READERS);
 		if (count_readers < 0)
 			count_readers = 0;
 
@@ -994,18 +994,18 @@ static int otel_meter_start(struct otelc_meter *meter)
 			std::unique_ptr<otel_sdk_metrics::PeriodicExportingMetricReader> reader;
 			char                                                             exporter_name[OTEL_YAML_BUFSIZ], reader_name[OTEL_YAML_BUFSIZ] = "";
 
-			if (yaml_get_sequence_value(otelc_fyd, &(meter->err), OTEL_YAML_METER_PREFIX OTEL_YAML_EXPORTERS, i, exporter_name, sizeof(exporter_name)) != 1)
+			if (yaml_get_sequence_value(meter->ctx->fyd, &(meter->err), OTEL_YAML_METER_PREFIX OTEL_YAML_EXPORTERS, i, exporter_name, sizeof(exporter_name)) != 1)
 				OTELC_RETURN_INT(OTELC_RET_ERROR);
 
-			if (!yaml_is_sequence(otelc_fyd, OTEL_YAML_METER_PREFIX OTEL_YAML_READERS)) {
+			if (!yaml_is_sequence(meter->ctx->fyd, OTEL_YAML_METER_PREFIX OTEL_YAML_READERS)) {
 				/* Do nothing. */
 			}
 			else if (i < count_readers) {
-				if (yaml_get_sequence_value(otelc_fyd, &(meter->err), OTEL_YAML_METER_PREFIX OTEL_YAML_READERS, i, reader_name, sizeof(reader_name)) != 1)
+				if (yaml_get_sequence_value(meter->ctx->fyd, &(meter->err), OTEL_YAML_METER_PREFIX OTEL_YAML_READERS, i, reader_name, sizeof(reader_name)) != 1)
 					OTELC_RETURN_INT(OTELC_RET_ERROR);
 			}
 			else if (count_readers > 0) {
-				if (yaml_get_sequence_value(otelc_fyd, &(meter->err), OTEL_YAML_METER_PREFIX OTEL_YAML_READERS, count_readers - 1, reader_name, sizeof(reader_name)) != 1)
+				if (yaml_get_sequence_value(meter->ctx->fyd, &(meter->err), OTEL_YAML_METER_PREFIX OTEL_YAML_READERS, count_readers - 1, reader_name, sizeof(reader_name)) != 1)
 					OTELC_RETURN_INT(OTELC_RET_ERROR);
 			}
 
@@ -1216,28 +1216,35 @@ static struct otelc_meter *otel_meter_new(void)
  *   otelc_meter_create - creates and returns a new meter instance
  *
  * SYNOPSIS
- *   struct otelc_meter *otelc_meter_create(char **err)
+ *   struct otelc_meter *otelc_meter_create(const struct otelc_ctx *ctx, char **err)
  *
  * ARGUMENTS
+ *   ctx - context returned by otelc_init()
  *   err - address of a pointer to store an error message on failure
  *
  * DESCRIPTION
  *   Allocates and initializes a new meter instance by calling
  *   otel_meter_new().  On failure, an error message may be written
- *   to *err if provided.
+ *   to *err if provided.  The supplied context must be non-NULL and
+ *   is retained by the meter for later configuration lookups.
  *
  * RETURN VALUE
  *   Returns a pointer to a newly created meter instance on success, or nullptr
  *   on failure.
  */
-struct otelc_meter *otelc_meter_create(char **err)
+struct otelc_meter *otelc_meter_create(const struct otelc_ctx *ctx, char **err)
 {
 	struct otelc_meter *retptr = nullptr;
 
-	OTELC_FUNC("%p:%p", OTELC_DPTR_ARGS(err));
+	OTELC_FUNC("%p, %p:%p", ctx, OTELC_DPTR_ARGS(err));
+
+	if (OTEL_NULL(ctx))
+		OTEL_ERR_RETURN_PTR("Invalid context");
 
 	if (OTEL_NULL(retptr = otel_meter_new()))
 		OTEL_ERR_RETURN_PTR(OTEL_ERROR_MSG_ENOMEM("meter"));
+
+	retptr->ctx = ctx;
 
 #ifndef OTELC_USE_STATIC_HANDLE
 	if (OTEL_NULL(otel_instrument))

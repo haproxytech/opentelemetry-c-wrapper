@@ -18,9 +18,11 @@
 
 __CPLUSPLUS_DECL_BEGIN
 
-#define OTELC_DBG_TRACER(l,h,p)                                         \
-	OTELC_DBG_STRUCT(_##l, h, h " %p:{ %p:\"%s\" %p:\"%s\" }", (p), \
-	                 (p)->err, OTELC_STR_ARG((p)->err), (p)->scope_name, OTELC_STR_ARG((p)->scope_name))
+#define OTELC_DBG_TRACER(l,h,p)                                               \
+	OTELC_DBG_STRUCT(_##l, h, h " %p:{ %p:\"%s\" %p:\"%s\" %p %p }", (p), \
+	                 (p)->err, OTELC_STR_ARG((p)->err),                   \
+	                 (p)->scope_name, OTELC_STR_ARG((p)->scope_name),     \
+	                 (p)->ops, (p)->ctx)
 
 /***
  * The tracer operations vtable.
@@ -257,6 +259,7 @@ struct otelc_tracer {
 	char                          *err;        /* Character array containing the last library error. */
 	char                          *scope_name; /* Tracer instrumentation scope name. */
 	const struct otelc_tracer_ops *ops;        /* Pointer to the operations vtable. */
+	const struct otelc_ctx        *ctx;        /* Owning library context; provides the YAML configuration. */
 };
 
 
@@ -265,21 +268,23 @@ struct otelc_tracer {
  *   otelc_tracer_create - creates and returns a new tracer instance
  *
  * SYNOPSIS
- *   struct otelc_tracer *otelc_tracer_create(char **err)
+ *   struct otelc_tracer *otelc_tracer_create(const struct otelc_ctx *ctx, char **err)
  *
  * ARGUMENTS
+ *   ctx - context returned by otelc_init()
  *   err - address of a pointer to store an error message on failure
  *
  * DESCRIPTION
  *   Allocates and initializes a new tracer instance by calling
  *   otel_tracer_new().  On failure, an error message may be written
- *   to *err if provided.
+ *   to *err if provided.  The supplied context must be non-NULL and
+ *   is retained by the tracer for later configuration lookups.
  *
  * RETURN VALUE
  *   Returns a pointer to a newly created tracer instance on success, or nullptr
  *   on failure.
  */
-struct otelc_tracer *otelc_tracer_create(char **err);
+struct otelc_tracer *otelc_tracer_create(const struct otelc_ctx *ctx, char **err);
 
 __CPLUSPLUS_DECL_END
 #endif /* OPENTELEMETRY_C_WRAPPER_TRACER_H */
