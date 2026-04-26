@@ -102,10 +102,10 @@ static void observable_int64_cb_2(struct otelc_metric_observable_cb *data)
  *   test_meter_create_destroy - tests meter creation and destruction
  *
  * SYNOPSIS
- *   static void test_meter_create_destroy(void)
+ *   static void test_meter_create_destroy(struct otelc_ctx *ctx)
  *
  * ARGUMENTS
- *   This function takes no arguments.
+ *   ctx - library context returned by otelc_init()
  *
  * DESCRIPTION
  *   Verifies that a meter can be created and destroyed without errors.  Also
@@ -114,13 +114,13 @@ static void observable_int64_cb_2(struct otelc_metric_observable_cb *data)
  * RETURN VALUE
  *   This function does not return a value.
  */
-static void test_meter_create_destroy(void)
+static void test_meter_create_destroy(struct otelc_ctx *ctx)
 {
 	struct otelc_meter *meter;
 	char               *err = NULL;
 	int                 retval = TEST_FAIL;
 
-	meter = otelc_meter_create(&err);
+	meter = otelc_meter_create(ctx, &err);
 	if (_nNULL(meter)) {
 		if (_nNULL(meter->ops))
 			retval = TEST_PASS;
@@ -142,10 +142,10 @@ static void test_meter_create_destroy(void)
  *   test_meter_create_err_null - tests meter creation with NULL err pointer
  *
  * SYNOPSIS
- *   static void test_meter_create_err_null(void)
+ *   static void test_meter_create_err_null(struct otelc_ctx *ctx)
  *
  * ARGUMENTS
- *   This function takes no arguments.
+ *   ctx - library context returned by otelc_init()
  *
  * DESCRIPTION
  *   Verifies that a meter can be created when the err argument is NULL.
@@ -153,12 +153,12 @@ static void test_meter_create_destroy(void)
  * RETURN VALUE
  *   This function does not return a value.
  */
-static void test_meter_create_err_null(void)
+static void test_meter_create_err_null(struct otelc_ctx *ctx)
 {
 	struct otelc_meter *meter;
 	int                 retval = TEST_FAIL;
 
-	meter = otelc_meter_create(NULL);
+	meter = otelc_meter_create(ctx, NULL);
 	if (_nNULL(meter)) {
 		OTELC_OPSR(meter, destroy);
 
@@ -1444,6 +1444,7 @@ static void test_shutdown(struct otelc_meter *meter)
  */
 int main(int argc, char **argv)
 {
+	struct otelc_ctx   *ctx   = NULL;
 	struct otelc_meter *meter = NULL;
 	const char         *cfg_file;
 	char               *otel_err = NULL;
@@ -1463,7 +1464,10 @@ int main(int argc, char **argv)
 	retval = EX_OK;
 	OTELC_LOG(stdout, "");
 
-	if (otelc_init(cfg_file, &otel_err) == OTELC_RET_ERROR) {
+	test_set_ctx(&ctx);
+
+	ctx = otelc_init(cfg_file, test_get_ctx_name(), &otel_err);
+	if (_NULL(ctx)) {
 		OTELC_LOG(stderr, "ERROR: %s", _NULL(otel_err) ? "Unable to init library" : otel_err);
 
 		return test_done(EX_SOFTWARE, otel_err);
@@ -1475,13 +1479,13 @@ int main(int argc, char **argv)
 	 * down global state (instrument/view maps).
 	 */
 	OTELC_LOG(stdout, "[meter lifecycle]");
-	test_meter_create_destroy();
-	test_meter_create_err_null();
+	test_meter_create_destroy(ctx);
+	test_meter_create_err_null(ctx);
 
 	/***
 	 * Create and start the main meter for the remaining tests.
 	 */
-	meter = otelc_meter_create(&otel_err);
+	meter = otelc_meter_create(ctx, &otel_err);
 	if (_NULL(meter)) {
 		OTELC_LOG(stderr, "ERROR: %s", _NULL(otel_err) ? "Unable to create meter" : otel_err);
 
