@@ -21,10 +21,10 @@
  *   test_logger_create_destroy - tests logger creation and destruction
  *
  * SYNOPSIS
- *   static void test_logger_create_destroy(void)
+ *   static void test_logger_create_destroy(struct otelc_ctx *ctx)
  *
  * ARGUMENTS
- *   This function takes no arguments.
+ *   ctx - library context returned by otelc_init()
  *
  * DESCRIPTION
  *   Verifies that a logger can be created and destroyed without errors.  Also
@@ -33,13 +33,13 @@
  * RETURN VALUE
  *   This function does not return a value.
  */
-static void test_logger_create_destroy(void)
+static void test_logger_create_destroy(struct otelc_ctx *ctx)
 {
 	struct otelc_logger *logger;
 	char                *err = NULL;
 	int                  retval = TEST_FAIL;
 
-	logger = otelc_logger_create(&err);
+	logger = otelc_logger_create(ctx, &err);
 	if (_nNULL(logger)) {
 		if (_nNULL(logger->ops))
 			retval = TEST_PASS;
@@ -61,10 +61,10 @@ static void test_logger_create_destroy(void)
  *   test_logger_create_err_null - tests logger creation with NULL err pointer
  *
  * SYNOPSIS
- *   static void test_logger_create_err_null(void)
+ *   static void test_logger_create_err_null(struct otelc_ctx *ctx)
  *
  * ARGUMENTS
- *   This function takes no arguments.
+ *   ctx - library context returned by otelc_init()
  *
  * DESCRIPTION
  *   Verifies that a logger can be created when the err argument is NULL.
@@ -72,12 +72,12 @@ static void test_logger_create_destroy(void)
  * RETURN VALUE
  *   This function does not return a value.
  */
-static void test_logger_create_err_null(void)
+static void test_logger_create_err_null(struct otelc_ctx *ctx)
 {
 	struct otelc_logger *logger;
 	int                  retval = TEST_FAIL;
 
-	logger = otelc_logger_create(NULL);
+	logger = otelc_logger_create(ctx, NULL);
 	if (_nNULL(logger)) {
 		OTELC_OPSR(logger, destroy);
 
@@ -1013,6 +1013,7 @@ static void test_shutdown(struct otelc_logger *logger)
  */
 int main(int argc, char **argv)
 {
+	struct otelc_ctx    *ctx    = NULL;
 	struct otelc_logger *logger = NULL;
 	struct otelc_tracer *tracer = NULL;
 	struct otelc_span   *span = NULL;
@@ -1027,7 +1028,10 @@ int main(int argc, char **argv)
 	retval = EX_OK;
 	OTELC_LOG(stdout, "");
 
-	if (otelc_init(cfg_file, &otel_err) == OTELC_RET_ERROR) {
+	test_set_ctx(&ctx);
+
+	ctx = otelc_init(cfg_file, test_get_ctx_name(), &otel_err);
+	if (_NULL(ctx)) {
 		OTELC_LOG(stderr, "ERROR: %s", _NULL(otel_err) ? "Unable to init library" : otel_err);
 
 		return test_done(EX_SOFTWARE, otel_err);
@@ -1039,13 +1043,13 @@ int main(int argc, char **argv)
 	 * the global otel_logger atomic.
 	 */
 	OTELC_LOG(stdout, "[logger lifecycle]");
-	test_logger_create_destroy();
-	test_logger_create_err_null();
+	test_logger_create_destroy(ctx);
+	test_logger_create_err_null(ctx);
 
 	/***
 	 * Create and start the main logger for the remaining tests.
 	 */
-	logger = otelc_logger_create(&otel_err);
+	logger = otelc_logger_create(ctx, &otel_err);
 	if (_NULL(logger)) {
 		OTELC_LOG(stderr, "ERROR: %s", _NULL(otel_err) ? "Unable to create logger" : otel_err);
 
@@ -1102,7 +1106,7 @@ int main(int argc, char **argv)
 	OTELC_LOG(stdout, "");
 	OTELC_LOG(stdout, "[log with span context]");
 
-	tracer = otelc_tracer_create(&otel_err);
+	tracer = otelc_tracer_create(ctx, &otel_err);
 	if (_NULL(tracer)) {
 		OTELC_LOG(stderr, "ERROR: %s", _NULL(otel_err) ? "Unable to create tracer" : otel_err);
 
