@@ -158,23 +158,25 @@ to a Jaeger instance reachable at a local IP address via OTLP/HTTP.
 
 int main(void)
 {
+    struct otelc_ctx    *ctx;
     struct otelc_tracer *tracer;
     struct otelc_span   *span;
     char                *err = NULL;
 
-    /* Initialize the library */
-    if (otelc_init("otel-cfg.yml", &err) != OTELC_RET_OK) {
+    /* Initialize the library; "default" selects the named signal entry */
+    ctx = otelc_init("otel-cfg.yml", "default", &err);
+    if (ctx == NULL) {
         fprintf(stderr, "Failed to init: %s\n", err);
         free(err);
         return 1;
     }
 
-    /* Create and start a tracer */
-    tracer = otelc_tracer_create(&err);
+    /* Create and start a tracer bound to the context */
+    tracer = otelc_tracer_create(ctx, &err);
     if (tracer == NULL) {
         fprintf(stderr, "Failed to create tracer: %s\n", err);
         free(err);
-        otelc_deinit(NULL, NULL, NULL);
+        otelc_deinit(&ctx, NULL, NULL, NULL);
         return 1;
     }
     tracer->ops->start(tracer);
@@ -184,8 +186,8 @@ int main(void)
     /* ... */
     span->ops->end(&span);
 
-    /* Clean up */
-    otelc_deinit(&tracer, NULL, NULL);
+    /* Clean up the tracer and the context */
+    otelc_deinit(&ctx, &tracer, NULL, NULL);
     return 0;
 }
 ```
@@ -199,14 +201,15 @@ int main(void)
 
 int main(void)
 {
+    struct otelc_ctx   *ctx;
     struct otelc_meter *meter;
     struct otelc_value  value;
     char               *err = NULL;
     int64_t             counter;
 
-    otelc_init("otel-cfg.yml", &err);
+    ctx = otelc_init("otel-cfg.yml", "default", &err);
 
-    meter = otelc_meter_create(&err);
+    meter = otelc_meter_create(ctx, &err);
     meter->ops->start(meter);
 
     counter = meter->ops->create_instrument(meter, "requests", "Total request count", "1", OTELC_METRIC_INSTRUMENT_COUNTER_UINT64, NULL);
@@ -215,7 +218,7 @@ int main(void)
     value.u.value_uint64 = 1;
     meter->ops->update_instrument(meter, counter, &value);
 
-    otelc_deinit(NULL, &meter, NULL);
+    otelc_deinit(&ctx, NULL, &meter, NULL);
     return 0;
 }
 ```
@@ -229,17 +232,18 @@ int main(void)
 
 int main(void)
 {
+    struct otelc_ctx    *ctx;
     struct otelc_logger *logger;
     char                *err = NULL;
 
-    otelc_init("otel-cfg.yml", &err);
+    ctx = otelc_init("otel-cfg.yml", "default", &err);
 
-    logger = otelc_logger_create(&err);
+    logger = otelc_logger_create(ctx, &err);
     logger->ops->start(logger);
 
     logger->ops->log_span(logger, OTELC_LOG_SEVERITY_INFO, 0, NULL, NULL, NULL, NULL, 0, "Application started successfully");
 
-    otelc_deinit(NULL, NULL, &logger);
+    otelc_deinit(&ctx, NULL, NULL, &logger);
     return 0;
 }
 ```
@@ -270,11 +274,21 @@ OTELC_OPSR(span, end);
 
 ### Lifecycle
 
-1. `otelc_init(cfgfile, &err)` -- parse the YAML configuration.
-2. `otelc_*_create(&err)` -- allocate a signal instance.
+1. `ctx = otelc_init(cfgfile, name, &err)` -- parse the YAML configuration
+   and create a library context.  The `name` selects which named signal
+   entry is loaded under each signal section; if no entry matches, the
+   `default` entry is used.
+2. `otelc_*_create(ctx, &err)` -- allocate a signal instance bound to the
+   context.
 3. `instance->ops->start(instance)` -- start the pipeline.
 4. *(use the signal)* -- create spans, record metrics, emit logs.
-5. `otelc_deinit(&tracer, &meter, &logger)` -- shut down and free.
+5. `otelc_deinit(&ctx, &tracer, &meter, &logger)` -- shut down and free
+   the context together with any registered signal instances.
+
+The library does not keep global state, so multiple contexts may coexist in
+the same process, each with its own configuration and named signal selection.
+The helper `otelc_close_cfg(ctx)` releases the parsed YAML document attached
+to a context independently of the providers.
 
 ### Return Conventions
 
@@ -303,6 +317,13 @@ The YAML file passed to `otelc_init()` contains these top-level sections:
 | `providers`    | Resource attributes (service name, etc.)      |
 | `signals`      | Binds the above components per signal type    |
 
+The `signals` section groups its `traces`, `metrics`, and `logs` subtrees
+by name, so a single configuration can hold several independent definitions
+per signal type.  When the library context is created, the `name` argument
+to `otelc_init()` selects the entry to load.  If no matching entry exists,
+the entry called `default` is used as a fallback; if neither is present,
+initialization fails.
+
 Minimal configuration exporting traces to stdout:
 
 ```yaml
@@ -326,12 +347,30 @@ providers:
 
 signals:
   traces:
-    scope_name: "my-application"
-    exporters:  my_exporter
-    samplers:   my_sampler
-    processors: my_processor
-    providers:  my_provider
+    default:
+      scope_name: "my-application"
+      exporters:  my_exporter
+      samplers:   my_sampler
+      processors: my_processor
+      providers:  my_provider
 ```
+
+The same `signals/traces/<name>` layout applies to `metrics` and `logs`.
+Multiple named entries can coexist:
+
+```yaml
+signals:
+  traces:
+    default:
+      scope_name: "my-application"
+      ...
+    debug:
+      scope_name: "my-application/debug"
+      ...
+```
+
+A program calling `otelc_init(cfgfile, "debug", &err)` then loads the
+`debug` entry; any other name falls back to `default`.
 
 A complete example covering all three signals is in `test/otel-cfg.yml`.
 
