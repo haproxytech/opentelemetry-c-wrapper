@@ -41,13 +41,15 @@
 int otel_tracer_provider_create(struct otelc_tracer *tracer, std::vector<std::unique_ptr<otel_sdk_trace::SpanProcessor>> &processors, std::unique_ptr<otel_sdk_trace::Sampler> &sampler, std::unique_ptr<otel_trace::TracerProvider> &provider)
 {
 	otel_sdk_resource::Resource resource{};
+	char                        path[OTEL_YAML_BUFSIZ];
 
 	OTELC_FUNC("%p, <processors>, <sampler>, <provider>", tracer);
 
 	if (OTEL_NULL(tracer))
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
 
-	if (otel_resource_create(tracer->ctx, "OpenTelemetry tracer provider", OTEL_YAML_TRACER_PREFIX OTEL_YAML_PROVIDERS, resource, &(tracer->err)) == OTELC_RET_ERROR)
+	OTEL_YAML_PATH(path, tracer->yaml_prefix, OTEL_YAML_PROVIDERS);
+	if (otel_resource_create(tracer->ctx, "OpenTelemetry tracer provider", path, resource, &(tracer->err)) == OTELC_RET_ERROR)
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
 
 #ifdef OTELC_USE_MULTIPLE_PROCESSORS
@@ -169,6 +171,7 @@ int otel_meter_reader_create(struct otelc_meter *meter, std::unique_ptr<otel_sdk
 	otel_sdk_metrics::PeriodicExportingMetricReaderOptions        options{};
 	otel_sdk_metrics::PeriodicExportingMetricReaderRuntimeOptions rt_options{};
 	char                                                          thread_name[OTEL_YAML_BUFSIZ] = "";
+	char                                                          path[OTEL_YAML_BUFSIZ];
 	int64_t                                                       export_interval = 60000, export_timeout = 30000;
 	int64_t                                                       cpu_id = -1;
 	int                                                           rc;
@@ -178,7 +181,8 @@ int otel_meter_reader_create(struct otelc_meter *meter, std::unique_ptr<otel_sdk
 	if (OTEL_NULL(meter))
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
 
-	rc = yaml_get_node(meter->ctx->fyd, &(meter->err), 0, "OpenTelemetry meter reader", OTEL_YAML_METER_PREFIX OTEL_YAML_READERS, name,
+	OTEL_YAML_PATH(path, meter->yaml_prefix, OTEL_YAML_READERS);
+	rc = yaml_get_node(meter->ctx->fyd, &(meter->err), 0, "OpenTelemetry meter reader", path, name,
 	                   OTEL_YAML_ARG_STR(0, READERS, thread_name),
 	                   OTEL_YAML_ARG_INT64(0, READERS, cpu_id, -1, OTEL_MAX_CPU_ID),
 	                   OTEL_YAML_ARG_INT64(0, READERS, export_interval, 100, 3600000),
@@ -232,13 +236,15 @@ int otel_meter_reader_create(struct otelc_meter *meter, std::unique_ptr<otel_sdk
 int otel_meter_provider_create(struct otelc_meter *meter, std::vector<std::unique_ptr<otel_sdk_metrics::PeriodicExportingMetricReader>> &readers, std::shared_ptr<otel_metrics::MeterProvider> &provider)
 {
 	otel_sdk_resource::Resource resource{};
+	char                        path[OTEL_YAML_BUFSIZ];
 
 	OTELC_FUNC("%p, <readers:%zu>, <provider>", meter, readers.size());
 
 	if (OTEL_NULL(meter))
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
 
-	if (otel_resource_create(meter->ctx, "OpenTelemetry meter provider", OTEL_YAML_METER_PREFIX OTEL_YAML_PROVIDERS, resource, &(meter->err)) == OTELC_RET_ERROR)
+	OTEL_YAML_PATH(path, meter->yaml_prefix, OTEL_YAML_PROVIDERS);
+	if (otel_resource_create(meter->ctx, "OpenTelemetry meter provider", path, resource, &(meter->err)) == OTELC_RET_ERROR)
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
 
 	auto views_maybe = otel::make_unique_nothrow<otel_sdk_metrics::ViewRegistry>();
@@ -319,13 +325,15 @@ void otel_meter_provider_destroy(void)
 int otel_logger_provider_create(struct otelc_logger *logger, std::vector<std::unique_ptr<otel_sdk_logs::LogRecordProcessor>> &processors, std::shared_ptr<otel_logs::LoggerProvider> &provider)
 {
 	otel_sdk_resource::Resource resource{};
+	char                        path[OTEL_YAML_BUFSIZ];
 
 	OTELC_FUNC("%p, <processors>, <provider>", logger);
 
 	if (OTEL_NULL(logger))
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
 
-	if (otel_resource_create(logger->ctx, "OpenTelemetry logger provider", OTEL_YAML_LOGGER_PREFIX OTEL_YAML_PROVIDERS, resource, &(logger->err)) == OTELC_RET_ERROR)
+	OTEL_YAML_PATH(path, logger->yaml_prefix, OTEL_YAML_PROVIDERS);
+	if (otel_resource_create(logger->ctx, "OpenTelemetry logger provider", path, resource, &(logger->err)) == OTELC_RET_ERROR)
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
 
 	if (processors.empty())

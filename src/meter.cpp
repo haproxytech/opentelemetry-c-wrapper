@@ -964,6 +964,7 @@ static int otel_meter_start(struct otelc_meter *meter)
 	std::vector<std::unique_ptr<otel_sdk_metrics::PeriodicExportingMetricReader>> readers;
 	std::shared_ptr<otel_metrics::MeterProvider>                                  provider;
 	char                                                                          scope_name[OTEL_YAML_BUFSIZ];
+	char                                                                          path_e[OTEL_YAML_BUFSIZ], path_r[OTEL_YAML_BUFSIZ];
 	int                                                                           retval = OTELC_RET_ERROR;
 
 	OTELC_FUNC("%p", meter);
@@ -971,7 +972,8 @@ static int otel_meter_start(struct otelc_meter *meter)
 	if (OTEL_NULL(meter))
 		OTELC_RETURN_INT(retval);
 
-	retval = yaml_find(meter->ctx->fyd, &(meter->err), 1, "OpenTelemetry meter instrumentation scope", OTEL_YAML_METER_PREFIX "/scope_name", scope_name, sizeof(scope_name));
+	OTEL_YAML_PATH(path_e, meter->yaml_prefix, "/scope_name");
+	retval = yaml_find(meter->ctx->fyd, &(meter->err), 1, "OpenTelemetry meter instrumentation scope", path_e, scope_name, sizeof(scope_name));
 	if (retval < 1)
 		OTELC_RETURN_INT(retval);
 
@@ -979,13 +981,16 @@ static int otel_meter_start(struct otelc_meter *meter)
 	if (OTEL_NULL(meter->scope_name))
 		OTEL_METER_RETURN_INT(OTEL_ERROR_MSG_ENOMEM("scope name"));
 
+	OTEL_YAML_PATH(path_e, meter->yaml_prefix, OTEL_YAML_EXPORTERS);
+	OTEL_YAML_PATH(path_r, meter->yaml_prefix, OTEL_YAML_READERS);
+
 	/* Build exporters and readers from YAML configuration. */
-	if (yaml_is_sequence(meter->ctx->fyd, OTEL_YAML_METER_PREFIX OTEL_YAML_EXPORTERS)) {
-		const int count = yaml_get_sequence_len(meter->ctx->fyd, &(meter->err), OTEL_YAML_METER_PREFIX OTEL_YAML_EXPORTERS);
+	if (yaml_is_sequence(meter->ctx->fyd, path_e)) {
+		const int count = yaml_get_sequence_len(meter->ctx->fyd, &(meter->err), path_e);
 		if (count < 0)
 			OTELC_RETURN_INT(OTELC_RET_ERROR);
 
-		int count_readers = yaml_get_sequence_len(meter->ctx->fyd, &(meter->err), OTEL_YAML_METER_PREFIX OTEL_YAML_READERS);
+		int count_readers = yaml_get_sequence_len(meter->ctx->fyd, &(meter->err), path_r);
 		if (count_readers < 0)
 			count_readers = 0;
 
@@ -994,18 +999,18 @@ static int otel_meter_start(struct otelc_meter *meter)
 			std::unique_ptr<otel_sdk_metrics::PeriodicExportingMetricReader> reader;
 			char                                                             exporter_name[OTEL_YAML_BUFSIZ], reader_name[OTEL_YAML_BUFSIZ] = "";
 
-			if (yaml_get_sequence_value(meter->ctx->fyd, &(meter->err), OTEL_YAML_METER_PREFIX OTEL_YAML_EXPORTERS, i, exporter_name, sizeof(exporter_name)) != 1)
+			if (yaml_get_sequence_value(meter->ctx->fyd, &(meter->err), path_e, i, exporter_name, sizeof(exporter_name)) != 1)
 				OTELC_RETURN_INT(OTELC_RET_ERROR);
 
-			if (!yaml_is_sequence(meter->ctx->fyd, OTEL_YAML_METER_PREFIX OTEL_YAML_READERS)) {
+			if (!yaml_is_sequence(meter->ctx->fyd, path_r)) {
 				/* Do nothing. */
 			}
 			else if (i < count_readers) {
-				if (yaml_get_sequence_value(meter->ctx->fyd, &(meter->err), OTEL_YAML_METER_PREFIX OTEL_YAML_READERS, i, reader_name, sizeof(reader_name)) != 1)
+				if (yaml_get_sequence_value(meter->ctx->fyd, &(meter->err), path_r, i, reader_name, sizeof(reader_name)) != 1)
 					OTELC_RETURN_INT(OTELC_RET_ERROR);
 			}
 			else if (count_readers > 0) {
-				if (yaml_get_sequence_value(meter->ctx->fyd, &(meter->err), OTEL_YAML_METER_PREFIX OTEL_YAML_READERS, count_readers - 1, reader_name, sizeof(reader_name)) != 1)
+				if (yaml_get_sequence_value(meter->ctx->fyd, &(meter->err), path_r, count_readers - 1, reader_name, sizeof(reader_name)) != 1)
 					OTELC_RETURN_INT(OTELC_RET_ERROR);
 			}
 
@@ -1153,6 +1158,7 @@ static void otel_meter_destroy(struct otelc_meter **meter)
 
 	OTELC_SFREE((*meter)->err);
 	OTELC_SFREE((*meter)->scope_name);
+	OTELC_SFREE((*meter)->yaml_prefix);
 	OTELC_SFREE_CLEAR(*meter);
 
 	OTELC_RETURN();
@@ -1202,9 +1208,10 @@ static struct otelc_meter *otel_meter_new(void)
 	OTELC_FUNC("");
 
 	if (!OTEL_NULL(retptr = OTEL_CAST_TYPEOF(retptr, OTELC_CALLOC(__func__, __LINE__, 1, sizeof(*retptr))))) {
-		retptr->err        = nullptr;
-		retptr->scope_name = nullptr;
-		retptr->ops        = &otel_meter_ops;
+		retptr->err         = nullptr;
+		retptr->scope_name  = nullptr;
+		retptr->yaml_prefix = nullptr;
+		retptr->ops         = &otel_meter_ops;
 	}
 
 	OTELC_RETURN_PTR(retptr);
@@ -1245,6 +1252,23 @@ struct otelc_meter *otelc_meter_create(const struct otelc_ctx *ctx, char **err)
 		OTEL_ERR_RETURN_PTR(OTEL_ERROR_MSG_ENOMEM("meter"));
 
 	retptr->ctx = ctx;
+
+	{
+		char prefix_buf[OTEL_YAML_BUFSIZ];
+
+		if (yaml_resolve_prefix(ctx->fyd, err, OTEL_YAML_METER_PREFIX, ctx->name, OTEL_YAML_NAME_DEFAULT, prefix_buf, sizeof(prefix_buf)) == OTELC_RET_ERROR) {
+			otel_meter_destroy(&retptr);
+
+			OTELC_RETURN_PTR(nullptr);
+		}
+
+		retptr->yaml_prefix = OTELC_STRDUP(__func__, __LINE__, prefix_buf);
+		if (OTEL_NULL(retptr->yaml_prefix)) {
+			otel_meter_destroy(&retptr);
+
+			OTEL_ERR_RETURN_PTR(OTEL_ERROR_MSG_ENOMEM("meter prefix"));
+		}
+	}
 
 #ifndef OTELC_USE_STATIC_HANDLE
 	if (OTEL_NULL(otel_instrument))

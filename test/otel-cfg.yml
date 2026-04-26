@@ -245,32 +245,35 @@ providers:
 
 signals:
   traces:
-    scope_name: "OTEL C wrapper - traces"
-    exporters:
-      - exporter_traces_ostream
-      - exporter_traces_otlp_file
-    samplers:   sampler_traces
-    processors:
-      - processor_traces_batch
-      - processor_traces_single
-    providers:  provider_traces
+    default:
+      scope_name: "OTEL C wrapper - traces"
+      exporters:
+        - exporter_traces_ostream
+        - exporter_traces_otlp_file
+      samplers:   sampler_traces
+      processors:
+        - processor_traces_batch
+        - processor_traces_single
+      providers:  provider_traces
 
   metrics:
-    scope_name: "OTEL C wrapper - metrics"
-    exporters:
-      - exporter_metrics_ostream
-      - exporter_metrics_otlp_file
-    readers:
-      - reader_metrics
-      - reader_metrics_fast
-    providers:  provider_metrics
+    default:
+      scope_name: "OTEL C wrapper - metrics"
+      exporters:
+        - exporter_metrics_ostream
+        - exporter_metrics_otlp_file
+      readers:
+        - reader_metrics
+        - reader_metrics_fast
+      providers:  provider_metrics
 
   logs:
-    scope_name: "OTEL C wrapper - logs"
-    exporters:
-      - exporter_logs_ostream
-      - exporter_logs_otlp_file
-    processors:
-      - processor_logs_batch
-      - processor_logs_single
-    providers:  provider_logs
+    default:
+      scope_name: "OTEL C wrapper - logs"
+      exporters:
+        - exporter_logs_ostream
+        - exporter_logs_otlp_file
+      processors:
+        - processor_logs_batch
+        - processor_logs_single
+      providers:  provider_logs

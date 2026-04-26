@@ -404,10 +404,11 @@ struct otelc_meter_ops {
  * The meter instance data.
  */
 struct otelc_meter {
-	char                         *err;        /* Character array containing the last library error. */
-	char                         *scope_name; /* Meter instrumentation scope name. */
-	const struct otelc_meter_ops *ops;        /* Pointer to the operations vtable. */
-	const struct otelc_ctx       *ctx;        /* Owning library context; provides the YAML configuration. */
+	char                         *err;         /* Character array containing the last library error. */
+	char                         *scope_name;  /* Meter instrumentation scope name. */
+	char                         *yaml_prefix; /* Resolved YAML path of the meter signal configuration. */
+	const struct otelc_meter_ops *ops;         /* Pointer to the operations vtable. */
+	const struct otelc_ctx       *ctx;         /* Owning library context; provides the YAML configuration. */
 };
 
 

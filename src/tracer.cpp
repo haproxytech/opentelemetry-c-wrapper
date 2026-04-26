@@ -698,6 +698,7 @@ static int otel_tracer_start(struct otelc_tracer *tracer)
 	std::vector<std::unique_ptr<otel_sdk_trace::SpanProcessor>> processors;
 	std::unique_ptr<otel_trace::TracerProvider>                 provider;
 	char                                                        scope_name[OTEL_YAML_BUFSIZ];
+	char                                                        path_p[OTEL_YAML_BUFSIZ], path_e[OTEL_YAML_BUFSIZ];
 	int                                                         retval = OTELC_RET_ERROR;
 
 	OTELC_FUNC("%p", tracer);
@@ -705,7 +706,8 @@ static int otel_tracer_start(struct otelc_tracer *tracer)
 	if (OTEL_NULL(tracer))
 		OTELC_RETURN_INT(retval);
 
-	retval = yaml_find(tracer->ctx->fyd, &(tracer->err), 1, "OpenTelemetry tracer instrumentation scope", OTEL_YAML_TRACER_PREFIX "/scope_name", scope_name, sizeof(scope_name));
+	OTEL_YAML_PATH(path_p, tracer->yaml_prefix, "/scope_name");
+	retval = yaml_find(tracer->ctx->fyd, &(tracer->err), 1, "OpenTelemetry tracer instrumentation scope", path_p, scope_name, sizeof(scope_name));
 	if (retval < 1)
 		OTELC_RETURN_INT(retval);
 
@@ -716,13 +718,16 @@ static int otel_tracer_start(struct otelc_tracer *tracer)
 	if ((retval = otel_sampler_create(tracer, sampler)) == OTELC_RET_ERROR)
 		OTELC_RETURN_INT(retval);
 
+	OTEL_YAML_PATH(path_p, tracer->yaml_prefix, OTEL_YAML_PROCESSORS);
+	OTEL_YAML_PATH(path_e, tracer->yaml_prefix, OTEL_YAML_EXPORTERS);
+
 	/* Build processors and exporters from YAML configuration. */
-	if (yaml_is_sequence(tracer->ctx->fyd, OTEL_YAML_TRACER_PREFIX OTEL_YAML_PROCESSORS)) {
-		const int count = yaml_get_sequence_len(tracer->ctx->fyd, &(tracer->err), OTEL_YAML_TRACER_PREFIX OTEL_YAML_PROCESSORS);
+	if (yaml_is_sequence(tracer->ctx->fyd, path_p)) {
+		const int count = yaml_get_sequence_len(tracer->ctx->fyd, &(tracer->err), path_p);
 		if (count < 0)
 			OTELC_RETURN_INT(OTELC_RET_ERROR);
 
-		int count_exporters = yaml_get_sequence_len(tracer->ctx->fyd, &(tracer->err), OTEL_YAML_TRACER_PREFIX OTEL_YAML_EXPORTERS);
+		int count_exporters = yaml_get_sequence_len(tracer->ctx->fyd, &(tracer->err), path_e);
 		if (count_exporters < 0)
 			count_exporters = 0;
 
@@ -732,18 +737,18 @@ static int otel_tracer_start(struct otelc_tracer *tracer)
 			std::unique_ptr<otel_sdk_trace::SpanProcessor> processor;
 			char                                           processor_name[OTEL_YAML_BUFSIZ], exporter_name[OTEL_YAML_BUFSIZ] = "";
 
-			if (yaml_get_sequence_value(tracer->ctx->fyd, &(tracer->err), OTEL_YAML_TRACER_PREFIX OTEL_YAML_PROCESSORS, i, processor_name, sizeof(processor_name)) != 1)
+			if (yaml_get_sequence_value(tracer->ctx->fyd, &(tracer->err), path_p, i, processor_name, sizeof(processor_name)) != 1)
 				OTELC_RETURN_INT(OTELC_RET_ERROR);
 
-			if (!yaml_is_sequence(tracer->ctx->fyd, OTEL_YAML_TRACER_PREFIX OTEL_YAML_EXPORTERS)) {
+			if (!yaml_is_sequence(tracer->ctx->fyd, path_e)) {
 				/* Do nothing. */
 			}
 			else if (i < count_exporters) {
-				if (yaml_get_sequence_value(tracer->ctx->fyd, &(tracer->err), OTEL_YAML_TRACER_PREFIX OTEL_YAML_EXPORTERS, i, exporter_name, sizeof(exporter_name)) != 1)
+				if (yaml_get_sequence_value(tracer->ctx->fyd, &(tracer->err), path_e, i, exporter_name, sizeof(exporter_name)) != 1)
 					OTELC_RETURN_INT(OTELC_RET_ERROR);
 			}
 			else if (count_exporters > 0) {
-				if (yaml_get_sequence_value(tracer->ctx->fyd, &(tracer->err), OTEL_YAML_TRACER_PREFIX OTEL_YAML_EXPORTERS, count_exporters - 1, exporter_name, sizeof(exporter_name)) != 1)
+				if (yaml_get_sequence_value(tracer->ctx->fyd, &(tracer->err), path_e, count_exporters - 1, exporter_name, sizeof(exporter_name)) != 1)
 					OTELC_RETURN_INT(OTELC_RET_ERROR);
 			}
 
@@ -918,6 +923,7 @@ static void otel_tracer_destroy(struct otelc_tracer **tracer)
 
 	OTELC_SFREE((*tracer)->err);
 	OTELC_SFREE((*tracer)->scope_name);
+	OTELC_SFREE((*tracer)->yaml_prefix);
 	OTELC_SFREE_CLEAR(*tracer);
 
 	OTELC_RETURN();
@@ -963,9 +969,10 @@ static struct otelc_tracer *otel_tracer_new(void)
 	OTELC_FUNC("");
 
 	if (!OTEL_NULL(retptr = OTEL_CAST_TYPEOF(retptr, OTELC_CALLOC(__func__, __LINE__, 1, sizeof(*retptr))))) {
-		retptr->err        = nullptr;
-		retptr->scope_name = nullptr;
-		retptr->ops        = &otel_tracer_ops;
+		retptr->err         = nullptr;
+		retptr->scope_name  = nullptr;
+		retptr->yaml_prefix = nullptr;
+		retptr->ops         = &otel_tracer_ops;
 	}
 
 	OTELC_RETURN_PTR(retptr);
@@ -1006,6 +1013,23 @@ struct otelc_tracer *otelc_tracer_create(const struct otelc_ctx *ctx, char **err
 		OTEL_ERR_RETURN_PTR(OTEL_ERROR_MSG_ENOMEM("tracer"));
 
 	retptr->ctx = ctx;
+
+	{
+		char prefix_buf[OTEL_YAML_BUFSIZ];
+
+		if (yaml_resolve_prefix(ctx->fyd, err, OTEL_YAML_TRACER_PREFIX, ctx->name, OTEL_YAML_NAME_DEFAULT, prefix_buf, sizeof(prefix_buf)) == OTELC_RET_ERROR) {
+			otel_tracer_destroy(&retptr);
+
+			OTELC_RETURN_PTR(nullptr);
+		}
+
+		retptr->yaml_prefix = OTELC_STRDUP(__func__, __LINE__, prefix_buf);
+		if (OTEL_NULL(retptr->yaml_prefix)) {
+			otel_tracer_destroy(&retptr);
+
+			OTEL_ERR_RETURN_PTR(OTEL_ERROR_MSG_ENOMEM("tracer prefix"));
+		}
+	}
 
 #if defined(OTELC_USE_THREAD_SHARED_HANDLE) && !defined(OTELC_USE_STATIC_HANDLE)
 	if (otel_tracer_handle_init() == OTELC_RET_ERROR) {

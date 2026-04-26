@@ -216,6 +216,67 @@ void yaml_close(OTEL_YAML_DOC **fyd)
 
 /***
  * NAME
+ *   yaml_resolve_prefix - resolves the per-instance signal configuration prefix
+ *
+ * SYNOPSIS
+ *   int yaml_resolve_prefix(OTEL_YAML_DOC *fyd, char **err, const char *base, const char *name, const char *fallback, char *buf, size_t buf_size)
+ *
+ * ARGUMENTS
+ *   fyd      - parsed YAML configuration document
+ *   err      - address of a pointer to store an error message on failure
+ *   base     - base path of the signal section (e.g., "/signals/traces")
+ *   name     - preferred named entry to look for under base
+ *   fallback - fallback name used when name is missing or not present
+ *   buf      - buffer where the resolved prefix is written
+ *   buf_size - size of the buf buffer
+ *
+ * DESCRIPTION
+ *   Composes "<base>/<name>" and probes the YAML document for that node.  If
+ *   it exists, the composed string is written into buf and OTELC_RET_OK is
+ *   returned.  Otherwise the function composes "<base>/<fallback>" and probes
+ *   for that node; on success the fallback prefix is written into buf.  If
+ *   neither node is present, an error message is set and OTELC_RET_ERROR is
+ *   returned.  Either name or fallback may be NULL or empty to skip that
+ *   candidate.
+ *
+ * RETURN VALUE
+ *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR on failure.
+ */
+int yaml_resolve_prefix(OTEL_YAML_DOC *fyd, char **err, const char *base, const char *name, const char *fallback, char *buf, size_t buf_size)
+{
+	const char *candidates[2] = { name, fallback };
+	int         i;
+
+	OTELC_FUNC("%p, %p:%p, \"%s\", \"%s\", \"%s\", %p, %zu", fyd, OTELC_DPTR_ARGS(err), OTELC_STR_ARG(base), OTELC_STR_ARG(name), OTELC_STR_ARG(fallback), buf, buf_size);
+
+	if (OTEL_NULL(fyd))
+		OTEL_ERR_RETURN_INT("YAML document not specified");
+	else if (OTEL_NULL(base) || (*base == '\0'))
+		OTEL_ERR_RETURN_INT("YAML base path not specified");
+	else if (OTEL_NULL(buf) || (buf_size == 0))
+		OTEL_ERR_RETURN_INT("Path buffer not specified or has zero size");
+
+	for (i = 0; i < OTEL_CAST_STATIC(int, OTELC_TABLESIZE(candidates)); i++) {
+		if (OTEL_NULL(candidates[i]) || (*candidates[i] == '\0'))
+			continue;
+
+		(void)snprintf(buf, buf_size, "%s/%s", base, candidates[i]);
+
+#ifdef HAVE_LIBFYAML_H
+		if (!OTEL_NULL(fy_node_by_path(fy_document_root(fyd), buf, -1, FYNWF_DONT_FOLLOW)))
+			OTELC_RETURN_INT(OTELC_RET_OK);
+#else
+		if (!ryml_get_node_by_path(fyd, buf).invalid())
+			OTELC_RETURN_INT(OTELC_RET_OK);
+#endif /* HAVE_LIBFYAML_H */
+	}
+
+	OTEL_ERR_RETURN_INT("'%s': no '%s' or '%s' configuration found", base, OTELC_STR_ARG(name), OTELC_STR_ARG(fallback));
+}
+
+
+/***
+ * NAME
  *   yaml_read - reads a YAML file and returns its contents as a string
  *
  * SYNOPSIS

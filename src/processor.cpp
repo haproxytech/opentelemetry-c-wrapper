@@ -309,6 +309,7 @@ int otel_tracer_processor_create(struct otelc_tracer *tracer, std::unique_ptr<ot
 	std::unique_ptr<otel_sdk_trace::SpanProcessor> processor_maybe;
 	int                                            rc;
 	char                                           type[OTEL_YAML_BUFSIZ] = "", thread_name[OTEL_YAML_BUFSIZ] = "";
+	char                                           path[OTEL_YAML_BUFSIZ];
 	int64_t                                        max_queue_size = 2048, schedule_delay = 5000, export_timeout = 30000, max_export_batch_size = 512;
 	int64_t                                        cpu_id = -1;
 	bool                                           flag_batch = true;
@@ -324,7 +325,8 @@ int otel_tracer_processor_create(struct otelc_tracer *tracer, std::unique_ptr<ot
 	 * NOTE: The export_timeout member of the BatchSpanProcessorOptions
 	 * structure is defined but not yet utilized.
 	 */
-	rc = yaml_get_node(tracer->ctx->fyd, &(tracer->err), 0, "OpenTelemetry traces processor", OTEL_YAML_TRACER_PREFIX OTEL_YAML_PROCESSORS, name,
+	OTEL_YAML_PATH(path, tracer->yaml_prefix, OTEL_YAML_PROCESSORS);
+	rc = yaml_get_node(tracer->ctx->fyd, &(tracer->err), 0, "OpenTelemetry traces processor", path, name,
 	                   OTEL_YAML_ARG_STR(1, PROCESSORS, type),
 	                   OTEL_YAML_ARG_STR(0, PROCESSORS, thread_name),
 	                   OTEL_YAML_ARG_INT64(0, PROCESSORS, cpu_id, -1, OTEL_MAX_CPU_ID),
@@ -424,6 +426,7 @@ int otel_logger_processor_create(struct otelc_logger *logger, std::unique_ptr<ot
 	std::unique_ptr<otel_sdk_logs::LogRecordProcessor> processor_maybe;
 	int                                                rc;
 	char                                               type[OTEL_YAML_BUFSIZ] = "", thread_name[OTEL_YAML_BUFSIZ] = "";
+	char                                               path[OTEL_YAML_BUFSIZ];
 	int64_t                                            max_queue_size = 2048, schedule_delay = 1000, export_timeout = 30000, max_export_batch_size = 512;
 	int64_t                                            cpu_id = -1;
 	bool                                               flag_batch = true;
@@ -440,7 +443,8 @@ int otel_logger_processor_create(struct otelc_logger *logger, std::unique_ptr<ot
 	 * BatchLogRecordProcessorOptions structure is defined but not yet
 	 * utilized.
 	 */
-	rc = yaml_get_node(logger->ctx->fyd, &(logger->err), 0, "OpenTelemetry logs processor", OTEL_YAML_LOGGER_PREFIX OTEL_YAML_PROCESSORS, name,
+	OTEL_YAML_PATH(path, logger->yaml_prefix, OTEL_YAML_PROCESSORS);
+	rc = yaml_get_node(logger->ctx->fyd, &(logger->err), 0, "OpenTelemetry logs processor", path, name,
 	                   OTEL_YAML_ARG_STR(1, PROCESSORS, type),
 	                   OTEL_YAML_ARG_STR(0, PROCESSORS, thread_name),
 	                   OTEL_YAML_ARG_INT64(0, PROCESSORS, cpu_id, -1, OTEL_MAX_CPU_ID),

@@ -20,6 +20,16 @@
 #define OTEL_YAML_BUFSIZ                  (OTEL_YAML_BUFSIZ_1 + 1)
 #define OTEL_YAML_BUFLEN                  OTELC_STRINGIFY(OTEL_YAML_BUFSIZ_1)
 
+#define OTEL_YAML_NAME_DEFAULT            "default"
+
+/***
+ * Builds a YAML lookup path of the form "<prefix><suffix>" into the supplied
+ * buffer and evaluates to a pointer to that buffer.  Intended for inline use
+ * inside yaml_*() call expressions; the buffer must be an array (so sizeof
+ * yields its size).
+ */
+#define OTEL_YAML_PATH(b,p,s)             (void)snprintf((b), sizeof(b), "%s%s", (p), (s));
+
 #define OTEL_YAML_ARG_STR(m,p,n)          OTEL_YAML_STR,    (m), OTEL_YAML_##p "/%s/" #n, (n), OTEL_CAST_STATIC(int, sizeof(n))
 #define OTEL_YAML_ARG_STR_PTR(m,p,n,s)    OTEL_YAML_STR,    (m), OTEL_YAML_##p "/%s/" #n, (n), (s)
 #define OTEL_YAML_ARG_BOOL(m,p,n)         OTEL_YAML_BOOL,   (m), OTEL_YAML_##p "/%s/" #n, &(n)
@@ -46,6 +56,7 @@ typedef enum {
 OTEL_YAML_DOC *yaml_open(const char *file, char **err);
 void           yaml_close(OTEL_YAML_DOC **fyd);
 char          *yaml_read(const char *file, char **err);
+int            yaml_resolve_prefix(OTEL_YAML_DOC *fyd, char **err, const char *base, const char *name, const char *fallback, char *buf, size_t buf_size);
 int            yaml_find(OTEL_YAML_DOC *fyd, char **err, bool is_mandatory, const char *desc, const char *path, char *data, size_t data_size);
 int            yaml_get_sequence(OTEL_YAML_DOC *fyd, char **err, const char *path, struct otelc_text_map **map);
 int            yaml_get_sequence_len(OTEL_YAML_DOC *fyd, char **err, const char *path);
