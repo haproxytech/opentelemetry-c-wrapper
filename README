@@ -383,18 +383,41 @@ pointer to NULL on destroy/end):
 
 The typical usage follows this lifecycle:
 
-  1. otelc_init(cfgfile, &err)      - parse the YAML configuration file
-  2. otelc_*_create(&err)           - allocate a signal instance
-  3. instance->ops->start(instance) - start the signal pipeline
-  4. (use the signal)               - create spans, record metrics, logs
-  5. otelc_deinit(...)              - shut down all signals, free memory
-  6. otelc_lib_shutdown()           - reset process-wide hooks; call once after
-                                      the final context
+  1. ctx = otelc_init(cfgfile, name, &err) - parse the YAML configuration file
+                                             and create a library context
+  2. otelc_*_create(ctx, &err)             - allocate a signal instance bound
+                                             to the context
+  3. instance->ops->start(instance)        - start the signal pipeline
+  4. (use the signal)                      - create spans, record metrics,
+                                             emit logs
+  5. otelc_deinit(...)                     - shut down all signals, release
+                                             the context, free memory
+  6. otelc_lib_shutdown()                  - reset process-wide hooks; call once
+                                             after the final context
 
-The otelc_deinit() function accepts pointers to all three signal types and
-destroys whichever ones are non-NULL:
+The 'name' argument to otelc_init() selects which named entry to read from
+each subtree of the 'signals' section in the YAML file.  When no entry with
+that name exists, the entry called 'default' is used as a fallback; if
+neither is present, initialization fails.  See section 6.7 for details.
 
-  otelc_deinit(&tracer, &meter, &logger);
+The otelc_deinit() function accepts pointers to the context and to all three
+signal types and destroys whichever ones are non-NULL:
+
+  otelc_deinit(&ctx, &tracer, &meter, &logger);
+
+It only touches per-context state.  The SDK internal log handler installed via
+otelc_log_set_handler() and the malloc/free/thread-id callbacks registered via
+otelc_ext_init() are process-wide and are left untouched, so deinitializing one
+context does not yank hooks out from under any other live context.  Once the
+final context has been destroyed, call otelc_lib_shutdown() to reset those hooks
+to their library defaults; this is required before unloading caller code that
+owns any of the registered callbacks, and is otherwise optional.
+
+The library does not keep global state across contexts, so multiple contexts
+may coexist in the same process, each loaded from a distinct configuration file
+or selecting a distinct named signal entry.  The helper otelc_close_cfg(ctx)
+releases the parsed YAML document attached to a context independently of the
+providers.
 
 Functions that can fail return OTELC_RET_OK (0) on success or OTELC_RET_ERROR
 (-1) on failure.  Functions that create resources return a pointer on success or
@@ -426,9 +449,12 @@ All public headers reside under include/opentelemetry-c-wrapper/.  Including
 
 The library reads its configuration from a YAML file whose path is passed to
 the otelc_init() function.  Named pipeline components are defined in top-level
-sections and bound together per signal type in the 'signals' section.  All
-string values have a maximum length of 4095 characters.  Boolean values accept
-"true" / "1" for true and "false" / "0" for false (case-insensitive).
+sections and bound together per signal type, under named entries, in the
+'signals' section.  Each call to otelc_init() also takes a context name that
+selects the named entry to load (with a 'default' fallback); see section 6.7
+for the layout.  All string values have a maximum length of 4095 characters.
+Boolean values accept "true" / "1" for true and "false" / "0" for false
+(case-insensitive).
 
 
 6.1. Document structure
@@ -445,8 +471,9 @@ The YAML file contains the following top-level sections:
   * signals    - bind the above components together per signal type
 
 Each section (except 'signals') contains named configuration blocks.  The
-'signals' section references these blocks by name, either as a single name or
-as a YAML list of names.
+'signals' section groups its 'traces', 'metrics', and 'logs' subtrees by
+name, and each named entry references the other top-level blocks by name,
+either as a single name or as a YAML list of names.
 
 Here is a minimal configuration that exports traces to stdout:
 
@@ -470,14 +497,15 @@ Here is a minimal configuration that exports traces to stdout:
 
   signals:
     traces:
-      scope_name: "my-application"
-      exporters:  my_exporter
-      samplers:   my_sampler
-      processors: my_processor
-      providers:  my_provider
+      default:
+        scope_name: "my-application"
+        exporters:  my_exporter
+        samplers:   my_sampler
+        processors: my_processor
+        providers:  my_provider
 
-A complete configuration covering all three signals and multiple exporter types
-can be found in the file test/otel-cfg.yml.
+A complete configuration covering all three signals, multiple exporter
+types, and multiple named entries can be found in the file test/otel-cfg.yml.
 
 Components that spawn background threads (batch processors, OTLP File and HTTP
 exporters, and periodic metric readers) accept two optional settings that
@@ -925,9 +953,33 @@ environment attributes for duplicate keys.
 ------------------------------------------------------------------------------
 
 The 'signals' section is the central binding point that ties pipeline components
-together.  Each signal -- traces, metrics, or logs -- references the named
-components it needs from the other top-level sections.
+together.  Each signal type -- traces, metrics, or logs -- groups its
+definitions by name, so the same configuration file can hold several
+independent signal definitions:
 
+  signals:
+    traces:
+      default:
+        scope_name: "my-application"
+        exporters:  my_exporter
+        ...
+      debug:
+        scope_name: "my-application/debug"
+        ...
+    metrics:
+      default:
+        ...
+    logs:
+      default:
+        ...
+
+The 'name' argument passed to otelc_init() selects which named entry is used.
+For each signal type the library probes signals/<sig>/<name> first; if that
+entry is absent it falls back to signals/<sig>/default.  When neither entry
+exists for a signal that is later created via otelc_*_create(), the call
+fails with an error.
+
+Within each named entry, the keys reference the other top-level sections.
 When exporters and processors (or readers) are specified as YAML lists, each
 entry forms a separate pipeline within the same provider.  The library pairs
 list entries by position: for traces and logs, processor[i] is paired with
@@ -1023,29 +1075,31 @@ create a tracer, start a span, and export it.
 
 int main(int argc, char **argv)
 {
+    struct otelc_ctx    *ctx;
     struct otelc_tracer *tracer;
     struct otelc_span   *span;
     char                *err = NULL;
 
-    /* Initialize the library */
-    if (otelc_init("otel-cfg.yml", &err) != OTELC_RET_OK) {
+    /* Initialize the library; "default" selects the named signal entry */
+    ctx = otelc_init("otel-cfg.yml", "default", &err);
+    if (ctx == NULL) {
         fprintf(stderr, "Failed to init: %s\n", err);
         free(err);
         return 1;
     }
 
-    /* Create and start a tracer */
-    tracer = otelc_tracer_create(&err);
+    /* Create and start a tracer bound to the context */
+    tracer = otelc_tracer_create(ctx, &err);
     if (tracer == NULL) {
         fprintf(stderr, "Failed to create tracer: %s\n", err);
         free(err);
-        otelc_deinit(NULL, NULL, NULL);
+        otelc_deinit(&ctx, NULL, NULL, NULL);
         return 1;
     }
 
     if (tracer->ops->start(tracer) != OTELC_RET_OK) {
         fprintf(stderr, "Failed to start tracer\n");
-        otelc_deinit(&tracer, NULL, NULL);
+        otelc_deinit(&ctx, &tracer, NULL, NULL);
         return 1;
     }
 
@@ -1053,7 +1107,7 @@ int main(int argc, char **argv)
     span = tracer->ops->start_span(tracer, "my-operation");
     if (span == NULL) {
         fprintf(stderr, "Failed to start span\n");
-        otelc_deinit(&tracer, NULL, NULL);
+        otelc_deinit(&ctx, &tracer, NULL, NULL);
         return 1;
     }
 
@@ -1062,8 +1116,8 @@ int main(int argc, char **argv)
     /* End the span */
     span->ops->end(&span);
 
-    /* Clean up */
-    otelc_deinit(&tracer, NULL, NULL);
+    /* Clean up the tracer and the context */
+    otelc_deinit(&ctx, &tracer, NULL, NULL);
 
     return 0;
 }
@@ -1083,30 +1137,32 @@ measurement.
 
 int main(int argc, char **argv)
 {
+    struct otelc_ctx   *ctx;
     struct otelc_meter *meter;
     struct otelc_value  value;
     char               *err = NULL;
     int64_t             counter_id;
 
-    /* Initialize the library */
-    if (otelc_init("otel-cfg.yml", &err) != OTELC_RET_OK) {
+    /* Initialize the library; "default" selects the named signal entry */
+    ctx = otelc_init("otel-cfg.yml", "default", &err);
+    if (ctx == NULL) {
         fprintf(stderr, "Failed to init: %s\n", err);
         free(err);
         return 1;
     }
 
-    /* Create and start a meter */
-    meter = otelc_meter_create(&err);
+    /* Create and start a meter bound to the context */
+    meter = otelc_meter_create(ctx, &err);
     if (meter == NULL) {
         fprintf(stderr, "Failed to create meter: %s\n", err);
         free(err);
-        otelc_deinit(NULL, NULL, NULL);
+        otelc_deinit(&ctx, NULL, NULL, NULL);
         return 1;
     }
 
     if (meter->ops->start(meter) != OTELC_RET_OK) {
         fprintf(stderr, "Failed to start meter\n");
-        otelc_deinit(NULL, &meter, NULL);
+        otelc_deinit(&ctx, NULL, &meter, NULL);
         return 1;
     }
 
@@ -1116,7 +1172,7 @@ int main(int argc, char **argv)
         OTELC_METRIC_INSTRUMENT_COUNTER_UINT64, NULL);
     if (counter_id == OTELC_RET_ERROR) {
         fprintf(stderr, "Failed to create instrument\n");
-        otelc_deinit(NULL, &meter, NULL);
+        otelc_deinit(&ctx, NULL, &meter, NULL);
         return 1;
     }
 
@@ -1125,8 +1181,8 @@ int main(int argc, char **argv)
     value.u.value_uint64 = 1;
     meter->ops->update_instrument(meter, counter_id, &value);
 
-    /* Clean up */
-    otelc_deinit(NULL, &meter, NULL);
+    /* Clean up the meter and the context */
+    otelc_deinit(&ctx, NULL, &meter, NULL);
 
     return 0;
 }
@@ -1145,28 +1201,30 @@ Here is an example showing how to emit a structured log record.
 
 int main(int argc, char **argv)
 {
+    struct otelc_ctx    *ctx;
     struct otelc_logger *logger;
     char                *err = NULL;
 
-    /* Initialize the library */
-    if (otelc_init("otel-cfg.yml", &err) != OTELC_RET_OK) {
+    /* Initialize the library; "default" selects the named signal entry */
+    ctx = otelc_init("otel-cfg.yml", "default", &err);
+    if (ctx == NULL) {
         fprintf(stderr, "Failed to init: %s\n", err);
         free(err);
         return 1;
     }
 
-    /* Create and start a logger */
-    logger = otelc_logger_create(&err);
+    /* Create and start a logger bound to the context */
+    logger = otelc_logger_create(ctx, &err);
     if (logger == NULL) {
         fprintf(stderr, "Failed to create logger: %s\n", err);
         free(err);
-        otelc_deinit(NULL, NULL, NULL);
+        otelc_deinit(&ctx, NULL, NULL, NULL);
         return 1;
     }
 
     if (logger->ops->start(logger) != OTELC_RET_OK) {
         fprintf(stderr, "Failed to start logger\n");
-        otelc_deinit(NULL, NULL, &logger);
+        otelc_deinit(&ctx, NULL, NULL, &logger);
         return 1;
     }
 
@@ -1175,8 +1233,8 @@ int main(int argc, char **argv)
         0, NULL, NULL, NULL, NULL, 0,
         "Application started successfully");
 
-    /* Clean up */
-    otelc_deinit(NULL, NULL, &logger);
+    /* Clean up the logger and the context */
+    otelc_deinit(&ctx, NULL, NULL, &logger);
 
     return 0;
 }
