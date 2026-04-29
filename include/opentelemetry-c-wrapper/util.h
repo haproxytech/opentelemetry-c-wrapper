@@ -202,8 +202,8 @@ ssize_t                otelc_strlcpy(char *dst, size_t dst_size, const char *src
 bool                   otelc_strtoi(const char *str, char **endptr, bool flag_end, int base, int *retval, int val_min, int val_max, char **err);
 const char            *otelc_strhex(const void *data, size_t size);
 const char            *otelc_strctrl(const void *data, size_t size);
-void                   otelc_statistics(char *buffer, size_t bufsiz);
-int                    otelc_statistics_check(int type, size_t size, int64_t id, int64_t alloc_fail, int64_t erase, int64_t destroy);
+void                   otelc_statistics(const struct otelc_meter *meter, char *buffer, size_t bufsiz);
+int                    otelc_statistics_check(const struct otelc_meter *meter, int type, size_t size, int64_t id, int64_t alloc_fail, int64_t erase, int64_t destroy);
 
 struct otelc_text_map *otelc_text_map_new(OTELC_DBG_IFDEF(OTELC_ARGS(const char *func, int line, ), ) struct otelc_text_map *text_map, size_t size);
 int                    otelc_text_map_add(OTELC_DBG_IFDEF(OTELC_ARGS(const char *func, int line, ), ) struct otelc_text_map *text_map, const char *key, size_t key_len, const char *value, size_t value_len, otelc_text_map_flags_t flags);

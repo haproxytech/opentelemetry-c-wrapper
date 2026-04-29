@@ -721,12 +721,12 @@ static void worker_thread(void *data)
 	}
 
 #ifndef OTELC_USE_THREAD_SHARED_HANDLE
-	int otelc_status  = otelc_statistics_check(0, 0, worker->count * 5, 0, worker->count * 5, worker->count * 5);
-	otelc_status     |= otelc_statistics_check(1, 0, worker->count * 2, 0, worker->count * 2, worker->count * 2);
-	otelc_status     |= otelc_statistics_check(2, 5, 5, 0, 0, 0);
-	otelc_status     |= otelc_statistics_check(3, 1, 1, 0, 0, 0);
+	int otelc_status  = otelc_statistics_check(NULL, 0, 0, worker->count * 5, 0, worker->count * 5, worker->count * 5);
+	otelc_status     |= otelc_statistics_check(NULL, 1, 0, worker->count * 2, 0, worker->count * 2, worker->count * 2);
+	otelc_status     |= otelc_statistics_check(cfg.otel_meter, 2, 5, 5, 0, 0, 0);
+	otelc_status     |= otelc_statistics_check(cfg.otel_meter, 3, 1, 1, 0, 0, 0);
 
-	otelc_statistics(otel_infbuf, sizeof(otel_infbuf));
+	otelc_statistics(cfg.otel_meter, otel_infbuf, sizeof(otel_infbuf));
 	OTELC_LOG(stdout, "[%4d] %s traces: %" PRIu64 ", %s", worker->id, otelc_status ? "ERROR" : "OK", worker->count, otel_infbuf);
 #endif
 
@@ -818,12 +818,12 @@ static int worker_run(void)
 #endif /* USE_THREADS */
 
 #ifdef OTELC_USE_THREAD_SHARED_HANDLE
-	int otelc_status  = otelc_statistics_check(0, 0, total_cnt * 5, 0, total_cnt * 5, total_cnt * 5);
-	otelc_status     |= otelc_statistics_check(1, 0, total_cnt * 2, 0, total_cnt * 2, total_cnt * 2);
-	otelc_status     |= otelc_statistics_check(2, 5, 5, 0, 0, 0);
-	otelc_status     |= otelc_statistics_check(3, 1, 1, 0, 0, 0);
+	int otelc_status  = otelc_statistics_check(NULL, 0, 0, total_cnt * 5, 0, total_cnt * 5, total_cnt * 5);
+	otelc_status     |= otelc_statistics_check(NULL, 1, 0, total_cnt * 2, 0, total_cnt * 2, total_cnt * 2);
+	otelc_status     |= otelc_statistics_check(cfg.otel_meter, 2, 5, 5, 0, 0, 0);
+	otelc_status     |= otelc_statistics_check(cfg.otel_meter, 3, 1, 1, 0, 0, 0);
 
-	otelc_statistics(otel_infbuf, sizeof(otel_infbuf));
+	otelc_statistics(cfg.otel_meter, otel_infbuf, sizeof(otel_infbuf));
 	OTELC_LOG(stdout, "OpenTelemetry statistics: %s %s (%" PRIu64 ")", otelc_status ? "ERROR" : "OK", otel_infbuf, prg.drop_cnt);
 #endif
 

@@ -1155,9 +1155,9 @@ int main(int argc, char **argv)
 	OTELC_LOG(stdout, "");
 	OTELC_LOG(stdout, "[handle statistics]");
 
-	if (otelc_statistics_check(0, 0, 1, 0, 1, 1) != 0)
+	if (otelc_statistics_check(NULL, 0, 0, 1, 0, 1, 1) != 0)
 		retval = TEST_FAIL;
-	if (otelc_statistics_check(1, 0, 0, 0, 0, 0) != 0)
+	if (otelc_statistics_check(NULL, 1, 0, 0, 0, 0, 0) != 0)
 		retval = TEST_FAIL;
 	test_report("handle statistics", retval);
 
