@@ -289,6 +289,13 @@ signals:
       processors: processor_traces_batch_speed_test
       providers:  provider_traces
 
+    secondary:
+      scope_name: "OTEL C wrapper - traces secondary"
+      exporters:  exporter_traces_memory
+      samplers:   sampler_traces
+      processors: processor_traces_single
+      providers:  provider_traces
+
   metrics:
     default:
       scope_name: "OTEL C wrapper - metrics"
@@ -306,6 +313,12 @@ signals:
       readers:    reader_metrics_speed_test
       providers:  provider_metrics
 
+    secondary:
+      scope_name: "OTEL C wrapper - metrics secondary"
+      exporters:  exporter_metrics_memory
+      readers:    reader_metrics
+      providers:  provider_metrics
+
   logs:
     default:
       scope_name: "OTEL C wrapper - logs"
@@ -321,4 +334,12 @@ signals:
       scope_name: "OTEL C wrapper - logs"
       exporters: exporter_logs_dev_null
       processors: processor_logs_batch_speed_test
+      providers:  provider_logs
+
+    secondary:
+      scope_name: "OTEL C wrapper - logs secondary"
+      exporters:
+        - exporter_logs_otlp_file
+      processors:
+        - processor_logs_single
       providers:  provider_logs
