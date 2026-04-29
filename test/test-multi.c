@@ -112,6 +112,71 @@ static void test_two_tracers_coexist(const struct otelc_ctx *ctx1, const struct 
 
 /***
  * NAME
+ *   test_tracer_destroy_order - tests destroying tracers in either order
+ *
+ * SYNOPSIS
+ *   static void test_tracer_destroy_order(const struct otelc_ctx *ctx1, const struct otelc_ctx *ctx2)
+ *
+ * ARGUMENTS
+ *   ctx1 - first library context
+ *   ctx2 - second library context
+ *
+ * DESCRIPTION
+ *   Creates two tracers against distinct library contexts, starts both,
+ *   opens a span on each, then destroys the FIRST tracer while the second
+ *   is still in use.  After the first destroy the second tracer must still
+ *   be able to start and end spans without crashing -- the shared span and
+ *   span-context handle maps stay alive until the last tracer is destroyed
+ *   thanks to the per-process tracer refcount.  Destroying tracers in
+ *   either order is documented as safe; this test pins that contract down.
+ *
+ * RETURN VALUE
+ *   This function does not return a value.
+ */
+static void test_tracer_destroy_order(const struct otelc_ctx *ctx1, const struct otelc_ctx *ctx2)
+{
+	struct otelc_tracer *primary = NULL, *secondary = NULL;
+	struct otelc_span   *span_a = NULL, *span_b = NULL;
+	char                *err_a = NULL, *err_b = NULL;
+	int                  result = TEST_FAIL;
+
+	primary   = otelc_tracer_create(ctx1, &err_a);
+	secondary = otelc_tracer_create(ctx2, &err_b);
+
+	if (_nNULL(primary) && _nNULL(secondary)
+	    && (OTELC_OPS(primary, start) == OTELC_RET_OK)
+	    && (OTELC_OPS(secondary, start) == OTELC_RET_OK)) {
+		span_a = OTELC_OPS(primary,   start_span, "primary-a");
+		span_b = OTELC_OPS(secondary, start_span, "secondary-a");
+		if (_nNULL(span_a))
+			OTELC_OPSR(span_a, end);
+
+		/* Destroy the FIRST tracer while the second is still alive. */
+		OTELC_OPSR(primary, destroy);
+
+		/* Second tracer must still work. */
+		struct otelc_span *span_c = OTELC_OPS(secondary, start_span, "secondary-b");
+		if (_nNULL(span_b) && _nNULL(span_c)) {
+			OTELC_OPSR(span_b, end);
+			OTELC_OPSR(span_c, end);
+			result = TEST_PASS;
+		}
+	}
+
+	if (_nNULL(secondary))
+		OTELC_OPSR(secondary, destroy);
+	if (_nNULL(primary))
+		OTELC_OPSR(primary, destroy);
+
+	OTELC_SFREE(err_a);
+	OTELC_SFREE(err_b);
+
+	test_report("first tracer destroy keeps second alive", result);
+}
+
+
+/***
+ * NAME
  *   test_two_meters_coexist - tests that two meter instances coexist
  *
  * SYNOPSIS
@@ -333,6 +398,7 @@ int main(int argc, char **argv)
 
 	OTELC_LOG(stdout, "[multi-tracer]");
 	test_two_tracers_coexist(ctx[0], ctx[1]);
+	test_tracer_destroy_order(ctx[0], ctx[1]);
 
 	OTELC_LOG(stdout, "[multi-meter]");
 	test_two_meters_coexist(ctx[0], ctx[1]);
