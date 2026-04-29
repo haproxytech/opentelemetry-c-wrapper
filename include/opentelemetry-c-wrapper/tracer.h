@@ -218,11 +218,11 @@ struct otelc_tracer_ops {
 	 *   tracer - tracer instance
 	 *
 	 * DESCRIPTION
-	 *   The tracer whose configuration is specified in the OpenTelemetry
-	 *   YAML configuration file (set by the previous call to the
-	 *   otelc_init() function) is started.  The function initializes the
-	 *   tracer in such a way that the following components are initialized
-	 *   individually: exporter, sampler, processor and finally provider.
+	 *   Reads the configuration from the /signals/traces/<name> subtree of
+	 *   the YAML document owned by the tracer's context and starts the
+	 *   tracer.  The function initializes the tracer in such a way that the
+	 *   following components are initialized individually: exporter, sampler,
+	 *   processor and finally provider.
 	 *
 	 * RETURN VALUE
 	 *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR in case of an
