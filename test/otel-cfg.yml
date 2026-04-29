@@ -291,7 +291,7 @@ signals:
 
     secondary:
       scope_name: "OTEL C wrapper - traces secondary"
-      exporters:  exporter_traces_memory
+      exporters:  exporter_traces_dev_null
       samplers:   sampler_traces
       processors: processor_traces_single
       providers:  provider_traces

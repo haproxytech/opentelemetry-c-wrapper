@@ -17,43 +17,6 @@
 
 
 /***
- * Caveat: a single static std::ofstream is reused for every ostream exporter
- * of a given signal type.  Two ostream-based tracer, meter or logger instances
- * therefore cannot coexist in the same process: the first instance opens the
- * stream, the second open() call fails with the failbit set.  Multi-instance
- * setups must use a different exporter type (otlp_file, otlp_grpc, otlp_http,
- * in-memory for traces/metrics) for the additional instance, or send to
- * "stdout" / "stderr" which bypass these handles.
- */
-static std::ofstream otel_tracer_logfile{}, otel_meter_logfile{}, otel_logger_logfile{};
-
-
-/***
- * NAME
- *   otel_exporter_logfile_close - closes an exporter log file stream
- *
- * SYNOPSIS
- *   static void otel_exporter_logfile_close(std::ofstream &logfile)
- *
- * ARGUMENTS
- *   logfile - reference to the output file stream to close
- *
- * DESCRIPTION
- *   Closes the given output file stream if it is currently open.  This is a
- *   shared helper used by the per-signal exporter destroy functions to avoid
- *   repeating the same open-check-and-close pattern.
- *
- * RETURN VALUE
- *   This function does not return a value.
- */
-static void otel_exporter_logfile_close(std::ofstream &logfile)
-{
-	if (logfile.is_open())
-		logfile.close();
-}
-
-
-/***
  * NAME
  *   otel_exporter_set_otlp_file_options - populates OTLP File exporter options from YAML configuration
  *
@@ -538,7 +501,7 @@ int otel_tracer_exporter_create(struct otelc_tracer *tracer, std::unique_ptr<ote
 		OTEL_TRACER_ERROR(OTEL_TRACER_EXPORTER_NOT_SUPPORTED("In-Memory"));
 #endif /* HAVE_OTEL_EXPORTER_IN_MEMORY */
 	}
-	OTEL_EXPORTER_CASE_OSTREAM(TRACER, otel_exporter_trace::OStreamSpanExporter, tracer, path, otel_tracer_logfile)
+	OTEL_EXPORTER_CASE_OSTREAM(TRACER, otel_exporter_trace::OStreamSpanExporter, tracer, path)
 	OTEL_EXPORTER_CASE_OTLP_FILE(TRACER, OtlpFileExporter, tracer, path)
 	OTEL_EXPORTER_CASE_OTLP_GRPC(TRACER, OtlpGrpcExporter, tracer, path)
 	OTEL_EXPORTER_CASE_OTLP_HTTP(TRACER, OtlpHttpExporter, tracer, path)
@@ -587,34 +550,6 @@ int otel_tracer_exporter_create(struct otelc_tracer *tracer, std::unique_ptr<ote
 	exporter = std::move(exporter_maybe);
 
 	OTELC_RETURN_INT(OTELC_RET_OK);
-}
-
-
-/***
- * NAME
- *   otel_tracer_exporter_destroy - destroys the tracer exporter
- *
- * SYNOPSIS
- *   void otel_tracer_exporter_destroy(void)
- *
- * ARGUMENTS
- *   This function takes no arguments.
- *
- * DESCRIPTION
- *   Cleans up resources associated with the tracer exporter, such as closing
- *   any open file streams.  This should be called during shutdown to ensure a
- *   clean exit.
- *
- * RETURN VALUE
- *   This function does not return a value.
- */
-void otel_tracer_exporter_destroy(void)
-{
-	OTELC_FUNC("");
-
-	otel_exporter_logfile_close(otel_tracer_logfile);
-
-	OTELC_RETURN();
 }
 
 
@@ -681,7 +616,7 @@ int otel_meter_exporter_create(struct otelc_meter *meter, std::unique_ptr<otel_s
 		OTEL_METER_ERROR(OTEL_METER_EXPORTER_NOT_SUPPORTED("In-Memory"));
 #endif /* HAVE_OTEL_EXPORTER_IN_MEMORY */
 	}
-	OTEL_EXPORTER_CASE_OSTREAM(METER, otel_exporter_metrics::OStreamMetricExporter, meter, path, otel_meter_logfile)
+	OTEL_EXPORTER_CASE_OSTREAM(METER, otel_exporter_metrics::OStreamMetricExporter, meter, path)
 	OTEL_EXPORTER_CASE_OTLP_FILE(METER, OtlpFileMetricExporter, meter, path)
 	OTEL_EXPORTER_CASE_OTLP_GRPC(METER, OtlpGrpcMetricExporter, meter, path)
 	OTEL_EXPORTER_CASE_OTLP_HTTP(METER, OtlpHttpMetricExporter, meter, path)
@@ -698,34 +633,6 @@ int otel_meter_exporter_create(struct otelc_meter *meter, std::unique_ptr<otel_s
 	exporter = std::move(exporter_maybe);
 
 	OTELC_RETURN_INT(OTELC_RET_OK);
-}
-
-
-/***
- * NAME
- *   otel_meter_exporter_destroy - destroys the meter exporter
- *
- * SYNOPSIS
- *   void otel_meter_exporter_destroy(void)
- *
- * ARGUMENTS
- *   This function takes no arguments.
- *
- * DESCRIPTION
- *   Cleans up resources associated with the meter exporter, such as closing
- *   any open file streams.  This should be called during shutdown to ensure a
- *   clean exit.
- *
- * RETURN VALUE
- *   This function does not return a value.
- */
-void otel_meter_exporter_destroy(void)
-{
-	OTELC_FUNC("");
-
-	otel_exporter_logfile_close(otel_meter_logfile);
-
-	OTELC_RETURN();
 }
 
 
@@ -821,7 +728,7 @@ int otel_logger_exporter_create(struct otelc_logger *logger, std::unique_ptr<ote
 	else if (strcasecmp(type, OTEL_EXPORTER_IN_MEMORY) == 0) {
 		OTEL_LOGGER_ERROR(OTEL_LOGGER_EXPORTER_NOT_SUPPORTED("In-Memory"));
 	}
-	OTEL_EXPORTER_CASE_OSTREAM(LOGGER, otel_exporter_logs::OStreamLogRecordExporter, logger, path, otel_logger_logfile)
+	OTEL_EXPORTER_CASE_OSTREAM(LOGGER, otel_exporter_logs::OStreamLogRecordExporter, logger, path)
 	OTEL_EXPORTER_CASE_OTLP_FILE(LOGGER, OtlpFileLogRecordExporter, logger, path)
 	OTEL_EXPORTER_CASE_OTLP_GRPC(LOGGER, OtlpGrpcLogRecordExporter, logger, path)
 	OTEL_EXPORTER_CASE_OTLP_HTTP(LOGGER, OtlpHttpLogRecordExporter, logger, path)
@@ -838,34 +745,6 @@ int otel_logger_exporter_create(struct otelc_logger *logger, std::unique_ptr<ote
 	exporter = std::move(exporter_maybe);
 
 	OTELC_RETURN_INT(OTELC_RET_OK);
-}
-
-
-/***
- * NAME
- *   otel_logger_exporter_destroy - destroys the logger exporter
- *
- * SYNOPSIS
- *   void otel_logger_exporter_destroy(void)
- *
- * ARGUMENTS
- *   This function takes no arguments.
- *
- * DESCRIPTION
- *   Cleans up resources associated with the logger exporter, such as closing
- *   any open file streams.  This should be called during shutdown to ensure a
- *   clean exit.
- *
- * RETURN VALUE
- *   This function does not return a value.
- */
-void otel_logger_exporter_destroy(void)
-{
-	OTELC_FUNC("");
-
-	otel_exporter_logfile_close(otel_logger_logfile);
-
-	OTELC_RETURN();
 }
 
 /*

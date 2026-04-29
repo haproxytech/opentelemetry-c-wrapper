@@ -57,15 +57,15 @@
  *   type, exporter_maybe, name
  */
 #ifdef HAVE_OTEL_EXPORTER_OSTREAM
-  #define OTEL_EXPORTER_CASE_OSTREAM(arg_sig, arg_type, arg_ptr, arg_path, arg_logfile)                         \
-	else if (strcasecmp(type, OTEL_EXPORTER_OSTREAM) == 0) {                                                \
-		if (otel_exporter_set_ostream_options<arg_type>((arg_ptr)->ctx, OTEL_##arg_sig##_EXPORTER_DESC, \
-		                                                (arg_path), (arg_logfile), exporter_maybe,      \
-		                                                &((arg_ptr)->err), name) == OTELC_RET_ERROR)    \
-			OTELC_RETURN_INT(OTELC_RET_ERROR);                                                      \
+  #define OTEL_EXPORTER_CASE_OSTREAM(arg_sig, arg_type, arg_ptr, arg_path)                                                   \
+	else if (strcasecmp(type, OTEL_EXPORTER_OSTREAM) == 0) {                                                             \
+		if (otel_exporter_set_ostream_options<arg_type>((arg_ptr)->ctx, OTEL_##arg_sig##_EXPORTER_DESC,              \
+		                                                (arg_path), OTEL_##arg_sig##_LOGFILE(arg_ptr),               \
+		                                                exporter_maybe, &((arg_ptr)->err), name) == OTELC_RET_ERROR) \
+			OTELC_RETURN_INT(OTELC_RET_ERROR);                                                                   \
 	}
 #else
-  #define OTEL_EXPORTER_CASE_OSTREAM(arg_sig, arg_type, arg_ptr, arg_path, arg_logfile)     \
+  #define OTEL_EXPORTER_CASE_OSTREAM(arg_sig, arg_type, arg_ptr, arg_path)                  \
 	else if (strcasecmp(type, OTEL_EXPORTER_OSTREAM) == 0) {                            \
 		OTEL_##arg_sig##_ERROR(OTEL_##arg_sig##_EXPORTER_NOT_SUPPORTED("ostream")); \
 	}
@@ -154,11 +154,8 @@
 
 
 int  otel_tracer_exporter_create(struct otelc_tracer *tracer, std::unique_ptr<otel_sdk_trace::SpanExporter> &exporter, const char *name = nullptr);
-void otel_tracer_exporter_destroy(void);
 int  otel_meter_exporter_create(struct otelc_meter *meter, std::unique_ptr<otel_sdk_metrics::PushMetricExporter> &exporter, const char *name = nullptr);
-void otel_meter_exporter_destroy(void);
 int  otel_logger_exporter_create(struct otelc_logger *logger, std::unique_ptr<otel_sdk_logs::LogRecordExporter> &exporter, const char *name = nullptr);
-void otel_logger_exporter_destroy(void);
 
 #endif /* _OPENTELEMETRY_C_WRAPPER_EXPORTER_H_ */
 

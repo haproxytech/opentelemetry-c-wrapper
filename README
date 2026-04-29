@@ -1253,13 +1253,13 @@ distributing contention across threads.  Metric instrument operations are
 serialized through a single lock, as the instrument set is typically small and
 rarely modified after startup.
 
-Lifecycle operations -- otelc_init(), otelc_*_create(), start(), destroy(), and
-otelc_deinit() -- must be called from a single thread, typically the main
-thread.  These are intended to run during program startup and shutdown, not
-concurrently with data-plane operations.
+Lifecycle operations -- otelc_init(), otelc_*_create(), start(), destroy(),
+otelc_deinit(), and otelc_lib_shutdown() -- must be called from a single thread,
+typically the main thread.  These are intended to run during program startup and
+shutdown, not concurrently with data-plane operations.
 
 Each thread is identified internally by a numeric ID.  Applications can provide
-a custom thread-ID function via otelc_ext_init() before calling otelc_init();
+a custom thread-ID function via otelc_ext_init() before creating any context;
 otherwise, the library uses its own internal assignment.
 
 SDK background threads (batch processor export threads, OTLP File and HTTP

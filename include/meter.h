@@ -25,6 +25,8 @@
 #define OTEL_METER_RETURN_INT(f, ...)       OTEL_RETURN_INT(meter, f, ##__VA_ARGS__)
 #define OTEL_METER_RETURN_PTR(f, ...)       OTEL_RETURN_PTR(meter, f, ##__VA_ARGS__)
 
+#define OTEL_METER_LOGFILE(m)               (OTEL_CAST_STATIC(struct otel_meter_impl *, (m)->impl)->logfile)
+
 #define OTEL_INSTRUMENT_HANDLE(a)           otel_map_find(OTEL_HANDLE(otel_instrument, shards[0].map), (a))
 #define OTEL_DBG_INSTRUMENT()               OTEL_DBG_HANDLE(OTEL, "otel_instrument", otel_instrument)
 
@@ -197,13 +199,15 @@ extern struct otel_handle<struct otel_view_handle *>       *otel_view;
 #endif
 
 /***
- * Per-instance implementation state for a meter.  Holds the SDK MeterProvider
- * and the SDK Meter obtained from it.  Each shared_ptr is owned by the instance
- * so multiple meters can coexist without sharing process-wide state.
+ * Per-instance implementation state for a meter.  Holds the SDK MeterProvider,
+ * the SDK Meter obtained from it, and the ostream exporter logfile owned by
+ * this meter.  All members are owned by the instance, so multiple meters can
+ * coexist without sharing process-wide state.
  */
 struct otel_meter_impl {
 	otel_nostd::shared_ptr<otel_metrics::MeterProvider> provider;
 	otel_nostd::shared_ptr<otel_metrics::Meter>         meter;
+	std::ofstream                                       logfile;
 };
 
 #endif /* _OPENTELEMETRY_C_WRAPPER_METER_H_ */
