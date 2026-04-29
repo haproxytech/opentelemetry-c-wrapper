@@ -424,13 +424,12 @@ or selecting a distinct named signal entry.  The helper otelc_close_cfg(ctx)
 releases the parsed YAML document attached to a context independently of the
 providers.
 
-Caveat for the multi-instance model:
-
-  * In the default build the span and span-context handle maps are shared by
-    every tracer in the process: the first tracer destroy tears down both maps
-    for every other live tracer.  Define OTELC_USE_STATIC_HANDLE to allocate
-    the maps once and keep them alive for the whole process lifetime, or build
-    without OTELC_USE_THREAD_SHARED_HANDLE to give each thread its own maps.
+Tracers, meters and loggers each fully own their own SDK provider, exporters,
+processors, and (for tracers) text-map propagator and ostream logfile; meters
+also own their own distinct instrument and view registries.  The shared span
+and span-context handle maps are reference-counted by the tracers and torn down
+only when the last tracer is destroyed, so destroying any one tracer does not
+invalidate spans owned by another tracer that is still in use.
 
 Functions that can fail return OTELC_RET_OK (0) on success or OTELC_RET_ERROR
 (-1) on failure.  Functions that create resources return a pointer on success or
