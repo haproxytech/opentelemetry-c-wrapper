@@ -19,19 +19,23 @@
 #define OTEL_IMPL(t,p)             OTEL_CAST_STATIC(struct otel_##t##_impl *, (p)->impl)
 
 /***
- * Downcast helpers used by OTEL_PROVIDER_OP to obtain the concrete SDK
- * provider pointer from the API-level provider held in the per-instance
- * implementation state, so that SDK-only operations such as ForceFlush()
- * and Shutdown() can be invoked.
+ * Downcast helpers that obtain the concrete SDK provider pointer from a
+ * shared_ptr to the API-level provider, so that SDK-only operations such as
+ * ForceFlush() and Shutdown() can be invoked.  The argument is the shared_ptr
+ * itself rather than the impl, so callers can pass a local snapshot whose
+ * lifetime is bounded by the call instead of the impl member that a
+ * concurrent destroy may reset.
  */
-#define OTEL_TRACER_PROVIDER(p)    OTEL_CAST_DYNAMIC(otel_sdk_trace::TracerProvider *, (p)->provider.get())
-#define OTEL_METER_PROVIDER(p)     OTEL_CAST_DYNAMIC(otel_sdk_metrics::MeterProvider *, (p)->provider.get())
-#define OTEL_LOGGER_PROVIDER(p)    OTEL_CAST_DYNAMIC(otel_sdk_logs::LoggerProvider *, (p)->provider.get())
+#define OTEL_TRACER_PROVIDER(s)    OTEL_CAST_DYNAMIC(otel_sdk_trace::TracerProvider *, (s).get())
+#define OTEL_METER_PROVIDER(s)     OTEL_CAST_DYNAMIC(otel_sdk_metrics::MeterProvider *, (s).get())
+#define OTEL_LOGGER_PROVIDER(s)    OTEL_CAST_DYNAMIC(otel_sdk_logs::LoggerProvider *, (s).get())
 
 /***
  * Generates a provider operation function (ForceFlush or Shutdown) that
  * forwards the call to the per-instance OpenTelemetry SDK provider held in the
- * instance's implementation state.
+ * instance's implementation state.  The shared_ptr is copied to a local before
+ * the SDK pointer is obtained, so a concurrent destroy that resets the impl
+ * member cannot release the SDK provider mid-call.
  */
 #define OTEL_PROVIDER_OP(arg_signal, arg_ptr, arg_operation, arg_msg)                                                     \
 	OTELC_FUNC("%p, %p", (arg_ptr), timeout);                                                                         \
@@ -39,8 +43,13 @@
 	if (OTEL_NULL(arg_ptr))                                                                                           \
 		OTELC_RETURN_INT(OTELC_RET_ERROR);                                                                        \
 	                                                                                                                  \
-	auto *impl              = OTEL_IMPL(arg_ptr, arg_ptr);                                                            \
-	const auto provider_sdk = OTEL_NULL(impl) ? nullptr : OTEL_##arg_signal##_PROVIDER(impl);                         \
+	auto *impl = OTEL_IMPL(arg_ptr, arg_ptr);                                                                         \
+	if (OTEL_NULL(impl))                                                                                              \
+		OTEL_##arg_signal##_RETURN_INT(arg_msg);                                                                  \
+	                                                                                                                  \
+	/* Copy the provider so it cannot be released mid-call. */                                                        \
+	auto       provider_shared = impl->provider;                                                                      \
+	const auto provider_sdk    = OTEL_##arg_signal##_PROVIDER(provider_shared);                                       \
 	if (!OTEL_NULL(provider_sdk)) {                                                                                   \
 		const auto us = OTEL_NULL(timeout) ? std::chrono::microseconds::max() : timespec_to_duration_us(timeout); \
 		                                                                                                          \
