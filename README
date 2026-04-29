@@ -419,14 +419,7 @@ or selecting a distinct named signal entry.  The helper otelc_close_cfg(ctx)
 releases the parsed YAML document attached to a context independently of the
 providers.
 
-Caveats for the multi-instance model:
-
-  * Meters share the process-wide instrument and view handle maps.  Two
-    meters that create instruments with the same name and type collide:
-    the second create_instrument() call returns the first meter's
-    instrument ID and writes to that meter's instrument, not to a new
-    one.  Use distinct instrument names per meter to keep the recorded
-    measurements separate.
+Caveat for the multi-instance model:
 
   * In the dynamic-handle build (default), the span and span-context
     handle maps are thread-local: the first tracer destroy on a given

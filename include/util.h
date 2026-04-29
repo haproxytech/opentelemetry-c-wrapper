@@ -70,7 +70,7 @@ constexpr size_t OTEL_HANDLE_MAP_SHARDS    = 64;
 /* NOTE: The offset from the demangled name was determined empirically. */
 #define OTEL_HANDLE_DEMANGLED_NAME   (typeid(T).name() + 3)
 
-#define OTEL_LOCK_METER(a)           const std::lock_guard<std::mutex> guard_##a(OTEL_HANDLE(otel_##a, get_shard(0).mutex))
+#define OTEL_LOCK_METER(a)           const std::lock_guard<std::mutex> guard_##a(OTEL_METER_IMPL(meter)->a.get_shard(0).mutex)
 #ifdef OTELC_USE_THREAD_SHARED_HANDLE
 #  define OTEL_LOCK_TRACER(a,n)      const std::lock_guard<std::mutex> guard_##a(OTEL_HANDLE(otel_##a, get_shard(n).mutex))
 #  define THREAD_LOCAL
@@ -298,6 +298,17 @@ struct otel_handle {
 			retval = std::max(retval, it.map.bucket_count());
 
 		return retval;
+	}
+
+	/***
+	 * Update the high-water mark of map size against the given shard.
+	 * Performs a lock-free compare-exchange loop so concurrent inserts on
+	 * different shards do not lose updates.
+	 */
+	void update_peak_size(size_t shard_idx) noexcept
+	{
+		size_t pk = peak_size.load();
+		while (!peak_size.compare_exchange_weak(pk, std::max(pk, shards[shard_idx].map.size())));
 	}
 
 	/***

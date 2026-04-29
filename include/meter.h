@@ -27,8 +27,18 @@
 
 #define OTEL_METER_LOGFILE(m)               (OTEL_CAST_STATIC(struct otel_meter_impl *, (m)->impl)->logfile)
 
-#define OTEL_INSTRUMENT_HANDLE(a)           otel_map_find(OTEL_HANDLE(otel_instrument, shards[0].map), (a))
-#define OTEL_DBG_INSTRUMENT()               OTEL_DBG_HANDLE(OTEL, "otel_instrument", otel_instrument)
+#define OTEL_METER_IMPL(m)                  (OTEL_CAST_STATIC(struct otel_meter_impl *, (m)->impl))
+#define OTEL_INSTRUMENT_HANDLE(a)           otel_map_find(OTEL_METER_IMPL(meter)->instrument.shards[0].map, (a))
+#define OTEL_DBG_INSTRUMENT()                                                                              \
+	OTELC_DBG(_OTEL, OTEL_HANDLE_FMT("otel_instrument"),                                               \
+		OTEL_METER_IMPL(meter)->instrument.total_map_size(),                                       \
+		OTEL_METER_IMPL(meter)->instrument.max_bucket_count(),                                     \
+		OTEL_METER_IMPL(meter)->instrument.shards.size(),                                          \
+		OTEL_METER_IMPL(meter)->instrument.id.load(),                                              \
+		OTEL_METER_IMPL(meter)->instrument.peak_size.load(),                                       \
+		OTEL_METER_IMPL(meter)->instrument.alloc_fail_cnt.load(),                                  \
+		OTEL_METER_IMPL(meter)->instrument.erase_cnt.load(),                                       \
+		OTEL_METER_IMPL(meter)->instrument.destroy_cnt.load())
 
 #define T_CONSTRUCTOR(arg_ptr, arg_type, arg_member)                                                                              \
 	otel_nostd::arg_ptr<otel_metrics::arg_type> arg_member;                                                                   \
@@ -190,24 +200,18 @@ struct T {
 		OTEL_METER_RETURN_INT("Invalid OpenTelemetry meter instrument type: %d", (arg_instr)->type)
 
 
-#ifdef OTELC_USE_STATIC_HANDLE
-extern struct otel_handle<struct otel_instrument_handle *>  otel_instrument;
-extern struct otel_handle<struct otel_view_handle *>        otel_view;
-#else
-extern struct otel_handle<struct otel_instrument_handle *> *otel_instrument;
-extern struct otel_handle<struct otel_view_handle *>       *otel_view;
-#endif
-
 /***
  * Per-instance implementation state for a meter.  Holds the SDK MeterProvider,
- * the SDK Meter obtained from it, and the ostream exporter logfile owned by
- * this meter.  All members are owned by the instance, so multiple meters can
- * coexist without sharing process-wide state.
+ * the SDK Meter obtained from it, the instrument and view handle maps used by
+ * this meter, and the ostream exporter logfile.  All members are owned by the
+ * instance, so multiple meters can coexist without sharing process-wide state.
  */
 struct otel_meter_impl {
 	otel_nostd::shared_ptr<otel_metrics::MeterProvider> provider;
 	otel_nostd::shared_ptr<otel_metrics::Meter>         meter;
 	std::ofstream                                       logfile;
+	struct otel_handle<struct otel_instrument_handle *> instrument{1};
+	struct otel_handle<struct otel_view_handle *>       view{1};
 };
 
 #endif /* _OPENTELEMETRY_C_WRAPPER_METER_H_ */
