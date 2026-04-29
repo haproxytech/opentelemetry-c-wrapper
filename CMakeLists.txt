@@ -974,6 +974,10 @@ add_wrapper_executable(test-logger${_test_suffix}
 add_wrapper_executable(test-yaml${_test_suffix} CXX
     SOURCES test/test-yaml.cpp test/test-util.c)
 
+## test-multi  (multi-instance integration test -- not installed)
+add_wrapper_executable(test-multi${_test_suffix}
+    SOURCES test/test-multi.c test/test-util.c test/opentelemetry.c)
+
 ## Copy YAML config files to the build directory so test programs can find them
 file(GLOB _test_yml_files "${CMAKE_CURRENT_SOURCE_DIR}/test/*.yml")
 foreach(_yml IN LISTS _test_yml_files)
@@ -987,6 +991,7 @@ add_custom_target(test DEPENDS
     test-meter${_test_suffix}
     test-logger${_test_suffix}
     test-yaml${_test_suffix}
+    test-multi${_test_suffix}
 )
 
 ## ---------------------------------------------------------------------------
