@@ -156,7 +156,6 @@ static int64_t otel_meter_get_view_id(struct otelc_meter *meter, const char *nam
  */
 static int64_t otel_meter_add_view(struct otelc_meter *meter, const char *view_name, const char *view_desc, const char *instrument_name, const char *instrument_unit, otelc_metric_instrument_t instrument_type, otelc_metric_aggregation_type_t aggregation_type, const double *bounds, size_t bounds_num)
 {
-	OTEL_LOCK_METER(view);
 	std::shared_ptr<otel_sdk_metrics::HistogramAggregationConfig> config{};
 	otel_sdk_metrics::InstrumentType                              instr_type;
 	otel_sdk_metrics::AggregationType                             aggr_type;
@@ -170,6 +169,8 @@ static int64_t otel_meter_add_view(struct otelc_meter *meter, const char *view_n
 		OTEL_METER_RETURN_INT("Invalid view name");
 	else if (OTEL_NULL(instrument_name))
 		OTEL_METER_RETURN_INT("Invalid instrument name");
+
+	OTEL_LOCK_METER(view);
 
 	OTEL_ARG_DEFAULT(view_desc, "");
 	OTEL_ARG_DEFAULT(instrument_unit, "");
@@ -262,15 +263,22 @@ static int64_t otel_meter_add_view(struct otelc_meter *meter, const char *view_n
 		OTEL_METER_RETURN_INT(OTEL_ERROR_MSG_ENOMEM("view"));
 
 	/* Register the view with the per-instance provider and track in the map. */
-	auto *impl              = OTEL_IMPL(meter, meter);
-	const auto provider_sdk = OTEL_NULL(impl) ? nullptr : OTEL_METER_PROVIDER(impl);
+	auto *impl = OTEL_IMPL(meter, meter);
+	if (OTEL_NULL(impl))
+		OTEL_METER_RETURN_INT("Unable to get meter provider");
+
+	/* Copy the provider so it cannot be released mid-call. */
+	auto       provider_shared = impl->provider;
+	const auto provider_sdk    = OTEL_METER_PROVIDER(provider_shared);
 	if (!OTEL_NULL(provider_sdk)) {
 		std::pair<std::unordered_map<int64_t, struct otel_view_handle *>::iterator, bool> emplace_status{};
 
-		/* Register the view with the meter provider. */
-		provider_sdk->AddView(std::move(instrument_selector), std::move(meter_selector), std::move(view));
-
-		/* Create a handle to track the view in the internal map. */
+		/***
+		 * Allocate the local handle and reserve its map slot before
+		 * calling AddView, so a partial failure leaves the SDK provider
+		 * unchanged.  AddView is append-only on the SDK side, so a
+		 * stale registration cannot be undone.
+		 */
 		const auto view_handle = new(std::nothrow) otel_view_handle{view_name};
 		if (OTEL_NULL(view_handle))
 			OTEL_METER_RETURN_INT(OTEL_ERROR_MSG_ENOMEM("view handle"));
@@ -281,13 +289,16 @@ static int64_t otel_meter_add_view(struct otelc_meter *meter, const char *view_n
 		}
 		OTEL_CATCH_SIGNAL_RETURN(delete view_handle, OTEL_METER_RETURN_INT, "Unable to add meter instrument view")
 
-		if (emplace_status.second) {
-			OTELC_DBG(OTEL, "View added");
-		} else {
+		if (!emplace_status.second) {
 			delete view_handle;
 
 			OTEL_METER_RETURN_INT("Unable to add meter instrument view: duplicate id %" PRId64, OTEL_METER_IMPL(meter)->view.id.load());
 		}
+
+		/* Selectors and view are consumed by AddView. */
+		provider_sdk->AddView(std::move(instrument_selector), std::move(meter_selector), std::move(view));
+
+		OTELC_DBG(OTEL, "View added");
 
 		OTEL_METER_IMPL(meter)->view.update_peak_size(0);
 	} else {
@@ -525,10 +536,15 @@ static int64_t otel_meter_create_instrument(struct otelc_meter *meter, const cha
 #endif
 
 	auto *impl = OTEL_IMPL(meter, meter);
-	if (OTEL_NULL(impl) || OTEL_NULL(impl->meter))
+	if (OTEL_NULL(impl))
 		OTEL_METER_RETURN_INT("Invalid meter");
 
-	auto *meter_ptr = impl->meter.get();
+	/* Copy the SDK Meter handle so it cannot be released mid-call. */
+	auto meter_shared = impl->meter;
+	if (OTEL_NULL(meter_shared))
+		OTEL_METER_RETURN_INT("Invalid meter");
+
+	auto *meter_ptr = meter_shared.get();
 
 	OTEL_LOCK_METER(instrument);
 
@@ -1135,7 +1151,7 @@ static void otel_meter_destroy(struct otelc_meter **meter)
 	 * struct.  No global SDK provider is touched.
 	 */
 	if (!OTEL_NULL(impl)) {
-		const auto provider_sdk = OTEL_METER_PROVIDER(impl);
+		const auto provider_sdk = OTEL_METER_PROVIDER(impl->provider);
 		if (!OTEL_NULL(provider_sdk))
 			(void)provider_sdk->ForceFlush(std::chrono::microseconds{5000000});
 

@@ -46,17 +46,32 @@ static THREAD_LOCAL std::atomic<int> otel_tracer_count{0};
  *   This function takes no arguments.
  *
  * DESCRIPTION
- *   Ensures that thread-local otel_span and otel_span_context handles are
- *   allocated for the calling thread.  When OTELC_USE_STATIC_HANDLE is
- *   defined, the handles are constructed automatically by the C++ runtime
- *   and this function is a no-op.  Otherwise the function allocates both
- *   handles on first call per thread.
+ *   Ensures that the otel_span and otel_span_context handle maps are allocated.
+ *   When OTELC_USE_STATIC_HANDLE is defined the maps are static objects
+ *   constructed by the C++ runtime and this function is not compiled in.
+ *   In the shared-handle dynamic build the maps are process-wide and are
+ *   allocated on the first tracer create across the whole program; concurrent
+ *   first calls are serialized with a function-local mutex.  In the
+ *   thread-local dynamic build the maps are per-thread and are allocated on
+ *   the first call from each thread.
  *
  * RETURN VALUE
  *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR if allocation fails.
  */
 static int otel_tracer_handle_init(void)
 {
+#ifdef OTELC_USE_THREAD_SHARED_HANDLE
+	/***
+	 * In the shared-handle build the maps are process-wide, so two threads
+	 * racing on the first tracer create would both pass the null check
+	 * below and both allocate, leaking one map.  Serialize with a
+	 * function-local mutex.  In the thread-local build the maps are
+	 * per-thread and the lock is unnecessary.
+	 */
+	static std::mutex                 init_mutex;
+	const std::lock_guard<std::mutex> guard(init_mutex);
+#endif
+
 	if (OTEL_NULL(otel_span)) {
 		otel_span = new(std::nothrow) struct otel_handle<struct otel_span_handle *, OTEL_HANDLE_SHARED>(OTEL_HANDLE_MAP_SHARDS);
 		if (OTEL_NULL(otel_span))
@@ -127,10 +142,15 @@ static struct otelc_span *otel_tracer_start_span_with_options(struct otelc_trace
 		OTEL_TRACER_RETURN_PTR("Parameters parent_span and parent_context are mutually exclusive");
 
 	auto *impl = OTEL_IMPL(tracer, tracer);
-	if (OTEL_NULL(impl) || OTEL_NULL(impl->tracer))
+	if (OTEL_NULL(impl))
 		OTEL_TRACER_RETURN_PTR("Invalid tracer");
 
-	auto *tracer_ptr = impl->tracer.get();
+	/* Copy the SDK Tracer handle so it cannot be released mid-call. */
+	auto tracer_shared = impl->tracer;
+	if (OTEL_NULL(tracer_shared))
+		OTEL_TRACER_RETURN_PTR("Invalid tracer");
+
+	auto *tracer_ptr = tracer_shared.get();
 
 #if !defined(OTELC_USE_THREAD_SHARED_HANDLE) && !defined(OTELC_USE_STATIC_HANDLE)
 	if (otel_tracer_handle_init() == OTELC_RET_ERROR)
@@ -521,11 +541,16 @@ static struct otelc_span_context *otel_tracer_extract_carrier(struct otelc_trace
 #else
 	auto       rt_context = otel_context::RuntimeContext::GetCurrent();
 #endif
-	auto       *impl = OTEL_IMPL(tracer, tracer);
-	if (OTEL_NULL(impl) || OTEL_NULL(impl->propagator))
+	auto *impl = OTEL_IMPL(tracer, tracer);
+	if (OTEL_NULL(impl))
 		OTEL_TRACER_RETURN_PTR("Tracer propagator not configured");
-	const auto &propagator = impl->propagator;
-	auto       context    = otel::make_shared_nothrow<otel_context::Context>(propagator->Extract(map_carrier, rt_context));
+
+	/* Copy the propagator so it cannot be released mid-call. */
+	auto propagator = impl->propagator;
+	if (OTEL_NULL(propagator))
+		OTEL_TRACER_RETURN_PTR("Tracer propagator not configured");
+
+	auto context = otel::make_shared_nothrow<otel_context::Context>(propagator->Extract(map_carrier, rt_context));
 	if (OTEL_NULL(context))
 		OTEL_TRACER_RETURN_PTR("Unable to allocate memory for %s context", carrier_name);
 
@@ -623,10 +648,15 @@ static int otel_tracer_enabled(struct otelc_tracer *tracer)
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
 
 	auto *impl = OTEL_IMPL(tracer, tracer);
-	if (OTEL_NULL(impl) || OTEL_NULL(impl->tracer))
+	if (OTEL_NULL(impl))
 		OTEL_TRACER_RETURN_INT("Invalid tracer");
 
-	auto *tracer_ptr = impl->tracer.get();
+	/* Copy the SDK Tracer handle so it cannot be released mid-call. */
+	auto tracer_shared = impl->tracer;
+	if (OTEL_NULL(tracer_shared))
+		OTEL_TRACER_RETURN_INT("Invalid tracer");
+
+	auto *tracer_ptr = tracer_shared.get();
 
 #if defined(OPENTELEMETRY_ABI_VERSION_NO) && (OPENTELEMETRY_ABI_VERSION_NO >= 2)
 	OTELC_RETURN_INT(tracer_ptr->Enabled() ? true : false);
@@ -703,10 +733,10 @@ static int otel_tracer_shutdown(struct otelc_tracer *tracer, const struct timesp
  *   YAML document owned by the tracer's context and starts the tracer.  The
  *   function initializes the tracer in such a way that the following
  *   components are initialized individually: sampler, one or more
- *   exporter-processor pairs, and finally provider.  When the YAML
- *   configuration specifies a sequence of processors (and optionally a
- *   matching sequence of exporters), each pair is created and passed to
- *   the provider.
+ *   exporter-processor pairs, provider, and finally the text-map propagator.
+ *   When the YAML configuration specifies a sequence of processors (and
+ *   optionally a matching sequence of exporters), each pair is created and
+ *   passed to the provider.
  *
  * RETURN VALUE
  *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR in case of an error.
@@ -808,6 +838,8 @@ static int otel_tracer_start(struct otelc_tracer *tracer)
 		otel_nostd::shared_ptr<otel_trace::Tracer> tracer_maybe{};
 
 		tracer_maybe = provider->GetTracer(tracer->scope_name, OTELC_SCOPE_VERSION, OTELC_SCOPE_SCHEMA_URL);
+		if (OTEL_NULL(tracer_maybe))
+			OTEL_TRACER_RETURN_INT("Unable to get tracer from provider");
 
 		otel_context::propagation::TextMapPropagator *propagator = nullptr;
 
@@ -837,10 +869,27 @@ static int otel_tracer_start(struct otelc_tracer *tracer)
 			OTEL_TRACER_RETURN_INT(OTEL_ERROR_MSG_ENOMEM("HTTP trace propagator"));
 #endif /* OTELC_USE_COMPOSITE_PROPAGATOR */
 
-		/* Install the tracer, provider and propagator on the instance. */
-		impl->tracer     = std::move(tracer_maybe);
-		impl->provider   = otel_nostd::shared_ptr<otel_trace::TracerProvider>(provider.release());
-		impl->propagator = otel_nostd::shared_ptr<otel_context::propagation::TextMapPropagator>(propagator);
+		/***
+		 * Install the tracer, provider and propagator on the instance.
+		 * nostd::shared_ptr<T>(T *) is not noexcept: it forwards to
+		 * std::shared_ptr<T>(T *), whose internal ref-count alloc may
+		 * throw bad_alloc.  On throw, std::shared_ptr's exception safety
+		 * deletes the raw pointer for us.  The propagator is parked in a
+		 * local unique_ptr until its shared_ptr ctor succeeds, so a
+		 * partial failure does not leak it.
+		 */
+		std::unique_ptr<otel_context::propagation::TextMapPropagator> propagator_owner(propagator);
+
+		try {
+			OTEL_DBG_THROW();
+			impl->tracer     = std::move(tracer_maybe);
+			impl->provider   = otel_nostd::shared_ptr<otel_trace::TracerProvider>(provider.release());
+			impl->propagator = otel_nostd::shared_ptr<otel_context::propagation::TextMapPropagator>(propagator_owner.release());
+		}
+		OTEL_CATCH_SIGNAL_RETURN({
+			impl->tracer   = {};
+			impl->provider = {};
+		}, OTEL_TRACER_RETURN_INT, "Unable to install tracer state")
 	}
 
 	OTELC_DBG_TRACER(OTEL, "tracer", tracer);
@@ -888,17 +937,11 @@ static void otel_tracer_destroy(struct otelc_tracer **tracer)
 		impl->tracer = {};
 
 	/***
-	 * Decrement the tracer count.  The shared span and span-context
-	 * handle maps are torn down only when the last tracer is destroyed,
-	 * so destroying one tracer never invalidates spans owned by another
-	 * tracer that is still in use.
-	 *
-	 * Caveat: otel_span and otel_span_context are thread-local handle maps
-	 * shared by every tracer that runs on this thread.  The cleanup below
-	 * ends and discards all entries, including spans owned by other tracers
-	 * in the same thread.  Callers that run multiple tracers concurrently
-	 * must end any cross-tracer spans before destroying any one tracer if
-	 * those spans are to be preserved.
+	 * Decrement the tracer count.  The span and span-context handle maps
+	 * are torn down only when the last tracer in the same scope as the
+	 * count is destroyed (process-wide in the shared-handle build, this
+	 * thread in the thread-local build), so destroying one tracer never
+	 * invalidates spans owned by another tracer that is still in use.
 	 */
 	const int remaining = otel_tracer_count.fetch_sub(1, std::memory_order_acq_rel) - 1;
 
@@ -953,7 +996,7 @@ static void otel_tracer_destroy(struct otelc_tracer **tracer)
 	 * provider is touched.
 	 */
 	if (!OTEL_NULL(impl)) {
-		const auto provider_sdk = OTEL_TRACER_PROVIDER(impl);
+		const auto provider_sdk = OTEL_TRACER_PROVIDER(impl->provider);
 		if (!OTEL_NULL(provider_sdk))
 			(void)provider_sdk->ForceFlush(std::chrono::microseconds{5000000});
 
@@ -1059,6 +1102,15 @@ struct otelc_tracer *otelc_tracer_create(const struct otelc_ctx *ctx, char **err
 	if (OTEL_NULL(retptr = otel_tracer_new()))
 		OTEL_ERR_RETURN_PTR(OTEL_ERROR_MSG_ENOMEM("tracer"));
 
+	/***
+	 * Register this tracer with the tracer count before any cleanup path
+	 * that calls otel_tracer_destroy(), so that the matching decrement in
+	 * destroy always balances against an increment.  The count guards the
+	 * lifetime of the shared span and span-context maps and must stay
+	 * non-negative.
+	 */
+	otel_tracer_count.fetch_add(1, std::memory_order_relaxed);
+
 	retptr->ctx = ctx;
 
 	if (yaml_resolve_prefix(ctx->fyd, err, OTEL_YAML_TRACER_PREFIX, ctx->name, OTEL_YAML_NAME_DEFAULT, &(retptr->yaml_prefix)) == OTELC_RET_ERROR) {
@@ -1067,14 +1119,6 @@ struct otelc_tracer *otelc_tracer_create(const struct otelc_ctx *ctx, char **err
 
 		OTELC_RETURN_PTR(retptr);
 	}
-
-	/***
-	 * Register this tracer with the global tracer count so the shared
-	 * span and span-context maps stay alive until the last tracer is
-	 * destroyed.  Incremented before any cleanup path that calls
-	 * otel_tracer_destroy() so the matching decrement balances out.
-	 */
-	otel_tracer_count.fetch_add(1, std::memory_order_relaxed);
 
 #if defined(OTELC_USE_THREAD_SHARED_HANDLE) && !defined(OTELC_USE_STATIC_HANDLE)
 	if (otel_tracer_handle_init() == OTELC_RET_ERROR) {
