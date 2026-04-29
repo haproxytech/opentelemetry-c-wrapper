@@ -9,7 +9,7 @@ yml_DATA = otel-cfg.yml
 
 if WANT_DEBUG
                   TEST_BIN_NAME = otel-c-wrapper-test_dbg
-                 check_PROGRAMS = otel-c-wrapper-test_dbg test-tracer_dbg test-meter_dbg test-logger_dbg test-yaml_dbg
+                 check_PROGRAMS = otel-c-wrapper-test_dbg test-tracer_dbg test-meter_dbg test-logger_dbg test-yaml_dbg test-multi_dbg
 otel_c_wrapper_test_dbg_SOURCES = test.c opentelemetry.c
   otel_c_wrapper_test_dbg_LDADD = @OPENTELEMETRY_C_WRAPPER_LIBS@ $(top_builddir)/src/libopentelemetry-c-wrapper_dbg.la -lm
 otel_c_wrapper_test_dbg_LDFLAGS = @OPENTELEMETRY_C_WRAPPER_LDFLAGS@
@@ -30,11 +30,14 @@ otel_c_wrapper_test_dbg_LDFLAGS = @OPENTELEMETRY_C_WRAPPER_LDFLAGS@
          test_yaml_dbg_CPPFLAGS = $(AM_CPPFLAGS) @OPENTELEMETRY_CPPFLAGS@ @LIBFYAML_CPPFLAGS@ @RAPIDYAML_CPPFLAGS@
             test_yaml_dbg_LDADD = @OPENTELEMETRY_C_WRAPPER_LIBS@ $(top_builddir)/src/libopentelemetry-c-wrapper_dbg.la @ABSL_LIBS@
           test_yaml_dbg_LDFLAGS = @OPENTELEMETRY_C_WRAPPER_LDFLAGS@
+         test_multi_dbg_SOURCES = test-multi.c test-util.c opentelemetry.c
+           test_multi_dbg_LDADD = @OPENTELEMETRY_C_WRAPPER_LIBS@ $(top_builddir)/src/libopentelemetry-c-wrapper_dbg.la
+         test_multi_dbg_LDFLAGS = @OPENTELEMETRY_C_WRAPPER_LDFLAGS@
 
 else
 
               TEST_BIN_NAME = otel-c-wrapper-test
-             check_PROGRAMS = otel-c-wrapper-test test-tracer test-meter test-logger test-yaml
+             check_PROGRAMS = otel-c-wrapper-test test-tracer test-meter test-logger test-yaml test-multi
 otel_c_wrapper_test_SOURCES = test.c opentelemetry.c
   otel_c_wrapper_test_LDADD = @OPENTELEMETRY_C_WRAPPER_LIBS@ $(top_builddir)/src/libopentelemetry-c-wrapper.la -lm
 otel_c_wrapper_test_LDFLAGS = @OPENTELEMETRY_C_WRAPPER_LDFLAGS@
@@ -55,6 +58,9 @@ otel_c_wrapper_test_LDFLAGS = @OPENTELEMETRY_C_WRAPPER_LDFLAGS@
          test_yaml_CPPFLAGS = $(AM_CPPFLAGS) @OPENTELEMETRY_CPPFLAGS@ @LIBFYAML_CPPFLAGS@ @RAPIDYAML_CPPFLAGS@
             test_yaml_LDADD = @OPENTELEMETRY_C_WRAPPER_LIBS@ $(top_builddir)/src/libopentelemetry-c-wrapper.la
           test_yaml_LDFLAGS = @OPENTELEMETRY_C_WRAPPER_LDFLAGS@
+         test_multi_SOURCES = test-multi.c test-util.c opentelemetry.c
+           test_multi_LDADD = @OPENTELEMETRY_C_WRAPPER_LIBS@ $(top_builddir)/src/libopentelemetry-c-wrapper.la
+         test_multi_LDFLAGS = @OPENTELEMETRY_C_WRAPPER_LDFLAGS@
 endif
 
 install-exec-local:
