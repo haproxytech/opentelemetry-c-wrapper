@@ -16,10 +16,6 @@
 #include "include.h"
 
 
-static otel_nostd::shared_ptr<otel_logs::Logger> otel_logger_owner{};
-static std::atomic<otel_logs::Logger *>          otel_logger{nullptr};
-
-
 /***
  * Helper that exposes the protected SetMinimumSeverity method on the
  * OpenTelemetry C++ Logger base class.
@@ -101,9 +97,11 @@ static int otel_logger_enabled(struct otelc_logger *logger, otelc_log_severity_t
 	if (OTEL_NULL(logger))
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
 
-	auto *logger_ptr = otel_logger.load();
-	if (OTEL_NULL(logger_ptr))
+	auto *impl = OTEL_IMPL(logger, logger);
+	if (OTEL_NULL(impl) || OTEL_NULL(impl->logger))
 		OTEL_LOGGER_RETURN_INT("Invalid logger");
+
+	auto *logger_ptr = impl->logger.get();
 
 	const auto log_severity = otel_logger_severity(logger, severity);
 	if (log_severity == otel_logs::Severity::kInvalid)
@@ -140,9 +138,11 @@ static int otel_logger_set_min_severity(struct otelc_logger *logger, otelc_log_s
 	if (OTEL_NULL(logger))
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
 
-	auto *logger_ptr = otel_logger.load();
-	if (OTEL_NULL(logger_ptr))
+	auto *impl = OTEL_IMPL(logger, logger);
+	if (OTEL_NULL(impl) || OTEL_NULL(impl->logger))
 		OTEL_LOGGER_RETURN_INT("Invalid logger");
+
+	auto *logger_ptr = impl->logger.get();
 
 	const auto log_severity = otel_logger_severity(logger, severity);
 	if (log_severity == otel_logs::Severity::kInvalid)
@@ -295,7 +295,8 @@ static int otel_logger_log_v(struct otelc_logger *logger, otelc_log_severity_t s
 		OTEL_LOGGER_RETURN_INT("Invalid format string");
 
 	otel_nostd::unique_ptr<otel_logs::LogRecord> log_record;
-	auto *logger_ptr = otel_logger.load();
+	auto *impl = OTEL_IMPL(logger, logger);
+	auto *logger_ptr = OTEL_NULL(impl) ? nullptr : impl->logger.get();
 	auto retval = otel_logger_record_create(logger, logger_ptr, severity, event_id, event_name, span_id, span_id_size, trace_id, trace_id_size, trace_flags, ts, ts_obs, attr, attr_len, log_record);
 	if (retval <= 0)
 		OTELC_RETURN_INT(retval);
@@ -464,7 +465,8 @@ static int otel_logger_log_body(struct otelc_logger *logger, otelc_log_severity_
 		OTEL_LOGGER_RETURN_INT("Invalid body value");
 
 	otel_nostd::unique_ptr<otel_logs::LogRecord> log_record;
-	auto *logger_ptr = otel_logger.load();
+	auto *impl = OTEL_IMPL(logger, logger);
+	auto *logger_ptr = OTEL_NULL(impl) ? nullptr : impl->logger.get();
 	const int retval = otel_logger_record_create(logger, logger_ptr, severity, event_id, event_name, span_id, span_id_size, trace_id, trace_id_size, trace_flags, ts, ts_obs, attr, attr_len, log_record);
 	if (retval <= 0)
 		OTELC_RETURN_INT(retval);
@@ -693,8 +695,12 @@ static int otel_logger_start(struct otelc_logger *logger)
 		OTEL_CATCH_SIGNAL_RETURN( , OTEL_LOGGER_RETURN_INT, "Unable to add processor")
 	}
 
-	/* Create the provider and logger, then install them as globals. */
+	/* Create the provider and logger, then install them on the instance. */
 	if ((retval = otel_logger_provider_create(logger, processors, provider)) != OTELC_RET_ERROR) {
+		auto *impl = OTEL_IMPL(logger, logger);
+		if (OTEL_NULL(impl))
+			OTEL_LOGGER_RETURN_INT("Logger implementation state not allocated");
+
 		otel_nostd::shared_ptr<otel_logs::Logger> logger_maybe{};
 
 		logger_maybe = provider->GetLogger(logger->scope_name, "", OTELC_SCOPE_VERSION, OTELC_SCOPE_SCHEMA_URL);
@@ -702,9 +708,8 @@ static int otel_logger_start(struct otelc_logger *logger)
 		const auto severity = otel_logger_severity(logger, logger->min_severity);
 		OTEL_CAST_STATIC(otel_logs_logger *, logger_maybe.get())->SetMinimumSeverity(OTEL_CAST_STATIC(uint8_t, severity));
 
-		otel_logger_owner = std::move(logger_maybe);
-		otel_logger.store(otel_logger_owner.get());
-		otel_logs::Provider::SetLoggerProvider(provider);
+		impl->logger   = std::move(logger_maybe);
+		impl->provider = provider;
 	}
 
 	OTELC_DBG_LOGGER(OTEL, "logger", logger);
@@ -739,16 +744,30 @@ static void otel_logger_destroy(struct otelc_logger **logger)
 
 	OTELC_DBG_LOGGER(OTEL, "logger", *logger);
 
+	auto *impl = OTEL_IMPL(logger, *logger);
+
 	/***
-	 * Clear otel_logger before provider teardown to prevent concurrent
-	 * callers from accessing a logger that is being destroyed.
+	 * Drop the SDK Logger handle before provider teardown to prevent
+	 * concurrent callers from using a logger that is being destroyed.
 	 */
-	if (!OTEL_NULL(otel_logger)) {
-		otel_logger.store(nullptr);
-		otel_logger_owner = {};
+	if (!OTEL_NULL(impl))
+		impl->logger = {};
+
+	/***
+	 * Flush the per-instance provider and release it.  No global SDK
+	 * provider is touched.
+	 */
+	if (!OTEL_NULL(impl)) {
+		const auto provider_sdk = OTEL_LOGGER_PROVIDER(impl);
+		if (!OTEL_NULL(provider_sdk))
+			(void)provider_sdk->ForceFlush(std::chrono::microseconds{5000000});
+
+		impl->provider = {};
+
+		delete impl;
+		(*logger)->impl = nullptr;
 	}
 
-	otel_logger_provider_destroy();
 	otel_logger_exporter_destroy();
 
 	OTELC_SFREE((*logger)->err);
@@ -806,6 +825,10 @@ static struct otelc_logger *otel_logger_new(void)
 		retptr->yaml_prefix  = nullptr;
 		retptr->min_severity = OTELC_LOG_SEVERITY_TRACE;
 		retptr->ops          = &otel_logger_ops;
+		retptr->impl         = new(std::nothrow) otel_logger_impl{};
+
+		if (OTEL_NULL(retptr->impl))
+			OTELC_SFREE_CLEAR(retptr);
 	}
 
 	OTELC_RETURN_PTR(retptr);

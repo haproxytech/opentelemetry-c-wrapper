@@ -17,8 +17,6 @@
 #include "include.h"
 
 
-static otel_nostd::shared_ptr<otel_metrics::Meter>          otel_meter_owner{};
-static std::atomic<otel_metrics::Meter *>                   otel_meter{nullptr};
 #ifdef OTELC_USE_STATIC_HANDLE
 struct otel_handle<struct otel_view_handle *>               otel_view{1};
 struct otel_handle<struct otel_instrument_handle *>         otel_instrument{1};
@@ -270,8 +268,9 @@ static int64_t otel_meter_add_view(struct otelc_meter *meter, const char *view_n
 	if (OTEL_NULL(view))
 		OTEL_METER_RETURN_INT(OTEL_ERROR_MSG_ENOMEM("view"));
 
-	/* Register the view with the provider and track it in the handle map. */
-	const auto provider_sdk = OTEL_METER_PROVIDER();
+	/* Register the view with the per-instance provider and track in the map. */
+	auto *impl              = OTEL_IMPL(meter, meter);
+	const auto provider_sdk = OTEL_NULL(impl) ? nullptr : OTEL_METER_PROVIDER(impl);
 	if (!OTEL_NULL(provider_sdk)) {
 		std::pair<std::unordered_map<int64_t, struct otel_view_handle *>::iterator, bool> emplace_status{};
 
@@ -532,9 +531,11 @@ static int64_t otel_meter_create_instrument(struct otelc_meter *meter, const cha
 		OTEL_METER_RETURN_INT("Invalid instrument description: \"%s\"", desc);
 #endif
 
-	auto *meter_ptr = otel_meter.load();
-	if (OTEL_NULL(meter_ptr))
+	auto *impl = OTEL_IMPL(meter, meter);
+	if (OTEL_NULL(impl) || OTEL_NULL(impl->meter))
 		OTEL_METER_RETURN_INT("Invalid meter");
+
+	auto *meter_ptr = impl->meter.get();
 
 	OTEL_LOCK_METER(instrument);
 
@@ -1042,17 +1043,20 @@ static int otel_meter_start(struct otelc_meter *meter)
 		OTEL_CATCH_SIGNAL_RETURN( , OTEL_METER_RETURN_INT, "Unable to add metric reader")
 	}
 
-	/* Create the provider and meter, then install them as globals. */
+	/* Create the provider and meter, then install them on the instance. */
 	if ((retval = otel_meter_provider_create(meter, readers, provider)) != OTELC_RET_ERROR) {
+		auto *impl = OTEL_IMPL(meter, meter);
+		if (OTEL_NULL(impl))
+			OTEL_METER_RETURN_INT("Meter implementation state not allocated");
+
 		otel_nostd::shared_ptr<otel_metrics::Meter> meter_maybe{};
 
 		meter_maybe = provider->GetMeter(meter->scope_name, OTELC_SCOPE_VERSION, OTELC_SCOPE_SCHEMA_URL);
 		if (OTEL_NULL(meter_maybe))
 			OTEL_METER_RETURN_INT("Unable to get meter from provider");
 
-		otel_meter_owner = std::move(meter_maybe);
-		otel_meter.store(otel_meter_owner.get());
-		otel_metrics::Provider::SetMeterProvider(provider);
+		impl->meter    = std::move(meter_maybe);
+		impl->provider = provider;
 	}
 
 	OTELC_DBG_METER(OTEL, "meter", meter);
@@ -1089,8 +1093,8 @@ static int otel_meter_enabled(struct otelc_meter *meter)
 	if (OTEL_NULL(meter))
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
 
-	auto *meter_ptr = otel_meter.load();
-	if (OTEL_NULL(meter_ptr))
+	auto *impl = OTEL_IMPL(meter, meter);
+	if (OTEL_NULL(impl) || OTEL_NULL(impl->meter))
 		OTEL_METER_RETURN_INT("Invalid meter");
 
 	OTELC_RETURN_INT(true);
@@ -1123,16 +1127,30 @@ static void otel_meter_destroy(struct otelc_meter **meter)
 
 	OTELC_DBG_METER(OTEL, "meter", *meter);
 
+	auto *impl = OTEL_IMPL(meter, *meter);
+
 	/***
-	 * Clear otel_meter before provider teardown to prevent concurrent
-	 * callers from accessing a meter that is being destroyed.
+	 * Drop the SDK Meter handle before provider teardown to prevent
+	 * concurrent callers from using a meter that is being destroyed.
 	 */
-	if (!OTEL_NULL(otel_meter)) {
-		otel_meter.store(nullptr);
-		otel_meter_owner = {};
+	if (!OTEL_NULL(impl))
+		impl->meter = {};
+
+	/***
+	 * Flush the per-instance provider and release it.  No global SDK
+	 * provider is touched.
+	 */
+	if (!OTEL_NULL(impl)) {
+		const auto provider_sdk = OTEL_METER_PROVIDER(impl);
+		if (!OTEL_NULL(provider_sdk))
+			(void)provider_sdk->ForceFlush(std::chrono::microseconds{5000000});
+
+		impl->provider = {};
+
+		delete impl;
+		(*meter)->impl = nullptr;
 	}
 
-	otel_meter_provider_destroy();
 	otel_meter_exporter_destroy();
 
 #ifdef OTELC_USE_STATIC_HANDLE
@@ -1212,6 +1230,10 @@ static struct otelc_meter *otel_meter_new(void)
 		retptr->scope_name  = nullptr;
 		retptr->yaml_prefix = nullptr;
 		retptr->ops         = &otel_meter_ops;
+		retptr->impl        = new(std::nothrow) otel_meter_impl{};
+
+		if (OTEL_NULL(retptr->impl))
+			OTELC_SFREE_CLEAR(retptr);
 	}
 
 	OTELC_RETURN_PTR(retptr);

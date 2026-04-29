@@ -196,6 +196,16 @@ extern struct otel_handle<struct otel_instrument_handle *> *otel_instrument;
 extern struct otel_handle<struct otel_view_handle *>       *otel_view;
 #endif
 
+/***
+ * Per-instance implementation state for a meter.  Holds the SDK MeterProvider
+ * and the SDK Meter obtained from it.  Each shared_ptr is owned by the instance
+ * so multiple meters can coexist without sharing process-wide state.
+ */
+struct otel_meter_impl {
+	otel_nostd::shared_ptr<otel_metrics::MeterProvider> provider;
+	otel_nostd::shared_ptr<otel_metrics::Meter>         meter;
+};
+
 #endif /* _OPENTELEMETRY_C_WRAPPER_METER_H_ */
 
 /*

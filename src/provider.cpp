@@ -72,19 +72,19 @@ int otel_tracer_provider_create(struct otelc_tracer *tracer, std::vector<std::un
 
 /***
  * NAME
- *   otel_tracer_provider_get - gets the global tracer provider
+ *   otel_tracer_provider_get - retrieves the per-instance tracer provider
  *
  * SYNOPSIS
  *   int otel_tracer_provider_get(struct otelc_tracer *tracer, otel_nostd::shared_ptr<otel_trace::TracerProvider> &provider)
  *
  * ARGUMENTS
  *   tracer   - tracer instance
- *   provider - shared pointer to store the global tracer provider
+ *   provider - shared pointer to store the per-instance tracer provider
  *
  * DESCRIPTION
- *   Retrieves the currently configured global tracer provider.  This allows
- *   different parts of an application to access the same tracer provider
- *   instance without having to pass it around explicitly.
+ *   Retrieves the tracer provider that was constructed for this tracer instance
+ *   at start time.  Multiple tracer instances may coexist within a single
+ *   process, each with its own provider.
  *
  * RETURN VALUE
  *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR in case of an error.
@@ -96,47 +96,13 @@ int otel_tracer_provider_get(struct otelc_tracer *tracer, otel_nostd::shared_ptr
 	if (OTEL_NULL(tracer))
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
 
-	auto provider_maybe = otel_trace::Provider::GetTracerProvider();
-	if (OTEL_NULL(provider_maybe))
+	auto *impl = OTEL_CAST_STATIC(struct otel_tracer_impl *, tracer->impl);
+	if (OTEL_NULL(impl) || OTEL_NULL(impl->provider))
 		OTEL_TRACER_RETURN_INT("Unable to get OpenTelemetry tracer provider");
 
-	provider = std::move(provider_maybe);
+	provider = impl->provider;
 
 	OTELC_RETURN_INT(OTELC_RET_OK);
-}
-
-
-/***
- * NAME
- *   otel_tracer_provider_destroy - destroys the global tracer provider
- *
- * SYNOPSIS
- *   void otel_tracer_provider_destroy(void)
- *
- * ARGUMENTS
- *   This function takes no arguments.
- *
- * DESCRIPTION
- *   Resets the global tracer provider, effectively disabling tracing.  This
- *   should be called during application shutdown to ensure that all tracing
- *   resources are properly released.
- *
- * RETURN VALUE
- *   This function does not return a value.
- */
-void otel_tracer_provider_destroy(void)
-{
-	const std::shared_ptr<otel_trace::TracerProvider> none;
-
-	OTELC_FUNC("");
-
-	const auto provider_sdk = OTEL_TRACER_PROVIDER();
-	if (!OTEL_NULL(provider_sdk))
-		(void)provider_sdk->ForceFlush(std::chrono::microseconds{5000000});
-
-	otel_trace::Provider::SetTracerProvider(none);
-
-	OTELC_RETURN();
 }
 
 
@@ -276,43 +242,6 @@ int otel_meter_provider_create(struct otelc_meter *meter, std::vector<std::uniqu
 
 /***
  * NAME
- *   otel_meter_provider_destroy - destroys the global meter provider
- *
- * SYNOPSIS
- *   void otel_meter_provider_destroy(void)
- *
- * ARGUMENTS
- *   This function takes no arguments.
- *
- * DESCRIPTION
- *   Shuts down the global meter provider, flushing any pending metrics and
- *   releasing all associated resources.  This should be called during
- *   application shutdown to ensure that all metric data is exported.
- *
- * RETURN VALUE
- *   This function does not return a value.
- */
-void otel_meter_provider_destroy(void)
-{
-	const std::shared_ptr<otel_metrics::MeterProvider> none;
-
-	OTELC_FUNC("");
-
-	/***
-	 * Shutdown() is implicitly called so it doesn't need to be used here.
-	 */
-	const auto provider_sdk = OTEL_METER_PROVIDER();
-	if (!OTEL_NULL(provider_sdk))
-		(void)provider_sdk->ForceFlush(std::chrono::microseconds{5000000});
-
-	otel_metrics::Provider::SetMeterProvider(none);
-
-	OTELC_RETURN();
-}
-
-
-/***
- * NAME
  *   otel_logger_provider_create - creates a new logger provider
  *
  * SYNOPSIS
@@ -367,40 +296,6 @@ int otel_logger_provider_create(struct otelc_logger *logger, std::vector<std::un
 	provider = std::move(provider_maybe);
 
 	OTELC_RETURN_INT(OTELC_RET_OK);
-}
-
-
-/***
- * NAME
- *   otel_logger_provider_destroy - destroys the global logger provider
- *
- * SYNOPSIS
- *   void otel_logger_provider_destroy(void)
- *
- * ARGUMENTS
- *   This function takes no arguments.
- *
- * DESCRIPTION
- *   Resets the global logger provider, effectively disabling logging.  This
- *   should be called during application shutdown to ensure that all logging
- *   resources are properly released.
- *
- * RETURN VALUE
- *   This function does not return a value.
- */
-void otel_logger_provider_destroy(void)
-{
-	const std::shared_ptr<otel_logs::LoggerProvider> none;
-
-	OTELC_FUNC("");
-
-	const auto provider_sdk = OTEL_LOGGER_PROVIDER();
-	if (!OTEL_NULL(provider_sdk))
-		(void)provider_sdk->ForceFlush(std::chrono::microseconds{5000000});
-
-	otel_logs::Provider::SetLoggerProvider(none);
-
-	OTELC_RETURN();
 }
 
 /*

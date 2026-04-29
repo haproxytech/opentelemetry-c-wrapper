@@ -24,6 +24,16 @@
 #define OTEL_LOGGER_RETURN_INT(f, ...)       OTEL_RETURN_INT(logger, f, ##__VA_ARGS__)
 #define OTEL_LOGGER_RETURN_PTR(f, ...)       OTEL_RETURN_PTR(logger, f, ##__VA_ARGS__)
 
+/***
+ * Per-instance implementation state for a logger.  Holds the SDK LoggerProvider
+ * and the SDK Logger obtained from it.  Each shared_ptr is owned by the
+ * instance, so multiple loggers can coexist without sharing process-wide state.
+ */
+struct otel_logger_impl {
+	otel_nostd::shared_ptr<otel_logs::LoggerProvider> provider;
+	otel_nostd::shared_ptr<otel_logs::Logger>         logger;
+};
+
 #endif /* _OPENTELEMETRY_C_WRAPPER_LOGGER_H_ */
 
 /*

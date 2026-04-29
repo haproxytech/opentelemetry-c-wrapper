@@ -360,26 +360,6 @@ struct otel_handle {
 };
 
 /***
- * Generates a provider operation function (ForceFlush or Shutdown) that
- * forwards the call to the underlying OpenTelemetry SDK provider.
- */
-#define OTEL_PROVIDER_OP(arg_signal, arg_ptr, arg_operation, arg_msg)                                                     \
-	OTELC_FUNC("%p, %p", (arg_ptr), timeout);                                                                         \
-	                                                                                                                  \
-	if (OTEL_NULL(arg_ptr))                                                                                           \
-		OTELC_RETURN_INT(OTELC_RET_ERROR);                                                                        \
-	                                                                                                                  \
-	const auto provider_sdk = OTEL_##arg_signal##_PROVIDER();                                                         \
-	if (!OTEL_NULL(provider_sdk)) {                                                                                   \
-		const auto us = OTEL_NULL(timeout) ? std::chrono::microseconds::max() : timespec_to_duration_us(timeout); \
-		                                                                                                          \
-		if (provider_sdk->arg_operation(us))                                                                      \
-			OTELC_RETURN_INT(OTELC_RET_OK);                                                                   \
-	}                                                                                                                 \
-	                                                                                                                  \
-	OTEL_##arg_signal##_RETURN_INT(arg_msg);
-
-/***
  * Internal definition of the library context.  Owns the parsed YAML
  * configuration document.  Multiple instances may coexist within a single
  * process, each loaded from a distinct configuration file.

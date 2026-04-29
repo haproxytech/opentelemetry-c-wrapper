@@ -357,6 +357,7 @@ struct otelc_logger {
 	otelc_log_severity_t           min_severity; /* Minimum allowed log severity level. */
 	const struct otelc_logger_ops *ops;          /* Pointer to the operations vtable. */
 	const struct otelc_ctx        *ctx;          /* Owning library context; provides the YAML configuration. */
+	void                          *impl;         /* Opaque pointer to the C++ implementation state (provider, logger). */
 };
 
 
