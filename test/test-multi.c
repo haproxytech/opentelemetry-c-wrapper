@@ -228,6 +228,63 @@ static void test_two_loggers_coexist(const struct otelc_ctx *ctx1, const struct 
 
 /***
  * NAME
+ *   test_two_meters_share_instrument_map - documents instrument-map sharing
+ *
+ * SYNOPSIS
+ *   static void test_two_meters_share_instrument_map(const struct otelc_ctx *ctx1, const struct otelc_ctx *ctx2)
+ *
+ * ARGUMENTS
+ *   ctx1 - first library context
+ *   ctx2 - second library context
+ *
+ * DESCRIPTION
+ *   Creates two meters against distinct library contexts and on each one
+ *   creates an instrument with the same name and type.  Records the two
+ *   returned instrument IDs.  The library's instrument handle map is
+ *   currently process-wide rather than per-meter, so the second
+ *   create_instrument call returns the first meter's ID instead of
+ *   allocating a fresh one bound to the second meter's SDK provider.  This
+ *   test asserts that observed behaviour so a future change that scopes
+ *   the handle map per-meter will fail loudly here and prompt a
+ *   corresponding update to the documentation.
+ *
+ * RETURN VALUE
+ *   This function does not return a value.
+ */
+static void test_two_meters_share_instrument_map(const struct otelc_ctx *ctx1, const struct otelc_ctx *ctx2)
+{
+	struct otelc_meter *primary = NULL, *secondary = NULL;
+	char               *err_a = NULL, *err_b = NULL;
+	int64_t             id_a = OTELC_RET_ERROR, id_b = OTELC_RET_ERROR;
+	int                 result = TEST_FAIL;
+
+	primary   = otelc_meter_create(ctx1, &err_a);
+	secondary = otelc_meter_create(ctx2, &err_b);
+
+	if (_nNULL(primary) && _nNULL(secondary)
+	    && (OTELC_OPS(primary, start) == OTELC_RET_OK)
+	    && (OTELC_OPS(secondary, start) == OTELC_RET_OK)) {
+		id_a = OTELC_OPS(primary,   create_instrument, "shared_counter", "shared", "1",
+		                 OTELC_METRIC_INSTRUMENT_COUNTER_UINT64, NULL);
+		id_b = OTELC_OPS(secondary, create_instrument, "shared_counter", "shared", "1",
+		                 OTELC_METRIC_INSTRUMENT_COUNTER_UINT64, NULL);
+
+		if ((id_a != OTELC_RET_ERROR) && (id_b != OTELC_RET_ERROR) && (id_a == id_b))
+			result = TEST_PASS;
+	}
+
+	otelc_deinit(NULL, NULL, &primary,   NULL);
+	otelc_deinit(NULL, NULL, &secondary, NULL);
+
+	OTELC_SFREE(err_a);
+	OTELC_SFREE(err_b);
+
+	test_report("two meters share the global instrument map (known limitation)", result);
+}
+
+
+/***
+ * NAME
  *   main - program entry point
  *
  * SYNOPSIS
@@ -279,6 +336,7 @@ int main(int argc, char **argv)
 
 	OTELC_LOG(stdout, "[multi-meter]");
 	test_two_meters_coexist(ctx[0], ctx[1]);
+	test_two_meters_share_instrument_map(ctx[0], ctx[1]);
 
 	OTELC_LOG(stdout, "[multi-logger]");
 	test_two_loggers_coexist(ctx[0], ctx[1]);
