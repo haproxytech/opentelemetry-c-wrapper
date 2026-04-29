@@ -410,7 +410,7 @@ signal types and destroys whichever ones are non-NULL:
 
   otelc_deinit(&ctx, &tracer, &meter, &logger);
 
-It leaves the shared hooks intact.  The SDK internal log handler installed via
+It only touches per-context state.  The SDK internal log handler installed via
 otelc_log_set_handler() and the malloc/free/thread-id callbacks registered via
 otelc_ext_init() are process-wide and are left untouched, so deinitializing one
 context does not disturb the hooks that other live contexts rely on.  Once the
@@ -418,7 +418,7 @@ final context has been destroyed, call otelc_lib_shutdown() to reset those hooks
 to their library defaults; this is required before unloading caller code that
 owns any of the registered callbacks, and is otherwise optional.
 
-All configuration state stays strictly per-context, so multiple contexts may
+All configuration and provider state is per-context, so multiple contexts may
 coexist in the same process, each loaded from a distinct configuration file
 or selecting a distinct named signal entry.  The helper otelc_close_cfg(ctx)
 releases the parsed YAML document attached to a context independently of the

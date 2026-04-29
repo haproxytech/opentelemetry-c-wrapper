@@ -190,8 +190,12 @@ static int otel_span_inject_carrier(const struct otelc_span *span, W *carrier, c
 
 	OTEL_LOCK_SPAN_HANDLE(_INT, span);
 
-	/* Inject the span context into the carrier via the global propagator. */
-	const auto propagator = otel_context::propagation::GlobalTextMapPropagator::GetGlobalPropagator();
+	/* Inject the span context into the carrier via the per-tracer propagator. */
+	auto *impl = OTEL_NULL(span->tracer) ? nullptr : OTEL_CAST_STATIC(struct otel_tracer_impl *, span->tracer->impl);
+	if (OTEL_NULL(impl) || OTEL_NULL(impl->propagator))
+		OTEL_SPAN_RETURN_INT("Tracer propagator not configured");
+	/* Copy the propagator so it cannot be released mid-call. */
+	auto propagator = impl->propagator;
 	propagator->Inject(otel_carrier, *(handle->context));
 
 #ifndef OTELC_USE_COMPOSITE_PROPAGATOR

@@ -169,7 +169,7 @@ struct otelc_logger;
  * Opaque library context.  Owns a parsed YAML configuration document and a
  * caller-provided name and acts as the parent object for tracer, meter, and
  * logger instances created against it.  Multiple contexts may coexist within
- * one process, each with its own configuration document.
+ * one process, each with its own configuration and its own set of providers.
  */
 struct otelc_ctx;
 

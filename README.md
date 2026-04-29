@@ -287,16 +287,16 @@ OTELC_OPSR(span, end);
 3. `instance->ops->start(instance)` -- start the pipeline.
 4. *(use the signal)* -- create spans, record metrics, emit logs.
 5. `otelc_deinit(&ctx, &tracer, &meter, &logger)` -- shut down and free
-   the context together with any registered signal instances.  The SDK internal
-   log handler and the callbacks installed via `otelc_ext_init()` remain valid
-   for any other live context.
+   the context together with any registered signal instances.  Only per-context
+   state is touched; the SDK internal log handler and the callbacks installed
+   via `otelc_ext_init()` remain valid for any other live context.
 6. `otelc_lib_shutdown()` -- optional, call once after the final context has
    been destroyed to reset the process-wide hooks installed via
    `otelc_log_set_handler()` and `otelc_ext_init()` to their defaults.
    Required before unloading caller code that owns any of those callbacks;
    otherwise optional.
 
-All configuration state stays strictly per-context, so multiple contexts may
+All configuration and provider state is per-context, so multiple contexts may
 coexist in the same process, each with its own configuration and named signal
 selection.  The helper `otelc_close_cfg(ctx)` releases the parsed YAML document
 attached to a context independently of the providers.

@@ -16,6 +16,17 @@
 #include "include.h"
 
 
+/***
+ * Caveat: a single static std::ofstream is reused for every ostream exporter
+ * of a given signal type.  Two ostream-based tracer, meter or logger instances
+ * therefore cannot coexist in the same process: the first instance opens the
+ * stream, the second open() call fails with the failbit set.  Multi-instance
+ * setups must use a different exporter type (otlp_file, otlp_grpc, otlp_http,
+ * in-memory for traces and metrics) for the additional instance, or send to
+ * "stdout" / "stderr" which bypass these handles.  Note that every instance
+ * destroy of a signal runs otel_<signal>_exporter_destroy(), which closes the
+ * signal's shared stream whichever exporter type the destroyed instance used.
+ */
 static std::ofstream otel_tracer_logfile{}, otel_meter_logfile{}, otel_logger_logfile{};
 
 
