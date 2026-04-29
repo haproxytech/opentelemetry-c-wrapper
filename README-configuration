@@ -86,15 +86,19 @@ baggage, and an HTTP-only propagator that requires separate baggage handling.
 
 When defined, the tracer's start() function creates an HttpTraceContext
 propagator and a BaggagePropagator, combines them into a CompositePropagator,
-and registers it as the global propagator.  A single Inject() or Extract()
-call then handles both W3C traceparent/tracestate headers and the baggage
-header transparently.
+and stores it on the per-tracer implementation state.  A single Inject() or
+Extract() call then handles both W3C traceparent/tracestate headers and the
+baggage header transparently.
 
-When undefined, only an HttpTraceContext propagator is registered.  Baggage
-must be handled explicitly: during extraction, a separate BaggagePropagator
-is instantiated and its Extract() is called to merge baggage into the context.
+When undefined, only an HttpTraceContext propagator is created.  Baggage must
+be handled explicitly: during extraction, a separate BaggagePropagator is
+instantiated and its Extract() is called to merge baggage into the context.
 During injection, the baggage content is read from the context and written to
 the carrier as an additional header via Baggage::ToHeader().
+
+Each tracer instance owns its own propagator; nothing is registered on the
+SDK's GlobalTextMapPropagator.  Two tracers in the same process can therefore
+use different propagator configurations independently.
 
 
 5. OTELC_USE_MULTIPLE_PROCESSORS

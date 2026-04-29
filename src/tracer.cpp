@@ -683,10 +683,10 @@ static int otel_tracer_shutdown(struct otelc_tracer *tracer, const struct timesp
  *   tracer - tracer instance
  *
  * DESCRIPTION
- *   The tracer whose configuration is specified in the OpenTelemetry YAML
- *   configuration file (set by the previous call to the otelc_init() function)
- *   is started.  The function initializes the tracer in such a way that the
- *   following components are initialized individually: sampler, one or more
+ *   Reads the configuration from the /signals/traces/<name> subtree of the
+ *   YAML document owned by the tracer's context and starts the tracer.  The
+ *   function initializes the tracer in such a way that the following
+ *   components are initialized individually: sampler, one or more
  *   exporter-processor pairs, and finally provider.  When the YAML
  *   configuration specifies a sequence of processors (and optionally a
  *   matching sequence of exporters), each pair is created and passed to
@@ -937,8 +937,6 @@ static void otel_tracer_destroy(struct otelc_tracer **tracer)
 		delete impl;
 		(*tracer)->impl = nullptr;
 	}
-
-	otel_tracer_exporter_destroy();
 
 	OTELC_SFREE((*tracer)->err);
 	OTELC_SFREE((*tracer)->scope_name);

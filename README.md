@@ -424,12 +424,12 @@ All data-plane operations (creating spans, recording metrics, emitting logs) are
 thread-safe and can be called concurrently.  Spans are stored in a 64-shard map
 with independent locks to distribute contention.
 
-Lifecycle operations (`otelc_init`, `otelc_*_create`, `start`, `destroy`,
-`otelc_deinit`) must be called from a single thread, typically during program
-startup and shutdown.
+Lifecycle operations (`otelc_init`, `otelc_*_create`, `start`,
+`destroy`, `otelc_deinit`) must be called from a single thread, typically
+during program startup and shutdown.
 
 Applications can provide a custom thread-ID function via `otelc_ext_init()`
-before calling `otelc_init()`.
+before creating any context.
 
 SDK background threads can optionally be bound to a specific CPU core via the
 `cpu_id` YAML setting.  See the [Thread Settings](#thread-settings) section

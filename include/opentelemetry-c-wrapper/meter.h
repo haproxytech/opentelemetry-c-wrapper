@@ -363,14 +363,13 @@ struct otelc_meter_ops {
 	 *   meter - meter instance
 	 *
 	 * DESCRIPTION
-	 *   The meter whose configuration is specified in the OpenTelemetry YAML
-	 *   configuration file (set by the previous call to the otelc_init() function)
-	 *   is started.  The function initializes the meter in such a way that the
-	 *   following components are initialized individually: one or more
-	 *   exporter-reader pairs, and finally provider.  When the YAML
-	 *   configuration specifies a sequence of exporters (and optionally a
-	 *   matching sequence of readers), each pair is created and passed to
-	 *   the provider.
+	 *   Reads the configuration from the /signals/metrics/<name> subtree of
+	 *   the YAML document owned by the meter's context and starts the meter.
+	 *   The function initializes the meter in such a way that the following
+	 *   components are initialized individually: one or more exporter-reader
+	 *   pairs, and finally provider.  When the YAML configuration specifies a
+	 *   sequence of exporters (and optionally a matching sequence of readers),
+	 *   each pair is created and passed to the provider.
 	 *
 	 * RETURN VALUE
 	 *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR in case of an

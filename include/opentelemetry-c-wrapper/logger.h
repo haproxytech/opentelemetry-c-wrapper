@@ -313,11 +313,11 @@ struct otelc_logger_ops {
 	 *   logger - logger instance
 	 *
 	 * DESCRIPTION
-	 *   The logger whose configuration is specified in the OpenTelemetry
-	 *   YAML configuration file (set by the previous call to the
-	 *   otelc_init() function) is started.  The function initializes the
-	 *   logger in such a way that the following components are initialized
-	 *   individually: exporter, processor and finally provider.
+	 *   Reads the configuration from the /signals/logs/<name> subtree of
+	 *   the YAML document owned by the logger's context and starts the
+	 *   logger.  The function initializes the logger in such a way that the
+	 *   following components are initialized individually: exporter,
+	 *   processor and finally provider.
 	 *
 	 * RETURN VALUE
 	 *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR in case of an
