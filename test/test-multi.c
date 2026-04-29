@@ -228,10 +228,10 @@ static void test_two_loggers_coexist(const struct otelc_ctx *ctx1, const struct 
 
 /***
  * NAME
- *   test_two_meters_share_instrument_map - documents instrument-map sharing
+ *   test_two_meters_distinct_instrument_maps - tests per-meter instrument maps
  *
  * SYNOPSIS
- *   static void test_two_meters_share_instrument_map(const struct otelc_ctx *ctx1, const struct otelc_ctx *ctx2)
+ *   static void test_two_meters_distinct_instrument_maps(const struct otelc_ctx *ctx1, const struct otelc_ctx *ctx2)
  *
  * ARGUMENTS
  *   ctx1 - first library context
@@ -239,19 +239,17 @@ static void test_two_loggers_coexist(const struct otelc_ctx *ctx1, const struct 
  *
  * DESCRIPTION
  *   Creates two meters against distinct library contexts and on each one
- *   creates an instrument with the same name and type.  Records the two
- *   returned instrument IDs.  The library's instrument handle map is
- *   currently process-wide rather than per-meter, so the second
- *   create_instrument call returns the first meter's ID instead of
- *   allocating a fresh one bound to the second meter's SDK provider.  This
- *   test asserts that observed behaviour so a future change that scopes
- *   the handle map per-meter will fail loudly here and prompt a
- *   corresponding update to the documentation.
+ *   creates an instrument with the same name and type.  The instrument and
+ *   view handle maps live inside each meter's per-instance state, so the
+ *   two create_instrument calls populate independent maps.  After both
+ *   creations, the test asserts via otelc_statistics_check() that each
+ *   meter's instrument map holds exactly one entry with its id counter at
+ *   1, proving the maps are not shared between meters.
  *
  * RETURN VALUE
  *   This function does not return a value.
  */
-static void test_two_meters_share_instrument_map(const struct otelc_ctx *ctx1, const struct otelc_ctx *ctx2)
+static void test_two_meters_distinct_instrument_maps(const struct otelc_ctx *ctx1, const struct otelc_ctx *ctx2)
 {
 	struct otelc_meter *primary = NULL, *secondary = NULL;
 	char               *err_a = NULL, *err_b = NULL;
@@ -269,7 +267,9 @@ static void test_two_meters_share_instrument_map(const struct otelc_ctx *ctx1, c
 		id_b = OTELC_OPS(secondary, create_instrument, "shared_counter", "shared", "1",
 		                 OTELC_METRIC_INSTRUMENT_COUNTER_UINT64, NULL);
 
-		if ((id_a != OTELC_RET_ERROR) && (id_b != OTELC_RET_ERROR) && (id_a == id_b))
+		if ((id_a != OTELC_RET_ERROR) && (id_b != OTELC_RET_ERROR)
+		    && (otelc_statistics_check(primary,   2, 1, 1, 0, 0, 0) == 0)
+		    && (otelc_statistics_check(secondary, 2, 1, 1, 0, 0, 0) == 0))
 			result = TEST_PASS;
 	}
 
@@ -279,7 +279,7 @@ static void test_two_meters_share_instrument_map(const struct otelc_ctx *ctx1, c
 	OTELC_SFREE(err_a);
 	OTELC_SFREE(err_b);
 
-	test_report("two meters share the global instrument map (known limitation)", result);
+	test_report("two meters have distinct instrument maps", result);
 }
 
 
@@ -336,7 +336,7 @@ int main(int argc, char **argv)
 
 	OTELC_LOG(stdout, "[multi-meter]");
 	test_two_meters_coexist(ctx[0], ctx[1]);
-	test_two_meters_share_instrument_map(ctx[0], ctx[1]);
+	test_two_meters_distinct_instrument_maps(ctx[0], ctx[1]);
 
 	OTELC_LOG(stdout, "[multi-logger]");
 	test_two_loggers_coexist(ctx[0], ctx[1]);

@@ -1673,26 +1673,29 @@ const char *otel_strerror(int errnum)
  *   otelc_statistics - retrieves internal library statistics
  *
  * SYNOPSIS
- *   void otelc_statistics(char *buffer, size_t bufsiz)
+ *   void otelc_statistics(const struct otelc_meter *meter, char *buffer, size_t bufsiz)
  *
  * ARGUMENTS
+ *   meter  - meter contributing instrument and view counters, or NULL for none
  *   buffer - pointer to a character buffer to store the statistics string
  *   bufsiz - size of the buffer in bytes
  *
  * DESCRIPTION
  *   Populates the provided buffer with a formatted string containing internal
- *   statistics about the OpenTelemetry C wrapper library.  This may include
- *   counts of active handles for spans, contexts, instruments, and views,
- *   which is useful for debugging and monitoring the library's resource usage.
+ *   statistics about the OpenTelemetry C wrapper library.  Span and context
+ *   counters always reflect the process-wide handle maps used by tracers.
+ *   Instrument and view counters are read from the supplied meter instance
+ *   and are reported as empty when meter is NULL.
  *
  * RETURN VALUE
  *   This function does not return a value.
  */
-void otelc_statistics(char *buffer, size_t bufsiz)
+void otelc_statistics(const struct otelc_meter *meter, char *buffer, size_t bufsiz)
 {
+#define OTEL_HANDLE_VAL_ARGS(p)   (p).total_map_size(), (p).max_bucket_count(), (p).shards.size(), (p).id.load(), (p).peak_size.load(), (p).alloc_fail_cnt.load(), (p).erase_cnt.load(), (p).destroy_cnt.load()
 	struct otelc_pipeline_status status;
 
-	OTELC_FUNC("%p, %zu", buffer, bufsiz);
+	OTELC_FUNC("%p, %p, %zu", meter, buffer, bufsiz);
 
 	if (OTEL_NULL(buffer) || (bufsiz < 64))
 		OTELC_RETURN();
@@ -1702,22 +1705,24 @@ void otelc_statistics(char *buffer, size_t bufsiz)
 	const auto cnt_0 = status.traces.dropped;
 	const auto cnt_1 = status.logs.dropped;
 
-#ifdef OTELC_USE_STATIC_HANDLE
-	(void)snprintf(buffer, bufsiz, OTEL_HANDLE_FMT("span:") OTEL_HANDLE_FMT(", context:") OTEL_HANDLE_FMT(", instrument:") OTEL_HANDLE_FMT(", view:") ", dropped: %" PRId64 " %" PRId64, OTEL_HANDLE_ARGS(otel_span), OTEL_HANDLE_ARGS(otel_span_context), OTEL_HANDLE_ARGS(otel_instrument), OTEL_HANDLE_ARGS(otel_view), cnt_0, cnt_1);
-#else
 	char buffer_span[BUFSIZ] = "{ }", buffer_context[BUFSIZ] = "{ }", buffer_instrument[BUFSIZ] = "{ }", buffer_view[BUFSIZ] = "{ }";
 
+#ifdef OTELC_USE_STATIC_HANDLE
+	(void)snprintf(buffer_span, sizeof(buffer_span), OTEL_HANDLE_FMT(""), OTEL_HANDLE_ARGS(otel_span));
+	(void)snprintf(buffer_context, sizeof(buffer_context), OTEL_HANDLE_FMT(""), OTEL_HANDLE_ARGS(otel_span_context));
+#else
 	if (!OTEL_NULL(otel_span))
 		(void)snprintf(buffer_span, sizeof(buffer_span), OTEL_HANDLE_FMT(""), OTEL_HANDLE_ARGS(otel_span));
 	if (!OTEL_NULL(otel_span_context))
 		(void)snprintf(buffer_context, sizeof(buffer_context), OTEL_HANDLE_FMT(""), OTEL_HANDLE_ARGS(otel_span_context));
-	if (!OTEL_NULL(otel_instrument))
-		(void)snprintf(buffer_instrument, sizeof(buffer_instrument), OTEL_HANDLE_FMT(""), OTEL_HANDLE_ARGS(otel_instrument));
-	if (!OTEL_NULL(otel_view))
-		(void)snprintf(buffer_view, sizeof(buffer_view), OTEL_HANDLE_FMT(""), OTEL_HANDLE_ARGS(otel_view));
+#endif /* OTELC_USE_STATIC_HANDLE */
+
+	if (!OTEL_NULL(meter) && !OTEL_NULL(meter->impl)) {
+		(void)snprintf(buffer_instrument, sizeof(buffer_instrument), OTEL_HANDLE_FMT(""), OTEL_HANDLE_VAL_ARGS(OTEL_METER_IMPL(meter)->instrument));
+		(void)snprintf(buffer_view, sizeof(buffer_view), OTEL_HANDLE_FMT(""), OTEL_HANDLE_VAL_ARGS(OTEL_METER_IMPL(meter)->view));
+	}
 
 	(void)snprintf(buffer, bufsiz, "span:%s, context:%s, instrument:%s, view:%s, dropped: %" PRId64 " %" PRId64, buffer_span, buffer_context, buffer_instrument, buffer_view, cnt_0, cnt_1);
-#endif /* OTELC_USE_STATIC_HANDLE */
 
 	OTELC_RETURN();
 }
@@ -1728,9 +1733,10 @@ void otelc_statistics(char *buffer, size_t bufsiz)
  *   otelc_statistics_check - verifies handle statistics against expected values
  *
  * SYNOPSIS
- *   int otelc_statistics_check(int type, size_t size, int64_t id, int64_t alloc_fail, int64_t erase, int64_t destroy)
+ *   int otelc_statistics_check(const struct otelc_meter *meter, int type, size_t size, int64_t id, int64_t alloc_fail, int64_t erase, int64_t destroy)
  *
  * ARGUMENTS
+ *   meter      - meter for types 2 (instrument)/3 (view); ignored for 0/1
  *   type       - handle type: 0 = span, 1 = span context, 2 = instrument, 3 = view
  *   size       - expected number of entries in the handle map
  *   id         - expected value of the id counter
@@ -1740,29 +1746,32 @@ void otelc_statistics(char *buffer, size_t bufsiz)
  *
  * DESCRIPTION
  *   Compares the current statistics of the specified handle type against the
- *   expected values.  The function checks the map size, id counter, allocation
- *   failure counter, erase counter, and destroy counter for the given handle
- *   type.
+ *   expected values.  Span and context counters are read from the process-wide
+ *   handle maps; instrument and view counters are read from the meter's
+ *   per-instance handle maps.  The function checks the map size, id counter,
+ *   allocation failure counter, erase counter, and destroy counter for the
+ *   given handle type.
  *
  * RETURN VALUE
  *   Returns 0 if all statistics match, or a non-zero value with the bit
  *   corresponding to the handle type set on mismatch.
  */
-int otelc_statistics_check(int type, size_t size, int64_t id, int64_t alloc_fail, int64_t erase, int64_t destroy)
+int otelc_statistics_check(const struct otelc_meter *meter, int type, size_t size, int64_t id, int64_t alloc_fail, int64_t erase, int64_t destroy)
 {
-#define OTEL_STAT_CHECK(p,a,b,c,d,e)   (((OTEL_HANDLE((p), total_map_size()) == (a)) && (OTEL_HANDLE((p), id) == (b)) && (OTEL_HANDLE((p), alloc_fail_cnt) == (c)) && (OTEL_HANDLE((p), erase_cnt) == (d)) && (OTEL_HANDLE((p), destroy_cnt) == (e))) ? 0 : 1)
+#define OTEL_STAT_CHECK(p,a,b,c,d,e)        (((OTEL_HANDLE((p), total_map_size()) == (a)) && (OTEL_HANDLE((p), id) == (b)) && (OTEL_HANDLE((p), alloc_fail_cnt) == (c)) && (OTEL_HANDLE((p), erase_cnt) == (d)) && (OTEL_HANDLE((p), destroy_cnt) == (e))) ? 0 : 1)
+#define OTEL_STAT_CHECK_VAL(p,a,b,c,d,e)    ((((p).total_map_size() == (a)) && ((p).id == (b)) && ((p).alloc_fail_cnt == (c)) && ((p).erase_cnt == (d)) && ((p).destroy_cnt == (e))) ? 0 : 1)
 	int retval = 0;
 
-	OTELC_FUNC("%d, %zu, %" PRId64 ", %" PRId64 ", %" PRId64 ", %" PRId64, type, size, id, alloc_fail, erase, destroy);
+	OTELC_FUNC("%p, %d, %zu, %" PRId64 ", %" PRId64 ", %" PRId64 ", %" PRId64, meter, type, size, id, alloc_fail, erase, destroy);
 
 	if (OTELC_USE_STATIC_HANDLE_IFDEF( , !OTEL_NULL(otel_span) &&) (type == 0))
 		retval = OTEL_STAT_CHECK(otel_span, size, id, alloc_fail, erase, destroy) << type;
 	else if (OTELC_USE_STATIC_HANDLE_IFDEF( , !OTEL_NULL(otel_span_context) &&) (type == 1))
 		retval = OTEL_STAT_CHECK(otel_span_context, size, id, alloc_fail, erase, destroy) << type;
-	else if (OTELC_USE_STATIC_HANDLE_IFDEF( , !OTEL_NULL(otel_instrument) &&) (type == 2))
-		retval = OTEL_STAT_CHECK(otel_instrument, size, id, alloc_fail, erase, destroy) << type;
-	else if (OTELC_USE_STATIC_HANDLE_IFDEF( , !OTEL_NULL(otel_view) &&) (type == 3))
-		retval = OTEL_STAT_CHECK(otel_view, size, id, alloc_fail, erase, destroy) << type;
+	else if (!OTEL_NULL(meter) && !OTEL_NULL(meter->impl) && (type == 2))
+		retval = OTEL_STAT_CHECK_VAL(OTEL_METER_IMPL(meter)->instrument, size, id, alloc_fail, erase, destroy) << type;
+	else if (!OTEL_NULL(meter) && !OTEL_NULL(meter->impl) && (type == 3))
+		retval = OTEL_STAT_CHECK_VAL(OTEL_METER_IMPL(meter)->view, size, id, alloc_fail, erase, destroy) << type;
 
 	OTELC_RETURN_INT(retval);
 }
