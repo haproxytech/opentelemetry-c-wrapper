@@ -261,6 +261,7 @@ struct otelc_tracer {
 	char                          *yaml_prefix; /* Resolved YAML path of the tracer signal configuration. */
 	const struct otelc_tracer_ops *ops;         /* Pointer to the operations vtable. */
 	const struct otelc_ctx        *ctx;         /* Owning library context; provides the YAML configuration. */
+	void                          *impl;        /* Opaque pointer to the C++ implementation state (provider, tracer, propagator). */
 };
 
 

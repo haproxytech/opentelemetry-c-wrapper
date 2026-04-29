@@ -28,6 +28,19 @@
 #define OTEL_TRACER_RETURN_INT(f, ...)       OTEL_RETURN_INT(tracer, f, ##__VA_ARGS__)
 #define OTEL_TRACER_RETURN_PTR(f, ...)       OTEL_RETURN_PTR(tracer, f, ##__VA_ARGS__)
 
+/***
+ * Per-instance implementation state for a tracer.  Holds the SDK TracerProvider
+ * and the SDK Tracer obtained from it, plus the text-map propagator used by
+ * this tracer for context injection and extraction.  Each shared_ptr is owned
+ * by the instance, so multiple tracers can coexist without sharing process-wide
+ * state.
+ */
+struct otel_tracer_impl {
+	otel_nostd::shared_ptr<otel_trace::TracerProvider>                   provider;
+	otel_nostd::shared_ptr<otel_trace::Tracer>                           tracer;
+	otel_nostd::shared_ptr<otel_context::propagation::TextMapPropagator> propagator;
+};
+
 #endif /* _OPENTELEMETRY_C_WRAPPER_TRACER_H_ */
 
 /*
