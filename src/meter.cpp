@@ -614,6 +614,11 @@ static int64_t otel_meter_create_instrument(struct otelc_meter *meter, const cha
 
 	if (OTEL_NULL(instrument_handle))
 		OTEL_METER_RETURN_INT(OTEL_ERROR_MSG_ENOMEM("instrument handle"));
+	else if (!instrument_handle->is_valid()) {
+		delete instrument_handle;
+
+		OTEL_METER_RETURN_INT("Unable to create OpenTelemetry instrument of type %d", type);
+	}
 
 	/* Store the instrument handle in the internal map. */
 	std::pair<std::unordered_map<int64_t, struct otel_instrument_handle *>::iterator, bool> emplace_status{};
