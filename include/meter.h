@@ -75,6 +75,49 @@ struct T {
 	T_CONSTRUCTOR(unique_ptr, Gauge<double>,          gauge_double)
 #endif
 
+	/***
+	 * Checks whether the smart pointer matching 'type' was successfully
+	 * constructed.  Meter::Create*() variants are 'noexcept' and their
+	 * contract nowhere guarantees a non-empty pointer; this guard keeps
+	 * an unexpectedly empty instrument from reaching the dispatch sites
+	 * and dereferencing null there.
+	 */
+	bool is_valid() const noexcept
+	{
+		if (type == OTELC_METRIC_INSTRUMENT_COUNTER_UINT64)
+			return !OTEL_NULL(counter_uint64);
+		else if (type == OTELC_METRIC_INSTRUMENT_COUNTER_DOUBLE)
+			return !OTEL_NULL(counter_double);
+		else if (type == OTELC_METRIC_INSTRUMENT_HISTOGRAM_UINT64)
+			return !OTEL_NULL(histogram_uint64);
+		else if (type == OTELC_METRIC_INSTRUMENT_HISTOGRAM_DOUBLE)
+			return !OTEL_NULL(histogram_double);
+		else if (type == OTELC_METRIC_INSTRUMENT_UDCOUNTER_INT64)
+			return !OTEL_NULL(udcounter_int64);
+		else if (type == OTELC_METRIC_INSTRUMENT_UDCOUNTER_DOUBLE)
+			return !OTEL_NULL(udcounter_double);
+		else if (type == OTELC_METRIC_INSTRUMENT_OBSERVABLE_COUNTER_INT64)
+			return !OTEL_NULL(observable);
+		else if (type == OTELC_METRIC_INSTRUMENT_OBSERVABLE_COUNTER_DOUBLE)
+			return !OTEL_NULL(observable);
+		else if (type == OTELC_METRIC_INSTRUMENT_OBSERVABLE_GAUGE_INT64)
+			return !OTEL_NULL(observable);
+		else if (type == OTELC_METRIC_INSTRUMENT_OBSERVABLE_GAUGE_DOUBLE)
+			return !OTEL_NULL(observable);
+		else if (type == OTELC_METRIC_INSTRUMENT_OBSERVABLE_UDCOUNTER_INT64)
+			return !OTEL_NULL(observable);
+		else if (type == OTELC_METRIC_INSTRUMENT_OBSERVABLE_UDCOUNTER_DOUBLE)
+			return !OTEL_NULL(observable);
+#if defined(OPENTELEMETRY_ABI_VERSION_NO) && (OPENTELEMETRY_ABI_VERSION_NO >= 2)
+		else if (type == OTELC_METRIC_INSTRUMENT_GAUGE_INT64)
+			return !OTEL_NULL(gauge_int64);
+		else if (type == OTELC_METRIC_INSTRUMENT_GAUGE_DOUBLE)
+			return !OTEL_NULL(gauge_double);
+#endif
+
+		return false;
+	}
+
 	~T() noexcept
 	{
 		OTELCPP_FUNC("", OTELC_STRINGIFY(T));
