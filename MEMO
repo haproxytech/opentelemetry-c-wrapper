@@ -1914,7 +1914,13 @@ Teardown locking:
   OTEL_HANDLE_SHARED is true.  In the thread-local model, no locking is needed
   during teardown.
 
-  Each signal's destroy function clears its atomic pointer before provider
-  teardown (e.g. otel_tracer.store(nullptr) before otel_tracer_owner = {}),
-  ensuring any concurrent caller sees nullptr before the owned object is
-  destroyed.
+  Each signal's destroy function resets the SDK handle held in the impl
+  struct before tearing down the provider: otel_tracer_destroy() assigns
+  impl->tracer = {} before flushing and clearing impl->provider, and the
+  meter and logger destroys follow the same pattern.  These assignments
+  are plain shared_ptr resets, not atomics, so they do not by themselves
+  synchronise with concurrent readers.  The library therefore relies on
+  the caller to drain in-flight tracer/meter/logger operations before
+  invoking destroy, after which the per-shard mutexes inside the handle
+  maps cover the implicit teardown of any spans, instruments, or views
+  that were still registered.
