@@ -84,6 +84,50 @@ OTELC_NONNULL_ALL static inline void otelc_defer_run(otelc_defer_func_t *f)
 #define OTELC_DEFER_NAME(a,b)      OTELC_DEFER_JOIN(a, b)
 
 /*
+ * Context and helper used by OTELC_DEFER_CALL.  Stored on the stack as the
+ * cleanup target, freed implicitly when the enclosing scope ends.
+ */
+struct otelc_defer_call_ctx {
+	void  (*fn)(void *arg);
+	void   *arg;
+};
+
+OTELC_NONNULL_ALL static inline void otelc_defer_call_run(struct otelc_defer_call_ctx *ctx)
+{
+	if (ctx->fn != NULL)
+		ctx->fn(ctx->arg);
+}
+
+/*
+ * OTELC_DEFER_CALL(fn, arg)
+ *
+ * Portable defer that invokes fn(arg) when leaving the current scope.  Works
+ * on GCC and Clang because it relies only on __attribute__((cleanup)), not on
+ * nested functions.  The GCC OTELC_DEFER(expr) form remains available for
+ * arbitrary statement expressions; OTELC_DEFER_CALL is the right choice when
+ * you only need to call a single one-argument cleanup function on a single
+ * pointer.
+ *
+ * Example:
+ *   char *ptr = malloc(...);
+ *   OTELC_DEFER_CALL(free, ptr);
+ *
+ * For cleanup functions whose argument type is not void *, wrap the call in a
+ * void-returning helper that takes void *:
+ *
+ *   static void cleanup_fclose(void *p) { fclose((FILE *)p); }
+ *   FILE *fd = fopen(...);
+ *   OTELC_DEFER_CALL(cleanup_fclose, fd);
+ *
+ * The wrapper is required because the C standard makes calling a function
+ * through a pointer of incompatible type undefined.  Direct use with free is
+ * safe because free's argument is already void *.
+ */
+#define OTELC_DEFER_CALL(fn, arg)                                                                     \
+	__attribute__((cleanup(otelc_defer_call_run))) struct otelc_defer_call_ctx                    \
+		OTELC_DEFER_NAME(defer_call_, __LINE__) = { (void (*)(void *))(fn), (void *)(arg) }
+
+/*
  * OTELC_DEFER(cleanup_action)
  *
  * Executes the given cleanup_action when leaving the current scope.
@@ -99,10 +143,22 @@ OTELC_NONNULL_ALL static inline void otelc_defer_run(otelc_defer_func_t *f)
  * - cleanup_action is a GNU C statement expression; can contain multiple
  *   statements using braces.
  * - Cleanup runs in reverse order of declaration.
+ *
+ * Portability:
+ * - The implementation relies on a GCC nested function whose address is
+ *   converted to a function pointer.  GCC implements this by writing a
+ *   trampoline on the stack at run time, which forces the linker to mark the
+ *   resulting object with PT_GNU_STACK PF_X (executable stack).  Clang does not
+ *   support nested function definitions and rejects this macro.  The macro is
+ *   therefore exposed only for the GCC C front end; Clang and other non-GNU
+ *   compilers see the macro as undefined and must use a resource-specific
+ *   cleanup attribute helper instead.
  */
-#define OTELC_DEFER(cleanup_action)                                                                       \
+#if defined(__GNUC__) && !defined(__clang__) && !defined(__cplusplus)
+#  define OTELC_DEFER(cleanup_action)                                                                       \
 	__attribute__((cleanup(otelc_defer_run))) otelc_defer_func_t OTELC_DEFER_NAME(defer_, __LINE__) = \
 		(otelc_defer_func_t)({ void otelc_defer_func(void) { cleanup_action; } otelc_defer_func; })
+#endif
 
 #endif /* OPENTELEMETRY_C_WRAPPER_DEFINE_H */
 
