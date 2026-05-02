@@ -18,7 +18,11 @@
 
 /***
  * Helper that exposes the protected SetMinimumSeverity method on the
- * OpenTelemetry C++ Logger base class.
+ * OpenTelemetry C++ Logger base class.  Call sites cast the SDK Logger pointer
+ * to otel_logs_logger * to invoke the method.  The subclass adds no data
+ * members, only the using-declaration that promotes the protected method to
+ * public, so the cast is layout-compatible and unlocks access without altering
+ * the object.
  */
 struct otel_logs_logger : public otel_logs::Logger {
 	using otel_logs::Logger::SetMinimumSeverity;
@@ -201,6 +205,10 @@ static int otel_logger_set_min_severity(struct otelc_logger *logger, otelc_log_s
  *   greater than zero, the log record is tagged with the given event identifier
  *   and name.
  *
+ *   When span_id_size or trace_id_size is smaller than the SDK's required
+ *   identifier size, the corresponding buffer is left zero-initialised and
+ *   the record is created without that part of the trace correlation.
+ *
  * RETURN VALUE
  *   Returns 1 when a log record was created, 0 if the severity level is not
  *   enabled, or OTELC_RET_ERROR on failure.
@@ -290,8 +298,9 @@ static int otel_logger_record_create(struct otelc_logger *logger, otel_logs::Log
  *   and name.
  *
  * RETURN VALUE
- *   Returns the number of characters written to the buffer on success,
- *   or a negative value on error (OTELC_RET_ERROR).
+ *   Returns the number of characters written to the buffer when the log was
+ *   emitted, 0 if the severity level is not enabled, or a negative value on
+ *   error (OTELC_RET_ERROR).
  */
 static int otel_logger_log_v(struct otelc_logger *logger, otelc_log_severity_t severity, int64_t event_id, const char *event_name, const uint8_t *span_id, size_t span_id_size, const uint8_t *trace_id, size_t trace_id_size, uint8_t trace_flags, const struct timespec *ts, const struct timespec *ts_obs, const struct otelc_kv *attr, size_t attr_len, const char *format, va_list ap)
 {
@@ -364,8 +373,9 @@ static int otel_logger_log_v(struct otelc_logger *logger, otelc_log_severity_t s
  *   log record is tagged with the given event identifier and name.
  *
  * RETURN VALUE
- *   Returns the number of characters written to the buffer on success,
- *   or a negative value on error (OTELC_RET_ERROR).
+ *   Returns the number of characters written to the buffer when the log was
+ *   emitted, 0 if the severity level is not enabled, or a negative value on
+ *   error (OTELC_RET_ERROR).
  */
 static int otel_logger_log(struct otelc_logger *logger, otelc_log_severity_t severity, int64_t event_id, const char *event_name, const uint8_t *span_id, size_t span_id_size, const uint8_t *trace_id, size_t trace_id_size, uint8_t trace_flags, const struct timespec *ts, const struct timespec *ts_obs, const struct otelc_kv *attr, size_t attr_len, const char *format, ...)
 {
@@ -414,8 +424,9 @@ static int otel_logger_log(struct otelc_logger *logger, otelc_log_severity_t sev
  *   with the given event identifier and name.
  *
  * RETURN VALUE
- *   Returns the number of characters written to the buffer on success,
- *   or a negative value on error (OTELC_RET_ERROR).
+ *   Returns the number of characters written to the buffer when the log was
+ *   emitted, 0 if the severity level is not enabled, or a negative value on
+ *   error (OTELC_RET_ERROR).
  */
 static int otel_logger_log_span(struct otelc_logger *logger, otelc_log_severity_t severity, int64_t event_id, const char *event_name, const struct otelc_span *span, const struct timespec *ts, const struct timespec *ts_obs, const struct otelc_kv *attr, size_t attr_len, const char *format, ...)
 {
@@ -623,10 +634,12 @@ static int otel_logger_shutdown(struct otelc_logger *logger, const struct timesp
  *
  * DESCRIPTION
  *   Reads the configuration from the /signals/logs/<name> subtree of the
- *   YAML document owned by the logger's context and starts the logger.  The
- *   function initializes the logger in such a way that the following
- *   components are initialized individually: exporter, processor and finally
- *   provider.
+ *   YAML document owned by the logger's context and starts the logger. The
+ *   function initializes the logger in such a way that the following components
+ *   are initialized individually: one or more exporter-processor pairs and
+ *   finally the provider.  When the YAML configuration specifies a sequence of
+ *   processors (and optionally a matching sequence of exporters), each pair is
+ *   created and passed to the provider.
  *
  * RETURN VALUE
  *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR in case of an error.
@@ -931,7 +944,7 @@ struct otelc_logger *otelc_logger_create(const struct otelc_ctx *ctx, char **err
  *
  * RETURN VALUE
  *   Returns the matching severity value, or OTELC_LOG_SEVERITY_INVALID if the
- *   name is not recognised.
+ *   name is NULL or not recognised.
  */
 otelc_log_severity_t otelc_logger_severity_parse(const char *name)
 {

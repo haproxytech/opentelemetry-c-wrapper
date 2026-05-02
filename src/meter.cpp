@@ -95,7 +95,7 @@ static void otel_meter_observable_double_cb(otel_metrics::ObserverResult observe
  *   limited to the views attached to this meter.
  *
  * RETURN VALUE
- *   Returns the ID of the view if found, or OTELC_RET_ERROR if not found.
+ *   Returns the ID of the view if found, or OTELC_RET_ERROR on failure.
  */
 static int64_t otel_meter_get_view_id(struct otelc_meter *meter, const char *name)
 {
@@ -327,8 +327,7 @@ static int64_t otel_meter_add_view(struct otelc_meter *meter, const char *view_n
  *   the OpenTelemetry specification.
  *
  * RETURN VALUE
- *   Returns the instrument ID on success, or OTELC_RET_ERROR if no matching
- *   instrument is found.
+ *   Returns the instrument ID on success, or OTELC_RET_ERROR on failure.
  */
 static int64_t otel_meter_get_instrument(struct otelc_meter *meter, const char *name, otelc_metric_instrument_t type)
 {
@@ -377,8 +376,7 @@ static int64_t otel_meter_get_instrument(struct otelc_meter *meter, const char *
  *   function.
  *
  * RETURN VALUE
- *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR if the instrument type
- *   is invalid.
+ *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR on failure.
  */
 static int otel_nolock_meter_add_instrument_callback(struct otelc_meter *meter, struct otel_instrument_handle *instrument, struct otelc_metric_observable_cb *data)
 {
@@ -418,8 +416,7 @@ static int otel_nolock_meter_add_instrument_callback(struct otelc_meter *meter, 
  *   instruments, this function has no effect.
  *
  * RETURN VALUE
- *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR if the instrument type
- *   is invalid.
+ *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR on failure.
  */
 static int otel_meter_add_instrument_callback(struct otelc_meter *meter, int idx, struct otelc_metric_observable_cb *data)
 {
@@ -461,8 +458,7 @@ static int otel_meter_add_instrument_callback(struct otelc_meter *meter, int idx
  *   be provided.
  *
  * RETURN VALUE
- *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR if the instrument type
- *   is invalid.
+ *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR on failure.
  */
 static int otel_meter_remove_instrument_callback(struct otelc_meter *meter, int idx, struct otelc_metric_observable_cb *data)
 {
@@ -746,8 +742,7 @@ static int otel_meter_instrument_value_type(struct otelc_meter *meter, const str
  *   int64 values are rejected with an error.
  *
  * RETURN VALUE
- *   Returns the instrument ID on success, or OTELC_RET_ERROR if the instrument
- *   type is invalid.
+ *   Returns the instrument ID on success, or OTELC_RET_ERROR on failure.
  */
 static int otel_meter_update_instrument(struct otelc_meter *meter, int idx, const struct otelc_value *value)
 {
@@ -833,8 +828,7 @@ static int otel_meter_update_instrument(struct otelc_meter *meter, int idx, cons
  *   int64 values are rejected with an error.
  *
  * RETURN VALUE
- *   Returns the instrument ID on success, or OTELC_RET_ERROR if the instrument
- *   type is invalid.
+ *   Returns the instrument ID on success, or OTELC_RET_ERROR on failure.
  */
 static int otel_meter_update_instrument_kv_n(struct otelc_meter *meter, int idx, const struct otelc_value *value, const struct otelc_kv *kv, size_t kv_len)
 {
