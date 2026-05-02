@@ -70,6 +70,27 @@ constexpr size_t OTEL_HANDLE_MAP_SHARDS    = 64;
 /* NOTE: The offset from the demangled name was determined empirically. */
 #define OTEL_HANDLE_DEMANGLED_NAME   (typeid(T).name() + 3)
 
+/***
+ * OTEL_LOCK_METER always expands to a single statement that creates a local
+ * lock_guard whose scope is the enclosing block.  OTEL_LOCK_TRACER does the
+ * same in the shared-handle build and expands to while (0) in the thread-local
+ * build.  Use them at function scope or inside a brace-enclosed block; placing
+ * them as the body of a single-statement if/while/for changes the lifetime of
+ * the lock_guard so the lock is released before the next statement runs.
+ *
+ * Correct:
+ *   OTEL_LOCK_TRACER(span, idx);
+ *   const auto handle = ...;
+ *   do_thing();
+ *
+ * Wrong (lock released before do_thing()):
+ *   if (cond)
+ *           OTEL_LOCK_TRACER(span, idx);
+ *   do_thing();
+ *
+ * The same scoping rule applies to the while (0) form for consistency with the
+ * shared-handle build.
+ */
 #define OTEL_LOCK_METER(a)           const std::lock_guard<std::mutex> guard_##a(OTEL_METER_IMPL(meter)->a.get_shard(0).mutex)
 #ifdef OTELC_USE_THREAD_SHARED_HANDLE
 #  define OTEL_LOCK_TRACER(a,n)      const std::lock_guard<std::mutex> guard_##a(OTEL_HANDLE(otel_##a, get_shard(n).mutex))

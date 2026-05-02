@@ -344,6 +344,13 @@ struct otelc_logger_ops {
 	 *   Stops the logger and releases all resources and memory associated
 	 *   with the logger instance.
 	 *
+	 *   The caller must drain every concurrent operation on this logger
+	 *   instance before invoking destroy: no other thread may be inside
+	 *   enabled, set_min_severity, log, log_span, log_body, log_body_span,
+	 *   force_flush, or shutdown for the same logger when destroy runs.
+	 *   Destroy frees the underlying implementation state, so any in-flight
+	 *   call that races with it will dereference freed memory.
+	 *
 	 * RETURN VALUE
 	 *   This function does not return a value.
 	 */

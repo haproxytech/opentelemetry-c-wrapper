@@ -407,6 +407,15 @@ struct otelc_meter_ops {
 	 *   Stops the meter and releases all resources and memory associated
 	 *   with the meter instance.
 	 *
+	 *   The caller must drain every concurrent operation on this meter
+	 *   instance before invoking destroy: no other thread may be inside
+	 *   create_instrument, update_instrument, update_instrument_kv_n,
+	 *   add_instrument_callback, remove_instrument_callback, add_view,
+	 *   get_instrument, enabled, force_flush, or shutdown for the same
+	 *   meter when destroy runs.  Destroy frees the underlying
+	 *   implementation state, so any in-flight call that races with it
+	 *   will dereference freed memory.
+	 *
 	 * RETURN VALUE
 	 *   This function does not return a value.
 	 */

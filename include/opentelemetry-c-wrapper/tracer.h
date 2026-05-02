@@ -248,6 +248,14 @@ struct otelc_tracer_ops {
 	 *   Stops the tracer and releases all resources and memory associated
 	 *   with the tracer instance.
 	 *
+	 *   The caller must drain every concurrent operation on this tracer
+	 *   instance before invoking destroy: no other thread may be inside
+	 *   start_span, extract_text_map, extract_http_headers, enabled,
+	 *   force_flush, or shutdown for the same tracer when destroy runs,
+	 *   and the spans it produced must already have been ended.  Destroy
+	 *   frees the underlying implementation state, so any in-flight call
+	 *   that races with it will dereference freed memory.
+	 *
 	 * RETURN VALUE
 	 *   This function does not return a value.
 	 */
