@@ -32,6 +32,11 @@ enum FLAG_OPT_enum {
 	FLAG_OPT_VERSION = UINT8_C(1) << 3,
 };
 
+struct cfg_otel_ctx {
+	const char          *cfg_file;
+	const char          *ctx_name;
+};
+
 static struct {
 	uint8_t              opt_flags;
 	int                  runcount;
@@ -41,13 +46,8 @@ static struct {
 #ifdef USE_THREADS
 	int                  threads;
 #endif
-	const char          *cfg_file;
 	const char          *pid_file;
-	const char          *ctx_name;
-	struct otelc_ctx    *otel_ctx;
-	struct otelc_tracer *otel_tracer;
-	struct otelc_meter  *otel_meter;
-	struct otelc_logger *otel_logger;
+	struct cfg_otel_ctx  otel;
 } cfg = {
 	.runcount   = -1,
 	.runtime_ms = -1,
@@ -55,8 +55,10 @@ static struct {
 #ifdef USE_THREADS
 	.threads    = DEFAULT_THREADS_COUNT,
 #endif
-	.cfg_file   = DEFAULT_CFG_FILE,
-	.ctx_name   = DEFAULT_CTX_NAME,
+	.otel       = {
+		.cfg_file = DEFAULT_CFG_FILE,
+		.ctx_name = DEFAULT_CTX_NAME,
+	},
 };
 
 enum WORKER_SPAN_enum {
@@ -66,6 +68,13 @@ enum WORKER_SPAN_enum {
 	WORKER_SPAN_PROP_HH,
 	WORKER_SPAN_LINKED,
 	WORKER_SPAN_MAX,
+};
+
+struct prg_otel {
+	struct otelc_ctx    *ctx;
+	struct otelc_tracer *tracer;
+	struct otelc_meter  *meter;
+	struct otelc_logger *logger;
 };
 
 struct worker {
@@ -89,6 +98,7 @@ static struct {
 #else
 	struct worker    worker;
 #endif
+	struct prg_otel  otel;
 } prg;
 
 enum WORKER_STATE_enum {
@@ -418,14 +428,14 @@ static void worker_thread(void *data)
 	/***
 	 * This is used only to reduce cobwebs in the code.
 	 */
-	struct otelc_tracer              **tracer       = &(cfg.otel_tracer);
+	struct otelc_tracer              **tracer       = &(prg.otel.tracer);
 	struct otelc_span                **span_root    = worker->otelc_span + WORKER_SPAN_ROOT;
 	struct otelc_span                **span_child   = worker->otelc_span + WORKER_SPAN_CHILD;
 	struct otelc_span                **span_prop_tm = worker->otelc_span + WORKER_SPAN_PROP_TM;
 	struct otelc_span                **span_prop_hh = worker->otelc_span + WORKER_SPAN_PROP_HH;
 	struct otelc_span                **span_linked  = worker->otelc_span + WORKER_SPAN_LINKED;
-	struct otelc_meter               **meter        = &(cfg.otel_meter);
-	struct otelc_logger              **logger       = &(cfg.otel_logger);
+	struct otelc_meter               **meter        = &(prg.otel.meter);
+	struct otelc_logger              **logger       = &(prg.otel.logger);
 
 	OTELC_FUNC("%p", data);
 
@@ -723,10 +733,10 @@ static void worker_thread(void *data)
 #ifndef OTELC_USE_THREAD_SHARED_HANDLE
 	int otelc_status  = otelc_statistics_check(NULL, 0, 0, worker->count * 5, 0, worker->count * 5, worker->count * 5);
 	otelc_status     |= otelc_statistics_check(NULL, 1, 0, worker->count * 2, 0, worker->count * 2, worker->count * 2);
-	otelc_status     |= otelc_statistics_check(cfg.otel_meter, 2, 5, 5, 0, 0, 0);
-	otelc_status     |= otelc_statistics_check(cfg.otel_meter, 3, 1, 1, 0, 0, 0);
+	otelc_status     |= otelc_statistics_check(prg.otel.meter, 2, 5, 5, 0, 0, 0);
+	otelc_status     |= otelc_statistics_check(prg.otel.meter, 3, 1, 1, 0, 0, 0);
 
-	otelc_statistics(cfg.otel_meter, otel_infbuf, sizeof(otel_infbuf));
+	otelc_statistics(prg.otel.meter, otel_infbuf, sizeof(otel_infbuf));
 	OTELC_LOG(stdout, "[%4d] %s traces: %" PRIu64 ", %s", worker->id, otelc_status ? "ERROR" : "OK", worker->count, otel_infbuf);
 #endif
 
@@ -820,10 +830,10 @@ static int worker_run(void)
 #ifdef OTELC_USE_THREAD_SHARED_HANDLE
 	int otelc_status  = otelc_statistics_check(NULL, 0, 0, total_cnt * 5, 0, total_cnt * 5, total_cnt * 5);
 	otelc_status     |= otelc_statistics_check(NULL, 1, 0, total_cnt * 2, 0, total_cnt * 2, total_cnt * 2);
-	otelc_status     |= otelc_statistics_check(cfg.otel_meter, 2, 5, 5, 0, 0, 0);
-	otelc_status     |= otelc_statistics_check(cfg.otel_meter, 3, 1, 1, 0, 0, 0);
+	otelc_status     |= otelc_statistics_check(prg.otel.meter, 2, 5, 5, 0, 0, 0);
+	otelc_status     |= otelc_statistics_check(prg.otel.meter, 3, 1, 1, 0, 0, 0);
 
-	otelc_statistics(cfg.otel_meter, otel_infbuf, sizeof(otel_infbuf));
+	otelc_statistics(prg.otel.meter, otel_infbuf, sizeof(otel_infbuf));
 	OTELC_LOG(stdout, "OpenTelemetry statistics: %s %s (%" PRIu64 ")", otelc_status ? "ERROR" : "OK", otel_infbuf, prg.drop_cnt);
 #endif
 
@@ -1020,7 +1030,7 @@ int main(int argc, char **argv)
 
 	while ((c = getopt_long(argc, argv, shortopts, longopts, &longopts_idx)) != EOF) {
 		if (c == 'c')
-			cfg.cfg_file = optarg;
+			cfg.otel.cfg_file = optarg;
 		else if (c == 'D')
 			cfg.delay_ms = atoi(optarg);
 #ifdef DEBUG
@@ -1032,7 +1042,7 @@ int main(int argc, char **argv)
 		else if (c == 'h')
 			cfg.opt_flags |= FLAG_OPT_HELP;
 		else if (c == 'n')
-			cfg.ctx_name = optarg;
+			cfg.otel.ctx_name = optarg;
 		else if (c == 'p')
 			cfg.pid_file = optarg;
 		else if (c == 'R')
@@ -1067,16 +1077,16 @@ int main(int argc, char **argv)
 		 * All this YAML path fiddling is just because the program ends
 		 * up in test/.libs while the configuration stays in test.
 		 */
-		if (strcmp(cfg.cfg_file, DEFAULT_CFG_FILE) == 0) {
+		if (strcmp(cfg.otel.cfg_file, DEFAULT_CFG_FILE) == 0) {
 			static char cfg_file[PATH_MAX];
 
-			rc = snprintf(cfg_file, sizeof(cfg_file), "%s/%s", dirname(argv[0]), cfg.cfg_file);
+			rc = snprintf(cfg_file, sizeof(cfg_file), "%s/%s", dirname(argv[0]), cfg.otel.cfg_file);
 			if (OTELC_IN_RANGE(rc, 0, (int)(sizeof(cfg_file) - 1))) {
 				if (access(cfg_file, F_OK) == -1) {
 					char *path = OTELC_STRNDUP(__func__, __LINE__, cfg_file, rc);
 
 					if (_nNULL(path)) {
-						rc = snprintf(cfg_file, sizeof(cfg_file), "%s/../%s", dirname(path), cfg.cfg_file);
+						rc = snprintf(cfg_file, sizeof(cfg_file), "%s/../%s", dirname(path), cfg.otel.cfg_file);
 
 						OTELC_SFREE(path);
 					} else {
@@ -1085,9 +1095,9 @@ int main(int argc, char **argv)
 				}
 
 				if (OTELC_IN_RANGE(rc, 0, (int)(sizeof(cfg_file) - 1))) {
-					cfg.cfg_file = cfg_file;
+					cfg.otel.cfg_file = cfg_file;
 
-					OTELC_DBG(DEBUG, "cfg_file = \"%s\"", cfg.cfg_file);
+					OTELC_DBG(DEBUG, "cfg_file = \"%s\"", cfg.otel.cfg_file);
 				} else {
 					OTELC_LOG(stderr, "ERROR: Unable to set path for configuration file");
 					flag_error = 1;
@@ -1098,7 +1108,7 @@ int main(int argc, char **argv)
 			}
 		}
 
-		if (!flag_error && (access(cfg.cfg_file, F_OK) == -1)) {
+		if (!flag_error && (access(cfg.otel.cfg_file, F_OK) == -1)) {
 			OTELC_LOG(stderr, "ERROR: Unable to find the configuration file");
 			flag_error = 1;
 		}
@@ -1129,38 +1139,38 @@ int main(int argc, char **argv)
 	if (flag_error || (cfg.opt_flags & (FLAG_OPT_HELP | FLAG_OPT_VERSION)))
 		OTELC_RETURN_INT(flag_error ? EX_USAGE : EX_OK);
 
-	if (_NULL(cfg.otel_ctx = otelc_init(cfg.cfg_file, cfg.ctx_name, &otel_err))) {
+	if (_NULL(prg.otel.ctx = otelc_init(cfg.otel.cfg_file, cfg.otel.ctx_name, &otel_err))) {
 		OTELC_LOG(stderr, "ERROR: %s", _NULL(otel_err) ? "Unable to init library" : otel_err);
 
 		retval = EX_SOFTWARE;
 	}
-	else if (_NULL(cfg.otel_tracer = otelc_tracer_create(cfg.otel_ctx, &otel_err))) {
+	else if (_NULL(prg.otel.tracer = otelc_tracer_create(prg.otel.ctx, &otel_err))) {
 		OTELC_LOG(stderr, "ERROR: %s", _NULL(otel_err) ? "Unable to init traces" : otel_err);
 
 		retval = EX_SOFTWARE;
 	}
-	else if (OTELC_OPS(cfg.otel_tracer, start) == OTELC_RET_ERROR) {
-		OTELC_LOG(stderr, "ERROR: %s", _NULL(cfg.otel_tracer->err) ? "Unable to start traces" : cfg.otel_tracer->err);
+	else if (OTELC_OPS(prg.otel.tracer, start) == OTELC_RET_ERROR) {
+		OTELC_LOG(stderr, "ERROR: %s", _NULL(prg.otel.tracer->err) ? "Unable to start traces" : prg.otel.tracer->err);
 
 		retval = EX_SOFTWARE;
 	}
-	else if (_NULL(cfg.otel_meter = otelc_meter_create(cfg.otel_ctx, &otel_err))) {
+	else if (_NULL(prg.otel.meter = otelc_meter_create(prg.otel.ctx, &otel_err))) {
 		OTELC_LOG(stderr, "ERROR: %s", _NULL(otel_err) ? "Unable to init metrics" : otel_err);
 
 		retval = EX_SOFTWARE;
 	}
-	else if (OTELC_OPS(cfg.otel_meter, start) == OTELC_RET_ERROR) {
-		OTELC_LOG(stderr, "ERROR: %s", _NULL(cfg.otel_meter->err) ? "Unable to start metrics" : cfg.otel_meter->err);
+	else if (OTELC_OPS(prg.otel.meter, start) == OTELC_RET_ERROR) {
+		OTELC_LOG(stderr, "ERROR: %s", _NULL(prg.otel.meter->err) ? "Unable to start metrics" : prg.otel.meter->err);
 
 		retval = EX_SOFTWARE;
 	}
-	else if (_NULL(cfg.otel_logger = otelc_logger_create(cfg.otel_ctx, &otel_err))) {
+	else if (_NULL(prg.otel.logger = otelc_logger_create(prg.otel.ctx, &otel_err))) {
 		OTELC_LOG(stderr, "ERROR: %s", _NULL(otel_err) ? "Unable to init logs" : otel_err);
 
 		retval = EX_SOFTWARE;
 	}
-	else if (OTELC_OPS(cfg.otel_logger, start) == OTELC_RET_ERROR) {
-		OTELC_LOG(stderr, "ERROR: %s", _NULL(cfg.otel_logger->err) ? "Unable to start logs" : cfg.otel_logger->err);
+	else if (OTELC_OPS(prg.otel.logger, start) == OTELC_RET_ERROR) {
+		OTELC_LOG(stderr, "ERROR: %s", _NULL(prg.otel.logger->err) ? "Unable to start logs" : prg.otel.logger->err);
 
 		retval = EX_SOFTWARE;
 	}
@@ -1176,7 +1186,7 @@ int main(int argc, char **argv)
 		retval = worker_run();
 	}
 
-	otelc_deinit(&(cfg.otel_ctx), &(cfg.otel_tracer), &(cfg.otel_meter), &(cfg.otel_logger));
+	otelc_deinit(&(prg.otel.ctx), &(prg.otel.tracer), &(prg.otel.meter), &(prg.otel.logger));
 
 	OTELC_SFREE(otel_err);
 	OTELC_LOG(stdout, "Program runtime: %" PRId64 " ms", OTELC_RUNTIME_MS());
