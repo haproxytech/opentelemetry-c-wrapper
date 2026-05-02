@@ -456,12 +456,12 @@ static int otel_span_context_add(struct otelc_tracer *tracer, struct otelc_span_
  */
 static int otel_tracer_extract_carrier_cb(void *arg, const char *key, const char *value)
 {
-	auto *data = OTEL_CAST_REINTERPRET(OTEL_MAP_CARRIER_CONTAINER *, arg);
-
 	OTELC_FUNC("%p, \"%s\", \"%s\"", arg, OTELC_STR_ARG(key), OTELC_STR_ARG(value));
 
 	if (OTEL_NULL(arg) || OTEL_NULL(key) || OTEL_NULL(value))
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
+
+	auto *data = OTEL_CAST_REINTERPRET(OTEL_MAP_CARRIER_CONTAINER *, arg);
 
 	try {
 		OTEL_DBG_THROW();
@@ -564,6 +564,13 @@ static struct otelc_span_context *otel_tracer_extract_carrier(struct otelc_trace
 		OTEL_TRACER_RETURN_PTR(OTEL_ERROR_MSG_ENOMEM("baggage context"));
 #endif
 
+	/***
+	 * The return value is discarded intentionally: on failure
+	 * otel_span_context_add() resets retptr to nullptr through
+	 * otel_nolock_span_context_destroy() and writes the error message via
+	 * OTEL_TRACER_RETURN_INT, so returning retptr here propagates both the
+	 * null result and the diagnostic to the caller.
+	 */
 	(void)otel_span_context_add(tracer, &retptr, context);
 
 	OTELC_RETURN_PTR(retptr);
@@ -880,6 +887,15 @@ static int otel_tracer_start(struct otelc_tracer *tracer)
 		 */
 		std::unique_ptr<otel_context::propagation::TextMapPropagator> propagator_owner(propagator);
 
+		/***
+		 * On throw, reset the tracer and provider that may have already
+		 * been installed.  The propagator is intentionally not reset
+		 * here: if its shared_ptr ctor is the one that throws, the raw
+		 * pointer is still owned by propagator_owner and is released
+		 * automatically when the local goes out of scope; if an earlier
+		 * assignment threw, impl->propagator was never assigned and is
+		 * still default-constructed.
+		 */
 		try {
 			OTEL_DBG_THROW();
 			impl->tracer     = std::move(tracer_maybe);
@@ -1108,6 +1124,24 @@ struct otelc_tracer *otelc_tracer_create(const struct otelc_ctx *ctx, char **err
 	 * destroy always balances against an increment.  The count guards the
 	 * lifetime of the shared span and span-context maps and must stay
 	 * non-negative.
+	 *
+	 * NOTE: in the thread-local-handle build (neither
+	 * OTELC_USE_THREAD_SHARED_HANDLE nor OTELC_USE_STATIC_HANDLE defined),
+	 * otel_tracer_count is thread_local.  A tracer must therefore be
+	 * destroyed on the same thread that created it, otherwise the create
+	 * thread's count never reaches zero (its maps leak) and the destroy
+	 * thread's count underflows.
+	 *
+	 * NOTE: in the shared-handle build (OTELC_USE_THREAD_SHARED_HANDLE
+	 * defined), the span and span-context maps are process-wide.  The
+	 * teardown sequence at the end of otel_tracer_destroy runs without
+	 * holding the init_mutex used by otel_tracer_handle_init, so a create
+	 * racing with the last live tracer's destroy can observe a map pointer
+	 * that the teardown has freed but not yet set to nullptr.  Callers must
+	 * therefore serialise create and destroy externally; concurrent creates
+	 * among themselves and concurrent destroys among themselves remain
+	 * safe, only mixed create/destroy sequences need external
+	 * serialisation.
 	 */
 	otel_tracer_count.fetch_add(1, std::memory_order_relaxed);
 

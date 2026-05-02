@@ -221,8 +221,11 @@ struct otelc_tracer_ops {
 	 *   Reads the configuration from the /signals/traces/<name> subtree of
 	 *   the YAML document owned by the tracer's context and starts the
 	 *   tracer.  The function initializes the tracer in such a way that the
-	 *   following components are initialized individually: exporter, sampler,
-	 *   processor and finally provider.
+	 *   following components are initialized individually: sampler, one or
+	 *   more exporter-processor pairs, provider, and finally the text-map
+	 *   propagator.  When the YAML configuration specifies a sequence of
+	 *   processors (and optionally a matching sequence of exporters), each
+	 *   pair is created and passed to the provider.
 	 *
 	 * RETURN VALUE
 	 *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR in case of an
