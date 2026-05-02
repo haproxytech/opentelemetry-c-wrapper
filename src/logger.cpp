@@ -397,6 +397,41 @@ static int otel_logger_log(struct otelc_logger *logger, otelc_log_severity_t sev
 
 /***
  * NAME
+ *   otel_logger_span_extract - extracts span context for log correlation
+ *
+ * SYNOPSIS
+ *   static void otel_logger_span_extract(const struct otelc_span *span, uint8_t *span_id, size_t span_id_size, uint8_t *trace_id, size_t trace_id_size, uint8_t *trace_flags)
+ *
+ * ARGUMENTS
+ *   span          - span associated with this log entry, or NULL
+ *   span_id       - output buffer for the span identifier
+ *   span_id_size  - the size of the span identifier buffer
+ *   trace_id      - output buffer for the trace identifier
+ *   trace_id_size - the size of the trace identifier buffer
+ *   trace_flags   - output for the trace flags
+ *
+ * DESCRIPTION
+ *   Populates span_id, trace_id, and trace_flags from the given span.  When
+ *   span is NULL, the buffers are left as supplied by the caller.  When the
+ *   span is non-NULL but context retrieval fails, a debug message is logged
+ *   so that the calling log function still emits the record without trace
+ *   correlation.
+ *
+ * RETURN VALUE
+ *   This function does not return a value.
+ */
+static void otel_logger_span_extract(const struct otelc_span *span, uint8_t *span_id, size_t span_id_size, uint8_t *trace_id, size_t trace_id_size, uint8_t *trace_flags)
+{
+	if (OTEL_NULL(span))
+		return;
+
+	if (OTELC_OPS(span, get_id, span_id, span_id_size, trace_id, trace_id_size, trace_flags) == OTELC_RET_ERROR)
+		OTELC_DBG(DEBUG, "%s", (OTEL_NULL(span->tracer) || OTEL_NULL(span->tracer->err)) ? "Unable to retrieve span context" : span->tracer->err);
+}
+
+
+/***
+ * NAME
  *   otel_logger_log_span - logs a formatted message with optional span context and attributes
  *
  * SYNOPSIS
@@ -439,10 +474,7 @@ static int otel_logger_log_span(struct otelc_logger *logger, otelc_log_severity_
 	if (OTEL_NULL(logger))
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
 
-	/* If span context retrieval fails, emit the log without correlation. */
-	if (!OTEL_NULL(span))
-		if (OTELC_OPS(span, get_id, span_id_buf, sizeof(span_id_buf), trace_id_buf, sizeof(trace_id_buf), &trace_flags) == OTELC_RET_ERROR)
-			OTELC_DBG(DEBUG, "%s", (OTEL_NULL(span->tracer) || OTEL_NULL(span->tracer->err)) ? "Unable to retrieve span context" : span->tracer->err);
+	otel_logger_span_extract(span, span_id_buf, sizeof(span_id_buf), trace_id_buf, sizeof(trace_id_buf), &trace_flags);
 
 	va_start(ap, format);
 	retval = otel_logger_log_v(logger, severity, event_id, event_name, span_id_buf, sizeof(span_id_buf), trace_id_buf, sizeof(trace_id_buf), trace_flags, ts, ts_obs, attr, attr_len, format, ap);
@@ -561,10 +593,7 @@ static int otel_logger_log_body_span(struct otelc_logger *logger, otelc_log_seve
 	if (OTEL_NULL(logger))
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
 
-	/* If span context retrieval fails, emit the log without correlation. */
-	if (!OTEL_NULL(span))
-		if (OTELC_OPS(span, get_id, span_id_buf, sizeof(span_id_buf), trace_id_buf, sizeof(trace_id_buf), &trace_flags) == OTELC_RET_ERROR)
-			OTELC_DBG(DEBUG, "%s", (OTEL_NULL(span->tracer) || OTEL_NULL(span->tracer->err)) ? "Unable to retrieve span context" : span->tracer->err);
+	otel_logger_span_extract(span, span_id_buf, sizeof(span_id_buf), trace_id_buf, sizeof(trace_id_buf), &trace_flags);
 
 	OTELC_RETURN_INT(otel_logger_log_body(logger, severity, event_id, event_name, span_id_buf, sizeof(span_id_buf), trace_id_buf, sizeof(trace_id_buf), trace_flags, ts, ts_obs, attr, attr_len, body));
 }

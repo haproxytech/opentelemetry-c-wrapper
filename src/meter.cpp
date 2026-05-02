@@ -758,6 +758,10 @@ static int otel_meter_update_instrument(struct otelc_meter *meter, int idx, cons
 	if (otel_meter_instrument_value_type(meter, value, instrument->type) == OTELC_RET_ERROR)
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
 
+	/* Observable instruments produce values via callback; nothing to record. */
+	if (OTEL_METRIC_INSTRUMENT_IS_OBSERVABLE(instrument->type))
+		OTELC_RETURN_INT(idx);
+
 #ifndef OTELC_USE_RUNTIME_CONTEXT
 	otel_context::Context rt_context{};
 #else
@@ -777,18 +781,6 @@ static int otel_meter_update_instrument(struct otelc_meter *meter, int idx, cons
 		instrument->udcounter_int64->Add(value->u.value_int64, rt_context);
 	else if (instrument->type == OTELC_METRIC_INSTRUMENT_UDCOUNTER_DOUBLE)
 		instrument->udcounter_double->Add(value->u.value_double, rt_context);
-	else if (instrument->type == OTELC_METRIC_INSTRUMENT_OBSERVABLE_COUNTER_INT64)
-		/* Do nothing. */;
-	else if (instrument->type == OTELC_METRIC_INSTRUMENT_OBSERVABLE_COUNTER_DOUBLE)
-		/* Do nothing. */;
-	else if (instrument->type == OTELC_METRIC_INSTRUMENT_OBSERVABLE_GAUGE_INT64)
-		/* Do nothing. */;
-	else if (instrument->type == OTELC_METRIC_INSTRUMENT_OBSERVABLE_GAUGE_DOUBLE)
-		/* Do nothing. */;
-	else if (instrument->type == OTELC_METRIC_INSTRUMENT_OBSERVABLE_UDCOUNTER_INT64)
-		/* Do nothing. */;
-	else if (instrument->type == OTELC_METRIC_INSTRUMENT_OBSERVABLE_UDCOUNTER_DOUBLE)
-		/* Do nothing. */;
 #if defined(OPENTELEMETRY_ABI_VERSION_NO) && (OPENTELEMETRY_ABI_VERSION_NO >= 2)
 	else if (instrument->type == OTELC_METRIC_INSTRUMENT_GAUGE_INT64)
 		instrument->gauge_int64->Record(value->u.value_int64, rt_context);
@@ -846,6 +838,10 @@ static int otel_meter_update_instrument_kv_n(struct otelc_meter *meter, int idx,
 	if (otel_meter_instrument_value_type(meter, value, instrument->type) == OTELC_RET_ERROR)
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
 
+	/* Observable instruments produce values via callback; nothing to record. */
+	if (OTEL_METRIC_INSTRUMENT_IS_OBSERVABLE(instrument->type))
+		OTELC_RETURN_INT(idx);
+
 	if (!OTEL_NULL(kv) && (kv_len > 0))
 		for (size_t i = 0; i < kv_len; i++)
 			OTEL_VALUE_ADD(_INT, attr, emplace, kv[i].key, &(kv[i].value), &(meter->err), "Unable to add metric attribute");
@@ -869,18 +865,6 @@ static int otel_meter_update_instrument_kv_n(struct otelc_meter *meter, int idx,
 		instrument->udcounter_int64->Add(value->u.value_int64, attr, rt_context);
 	else if (instrument->type == OTELC_METRIC_INSTRUMENT_UDCOUNTER_DOUBLE)
 		instrument->udcounter_double->Add(value->u.value_double, attr, rt_context);
-	else if (instrument->type == OTELC_METRIC_INSTRUMENT_OBSERVABLE_COUNTER_INT64)
-		/* Do nothing. */;
-	else if (instrument->type == OTELC_METRIC_INSTRUMENT_OBSERVABLE_COUNTER_DOUBLE)
-		/* Do nothing. */;
-	else if (instrument->type == OTELC_METRIC_INSTRUMENT_OBSERVABLE_GAUGE_INT64)
-		/* Do nothing. */;
-	else if (instrument->type == OTELC_METRIC_INSTRUMENT_OBSERVABLE_GAUGE_DOUBLE)
-		/* Do nothing. */;
-	else if (instrument->type == OTELC_METRIC_INSTRUMENT_OBSERVABLE_UDCOUNTER_INT64)
-		/* Do nothing. */;
-	else if (instrument->type == OTELC_METRIC_INSTRUMENT_OBSERVABLE_UDCOUNTER_DOUBLE)
-		/* Do nothing. */;
 #if defined(OPENTELEMETRY_ABI_VERSION_NO) && (OPENTELEMETRY_ABI_VERSION_NO >= 2)
 	else if (instrument->type == OTELC_METRIC_INSTRUMENT_GAUGE_INT64)
 		instrument->gauge_int64->Record(value->u.value_int64, attr, rt_context);
