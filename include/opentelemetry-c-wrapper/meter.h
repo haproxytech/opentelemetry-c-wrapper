@@ -70,10 +70,19 @@ typedef enum {
 struct otelc_metric_observable_cb;
 typedef void (*otelc_metric_observable_instrument_cb_t)(struct otelc_metric_observable_cb *data);
 
+/***
+ * Descriptor passed to an observable instrument callback.  The wrapper sets
+ * 'value' to point at its own storage immediately before each invocation of
+ * 'func', so the callback writes the observed value into '*value'.  That
+ * pointer is valid only for the duration of the call and must not be retained
+ * past return; the wrapper repurposes the same storage on every observation
+ * cycle.  The 'data' member is an opaque user pointer registered alongside the
+ * callback and is passed back unchanged.
+ */
 struct otelc_metric_observable_cb {
-	otelc_metric_observable_instrument_cb_t  func;
-	struct otelc_value                      *value;
-	void                                    *data;
+	otelc_metric_observable_instrument_cb_t  func;  /* Observation callback invoked at collection time. */
+	struct otelc_value                      *value; /* Wrapper-owned scratch slot; valid only during 'func'. */
+	void                                    *data;  /* Opaque user pointer passed back to 'func'. */
 };
 
 /***
@@ -130,9 +139,12 @@ struct otelc_meter_ops {
 	 *   recorded immediately.  For observable instruments, this function performs
 	 *   no operation, as values are collected via the observation callback.
 	 *
+	 *   For uint64 instruments (counter and histogram), an OTELC_VALUE_INT64 value
+	 *   is accepted if it is non-negative, and is cast to uint64_t.  Negative
+	 *   int64 values are rejected with an error.
+	 *
 	 * RETURN VALUE
-	 *   Returns the instrument ID on success, or OTELC_RET_ERROR if the instrument
-	 *   type is invalid.
+	 *   Returns the instrument ID on success, or OTELC_RET_ERROR on failure.
 	 */
 	int (*update_instrument)(struct otelc_meter *meter, int idx, const struct otelc_value *value)
 		OTELC_NONNULL(1);
@@ -158,9 +170,12 @@ struct otelc_meter_ops {
 	 *   instruments, the value and attributes are recorded immediately.  For
 	 *   observable instruments, this function performs no operation.
 	 *
+	 *   For uint64 instruments (counter and histogram), an OTELC_VALUE_INT64 value
+	 *   is accepted if it is non-negative, and is cast to uint64_t.  Negative
+	 *   int64 values are rejected with an error.
+	 *
 	 * RETURN VALUE
-	 *   Returns the instrument ID on success, or OTELC_RET_ERROR if the
-	 *   instrument type is invalid.
+	 *   Returns the instrument ID on success, or OTELC_RET_ERROR on failure.
 	 */
 	int (*update_instrument_kv_n)(struct otelc_meter *meter, int idx, const struct otelc_value *value, const struct otelc_kv *kv, size_t kv_len)
 		OTELC_NONNULL(1);
@@ -186,8 +201,7 @@ struct otelc_meter_ops {
 	 *   instruments, this function has no effect.
 	 *
 	 * RETURN VALUE
-	 *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR if the instrument type
-	 *   is invalid.
+	 *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR on failure.
 	 */
 	int (*add_instrument_callback)(struct otelc_meter *meter, int idx, struct otelc_metric_observable_cb *data)
 		OTELC_NONNULL(1, 3);
@@ -217,8 +231,7 @@ struct otelc_meter_ops {
 	 *   be provided.
 	 *
 	 * RETURN VALUE
-	 *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR if the instrument type
-	 *   is invalid.
+	 *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR on failure.
 	 */
 	int (*remove_instrument_callback)(struct otelc_meter *meter, int idx, struct otelc_metric_observable_cb *data)
 		OTELC_NONNULL(1, 3);
@@ -250,9 +263,13 @@ struct otelc_meter_ops {
 	 *   can be used to fine-tune aggregation behavior, such as histogram bucket
 	 *   boundaries.
 	 *
+	 *   Note: the view must be registered before the instrument is created,
+	 *   because in the OpenTelemetry C++ SDK views are not dynamically applied
+	 *   to existing instruments.
+	 *
 	 * RETURN VALUE
-	 *   Returns the ID of the added view on success, or OTELC_RET_ERROR on
-	 *   failure.
+	 *   Returns the ID of the added view, or OTELC_RET_ERROR in case of an
+	 *   error.
 	 */
 	int64_t (*add_view)(struct otelc_meter *meter, const char *view_name, const char *view_desc, const char *instrument_name, const char *instrument_unit, otelc_metric_instrument_t instrument_type, otelc_metric_aggregation_type_t aggregation_type, const double *bounds, size_t bounds_num)
 		OTELC_NONNULL(1, 2, 3, 4, 5);
@@ -275,8 +292,7 @@ struct otelc_meter_ops {
 	 *   consistent with the OpenTelemetry specification.
 	 *
 	 * RETURN VALUE
-	 *   Returns the instrument ID on success, or OTELC_RET_ERROR if no
-	 *   matching instrument is found.
+	 *   Returns the instrument ID on success, or OTELC_RET_ERROR on failure.
 	 */
 	int64_t (*get_instrument)(struct otelc_meter *meter, const char *name, otelc_metric_instrument_t type)
 		OTELC_NONNULL(1, 2);
@@ -346,8 +362,7 @@ struct otelc_meter_ops {
 	 *   timeout argument limits how long the operation may block.
 	 *
 	 * RETURN VALUE
-	 *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR on
-	 *   failure.
+	 *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR on failure.
 	 */
 	int (*shutdown)(struct otelc_meter *meter, const struct timespec *timeout)
 		OTELC_NONNULL(1);

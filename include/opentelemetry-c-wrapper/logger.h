@@ -142,8 +142,9 @@ struct otelc_logger_ops {
 	 *   and name.
 	 *
 	 * RETURN VALUE
-	 *   Returns the number of characters written to the buffer on success,
-	 *   or a negative value on error (OTELC_RET_ERROR).
+	 *   Returns the number of characters written to the buffer when the log
+	 *   was emitted, 0 if the severity level is not enabled, or a negative
+	 *   value on error (OTELC_RET_ERROR).
 	 */
 	int (*log)(struct otelc_logger *logger, otelc_log_severity_t severity, int64_t event_id, const char *event_name, const uint8_t *span_id, size_t span_id_size, const uint8_t *trace_id, size_t trace_id_size, uint8_t trace_flags, const struct timespec *ts, const struct otelc_kv *attr, size_t attr_len, const char *format, ...)
 		OTELC_NONNULL(1, 13);
@@ -177,8 +178,9 @@ struct otelc_logger_ops {
 	 *   name.
 	 *
 	 * RETURN VALUE
-	 *   Returns the number of characters written to the buffer on success,
-	 *   or a negative value on error (OTELC_RET_ERROR).
+	 *   Returns the number of characters written to the buffer when the log
+	 *   was emitted, 0 if the severity level is not enabled, or a negative
+	 *   value on error (OTELC_RET_ERROR).
 	 */
 	int (*log_span)(struct otelc_logger *logger, otelc_log_severity_t severity, int64_t event_id, const char *event_name, const struct otelc_span *span, const struct timespec *ts, const struct otelc_kv *attr, size_t attr_len, const char *format, ...)
 		OTELC_NONNULL(1, 9);
@@ -206,12 +208,11 @@ struct otelc_logger_ops {
 	 *   body          - the log body as an otelc_value (int, double, bool, or string)
 	 *
 	 * DESCRIPTION
-	 *   Logs a non-string body value with the specified severity,
-	 *   explicitly associating it with trace and span identifiers and
-	 *   enriching it with timestamp and attributes.  Unlike the log()
-	 *   operation, which formats a printf-style string, this function
-	 *   passes the otelc_value directly to SetBody(), preserving the
-	 *   native type (int64, double, bool, or string).
+	 *   Creates an explicit log record and populates it with the specified
+	 *   severity, trace context, body value, and attributes.  Unlike the
+	 *   log() operation, which formats a printf-style string, this function
+	 *   passes the otelc_value body directly to SetBody(), preserving the
+	 *   native type.
 	 *
 	 * RETURN VALUE
 	 *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR on error.
@@ -312,8 +313,11 @@ struct otelc_logger_ops {
 	 *   Reads the configuration from the /signals/logs/<name> subtree of
 	 *   the YAML document owned by the logger's context and starts the
 	 *   logger.  The function initializes the logger in such a way that the
-	 *   following components are initialized individually: exporter,
-	 *   processor and finally provider.
+	 *   following components are initialized individually: one or more
+	 *   exporter-processor pairs and finally the provider.  When the YAML
+	 *   configuration specifies a sequence of processors (and optionally a
+	 *   matching sequence of exporters), each pair is created and passed to
+	 *   the provider.
 	 *
 	 * RETURN VALUE
 	 *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR in case of an
@@ -401,7 +405,7 @@ struct otelc_logger *otelc_logger_create(const struct otelc_ctx *ctx, char **err
  *
  * RETURN VALUE
  *   Returns the matching severity value, or OTELC_LOG_SEVERITY_INVALID if the
- *   name is not recognised.
+ *   name is NULL or not recognised.
  */
 otelc_log_severity_t otelc_logger_severity_parse(const char *name);
 
