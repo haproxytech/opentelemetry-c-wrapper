@@ -71,17 +71,20 @@ struct otelc_metric_observable_cb;
 typedef void (*otelc_metric_observable_instrument_cb_t)(struct otelc_metric_observable_cb *data);
 
 /***
- * The observable instrument callback descriptor.  The func member is invoked
- * by the metrics SDK on its collection thread; during the call, value points
- * to a zero-initialized otelc_value that the callback should fill in, and
- * whatever it holds when the callback returns is observed, the untouched
- * default of zero included.  The value pointer is valid only for the
- * duration of the call.
+ * Descriptor passed to an observable instrument callback.  The wrapper sets
+ * 'value' to point at its own storage immediately before each invocation of
+ * 'func', so the callback writes the observed value into '*value'.  The slot
+ * is zero-initialized before each call, and its content on return is always
+ * observed, the untouched zero included.  That pointer is valid only for the
+ * duration of the call and must not be retained past return; the wrapper
+ * repurposes the same storage on every observation cycle.  The 'data' member
+ * is an opaque user pointer registered alongside the callback and is passed
+ * back unchanged.
  */
 struct otelc_metric_observable_cb {
-	otelc_metric_observable_instrument_cb_t  func;  /* Callback invoked by the SDK during collection. */
-	struct otelc_value                      *value; /* Measurement slot, valid only during the callback. */
-	void                                    *data;  /* Opaque user data for the callback. */
+	otelc_metric_observable_instrument_cb_t  func;  /* Observation callback invoked at collection time. */
+	struct otelc_value                      *value; /* Wrapper-owned scratch slot; valid only during 'func'. */
+	void                                    *data;  /* Opaque user pointer passed back to 'func'. */
 };
 
 /***
@@ -147,8 +150,7 @@ struct otelc_meter_ops {
 	 *   int64 values are rejected with an error.
 	 *
 	 * RETURN VALUE
-	 *   Returns the instrument ID on success, or OTELC_RET_ERROR if the instrument
-	 *   type is invalid.
+	 *   Returns the instrument ID on success, or OTELC_RET_ERROR on failure.
 	 */
 	int (*update_instrument)(struct otelc_meter *meter, int idx, const struct otelc_value *value)
 		OTELC_NONNULL(1);
@@ -179,8 +181,7 @@ struct otelc_meter_ops {
 	 *   int64 values are rejected with an error.
 	 *
 	 * RETURN VALUE
-	 *   Returns the instrument ID on success, or OTELC_RET_ERROR if the
-	 *   instrument type is invalid.
+	 *   Returns the instrument ID on success, or OTELC_RET_ERROR on failure.
 	 */
 	int (*update_instrument_kv_n)(struct otelc_meter *meter, int idx, const struct otelc_value *value, const struct otelc_kv *kv, size_t kv_len)
 		OTELC_NONNULL(1);
@@ -206,8 +207,7 @@ struct otelc_meter_ops {
 	 *   instruments, this function has no effect.
 	 *
 	 * RETURN VALUE
-	 *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR if the instrument type
-	 *   is invalid.
+	 *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR on failure.
 	 */
 	int (*add_instrument_callback)(struct otelc_meter *meter, int idx, struct otelc_metric_observable_cb *data)
 		OTELC_NONNULL(1, 3);
@@ -237,8 +237,7 @@ struct otelc_meter_ops {
 	 *   be provided.
 	 *
 	 * RETURN VALUE
-	 *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR if the instrument type
-	 *   is invalid.
+	 *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR on failure.
 	 */
 	int (*remove_instrument_callback)(struct otelc_meter *meter, int idx, struct otelc_metric_observable_cb *data)
 		OTELC_NONNULL(1, 3);
@@ -301,8 +300,7 @@ struct otelc_meter_ops {
 	 *   consistent with the OpenTelemetry specification.
 	 *
 	 * RETURN VALUE
-	 *   Returns the instrument ID on success, or OTELC_RET_ERROR if no
-	 *   matching instrument is found.
+	 *   Returns the instrument ID on success, or OTELC_RET_ERROR on failure.
 	 */
 	int64_t (*get_instrument)(struct otelc_meter *meter, const char *name, otelc_metric_instrument_t type)
 		OTELC_NONNULL(1, 2);
@@ -372,8 +370,7 @@ struct otelc_meter_ops {
 	 *   timeout argument limits how long the operation may block.
 	 *
 	 * RETURN VALUE
-	 *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR on
-	 *   failure.
+	 *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR on failure.
 	 */
 	int (*shutdown)(struct otelc_meter *meter, const struct timespec *timeout)
 		OTELC_NONNULL(1);
