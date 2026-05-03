@@ -4,6 +4,7 @@
 #
 SH_ARG_RUNTIME="60000"
 SH_ARG_RUNTYPE="dev_null"
+   SH_ARG_INST="1"
         SH_DIR="$(dirname "${0}")"
        SH_TEST="${SH_DIR}/otel-c-wrapper-test"
         SH_CFG="${SH_DIR}/otel-cfg.yml"
@@ -12,7 +13,7 @@ SH_ARG_RUNTYPE="dev_null"
     SH_PIDFILE="_pid_speed"
      SH_ERRLOG="${SH_LOG}-dropped"
      SH_STDERR="${SH_LOG}-stderr"
-  SH_USAGE_MSG="usage: $(basename "${0}") [-r runtime] [-t runtype]"
+  SH_USAGE_MSG="usage: $(basename "${0}") [-i instances] [-r runtime] [-t runtype]"
 
 
 sh_run_count()
@@ -23,7 +24,7 @@ sh_run_count()
 	mkfifo "${SH_STDERR}"
 	wc -l < "${SH_STDERR}" > "${SH_ERRLOG}" &
 
-	${SH_TEST} -D0 -c "${SH_CFG}" -n "${SH_CTX}" -p "${SH_PIDFILE}" -r${SH_ARG_RUNTIME} -t${_arg_threads} -s1 2>"${SH_STDERR}" | tee -a "${SH_LOG}"
+	${SH_TEST} -D0 -c "${SH_CFG}" -i "${SH_ARG_INST}" -n "${SH_CTX}" -p "${SH_PIDFILE}" -r${SH_ARG_RUNTIME} -t${_arg_threads} -s1 2>"${SH_STDERR}" | tee -a "${SH_LOG}"
 	wait
 	_var_drop_cnt="$(cat "${SH_ERRLOG}")"
 	echo "Total spans dropped: ${_var_drop_cnt}"
@@ -36,12 +37,13 @@ sh_run_dev_null()
 {
 	local _arg_threads="${1}"
 
-	${SH_TEST} -D0 -c "${SH_CFG}" -n "${SH_CTX}" -p "${SH_PIDFILE}" -r${SH_ARG_RUNTIME} -t${_arg_threads} -s1 2>/dev/null | tee -a "${SH_LOG}"
+	${SH_TEST} -D0 -c "${SH_CFG}" -i "${SH_ARG_INST}" -n "${SH_CTX}" -p "${SH_PIDFILE}" -r${SH_ARG_RUNTIME} -t${_arg_threads} -s1 2>/dev/null | tee -a "${SH_LOG}"
 }
 
 
-while getopts r:t: c; do
+while getopts i:r:t: c; do
 	case "${c}" in
+	  i)	SH_ARG_INST="${OPTARG}" ;;
 	  r)	SH_ARG_RUNTIME="${OPTARG}" ;;
 	  t)	SH_ARG_RUNTYPE="${OPTARG}" ;;
 	  \?)	echo "${SH_USAGE_MSG}"; exit 64 ;;
@@ -59,7 +61,7 @@ test -e "${SH_PIDFILE}" && {
 	exit 2
 }
 
-for _var_threads in 1 2 4 8 16 32 64 128 256 512 1024; do
+for _var_threads in 1 2 4 8 16 32 64 128 256 512 1024 2048 4096; do
 	sh_run_${SH_ARG_RUNTYPE} "${_var_threads}"
 	rm -f "${SH_PIDFILE}"
 done
