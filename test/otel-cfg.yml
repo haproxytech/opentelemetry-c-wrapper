@@ -5,7 +5,7 @@ exporters:
 #   cpu_id:         -1
     file_pattern:   "__traces_log-%F-%N"
     alias_pattern:  "__traces_log-latest"
-    flush_interval: 30000000
+    flush_interval: 1000000
     flush_count:    256
     file_size:      134217728
     rotate_size:    5
@@ -81,7 +81,7 @@ exporters:
 #   cpu_id:         -1
     file_pattern:   "__metrics_log-%F-%N"
     alias_pattern:  "__metrics_log-latest"
-    flush_interval: 30000000
+    flush_interval: 1000000
     flush_count:    256
     file_size:      134217728
     rotate_size:    5
@@ -126,7 +126,7 @@ exporters:
 #   cpu_id:         -1
     file_pattern:   "__logs_log-%F-%N"
     alias_pattern:  "__logs_log-latest"
-    flush_interval: 30000000
+    flush_interval: 1000000
     flush_count:    256
     file_size:      134217728
     rotate_size:    5
