@@ -22,6 +22,11 @@
 #define DEFAULT_RUNCOUNT          10
 #define DEFAULT_THREADS_COUNT     8
 #define DEFAULT_SPAN_TIME_DELAY   1
+#define DEFAULT_INSTANCES         1
+#define MAX_INSTANCES             4
+#define MAX_WORKERS               16384
+
+#define INSTANCE_BASE(n)          (cfg.threads * (n))
 
 
 typedef unsigned char bool_t;
@@ -33,8 +38,9 @@ enum FLAG_OPT_enum {
 };
 
 struct cfg_otel_ctx {
-	const char          *cfg_file;
-	const char          *ctx_name;
+	const char *cfg_file;
+	const char *ctx_name;
+	int         instance_cnt;
 };
 
 static struct {
@@ -56,8 +62,9 @@ static struct {
 	.threads    = DEFAULT_THREADS_COUNT,
 #endif
 	.otel       = {
-		.cfg_file = DEFAULT_CFG_FILE,
-		.ctx_name = DEFAULT_CTX_NAME,
+		.cfg_file     = DEFAULT_CFG_FILE,
+		.ctx_name     = DEFAULT_CTX_NAME,
+		.instance_cnt = DEFAULT_INSTANCES,
 	},
 };
 
@@ -71,10 +78,15 @@ enum WORKER_SPAN_enum {
 };
 
 struct prg_otel {
+#ifdef USE_THREADS
+	pthread_t            thread;
+	volatile bool_t      flag_run;
+#endif
 	struct otelc_ctx    *ctx;
 	struct otelc_tracer *tracer;
 	struct otelc_meter  *meter;
 	struct otelc_logger *logger;
+	int                  id;
 };
 
 struct worker {
@@ -86,6 +98,7 @@ struct worker {
 	int                otel_state;
 	uint64_t           count;
 	int                runtime_ms;
+	struct prg_otel   *otel;
 };
 
 static struct {
@@ -93,12 +106,11 @@ static struct {
 	uint64_t         drop_cnt;
 #ifdef USE_THREADS
 	pthread_t        main_thread;
-	struct worker    worker[8192];
-	volatile bool_t  flag_run;
+	struct worker    worker[MAX_WORKERS];
 #else
 	struct worker    worker;
 #endif
-	struct prg_otel  otel;
+	struct prg_otel  otel[MAX_INSTANCES];
 } prg;
 
 enum WORKER_STATE_enum {
@@ -225,7 +237,7 @@ static int thread_id(void)
 	if (pthread_equal(prg.main_thread, id))
 		return 0;
 
-	for (i = 0; i < OTELC_MIN(cfg.threads, (int)OTELC_TABLESIZE(prg.worker)); i++)
+	for (i = 0; i < OTELC_MIN(cfg.threads * cfg.otel.instance_cnt, (int)OTELC_TABLESIZE(prg.worker)); i++)
 		if (pthread_equal(prg.worker[i].thread, id))
 			return i + 1;
 
@@ -428,14 +440,14 @@ static void worker_thread(void *data)
 	/***
 	 * This is used only to reduce cobwebs in the code.
 	 */
-	struct otelc_tracer              **tracer       = &(prg.otel.tracer);
+	struct otelc_tracer              **tracer       = &(worker->otel->tracer);
 	struct otelc_span                **span_root    = worker->otelc_span + WORKER_SPAN_ROOT;
 	struct otelc_span                **span_child   = worker->otelc_span + WORKER_SPAN_CHILD;
 	struct otelc_span                **span_prop_tm = worker->otelc_span + WORKER_SPAN_PROP_TM;
 	struct otelc_span                **span_prop_hh = worker->otelc_span + WORKER_SPAN_PROP_HH;
 	struct otelc_span                **span_linked  = worker->otelc_span + WORKER_SPAN_LINKED;
-	struct otelc_meter               **meter        = &(prg.otel.meter);
-	struct otelc_logger              **logger       = &(prg.otel.logger);
+	struct otelc_meter               **meter        = &(worker->otel->meter);
+	struct otelc_logger              **logger       = &(worker->otel->logger);
 
 	OTELC_FUNC("%p", data);
 
@@ -455,7 +467,7 @@ static void worker_thread(void *data)
 	(void)snprintf(name, sizeof(name), "test/wrk: %d", worker->id);
 	(void)pthread_setname_np(worker->thread, name);
 
-	while (!prg.flag_run) {
+	while (!worker->otel->flag_run) {
 		otelc_nsleep(0, UINT32_C(10000000));
 
 		OTELC_DBG_IFDEF(n++, );
@@ -756,23 +768,27 @@ static void worker_thread(void *data)
 
 /***
  * NAME
- *   worker_run - initializes and starts all worker threads
+ *   worker_run - launches the worker pool for an OpenTelemetry instance
  *
  * SYNOPSIS
- *   static int worker_run(void)
+ *   static int worker_run(int instance_id)
  *
  * ARGUMENTS
- *   This function takes no arguments.
+ *   instance_id - index of the target OpenTelemetry instance
  *
  * DESCRIPTION
- *   Sets up the worker structures, creates the specified number of worker
- *   threads, and waits for them to complete.  It also tracks the total number
- *   of operations performed across all workers and prints final statistics.
+ *   Initializes the worker slots assigned to the given instance and links them
+ *   to the matching prg_otel handle, then creates the pool of worker threads
+ *   and waits for each one to join.  The covered slot range follows from the
+ *   INSTANCE_BASE(instance_id) macro together with the configured cfg.threads.
+ *   After all workers stop, the function prints the aggregate per-worker counts
+ *   and, when the build defines OTELC_USE_THREAD_SHARED_HANDLE, also dumps the
+ *   collected OpenTelemetry meter statistics for the instance.
  *
  * RETURN VALUE
  *   Returns EX_OK on success, or an appropriate exit code on failure.
  */
-static int worker_run(void)
+static int worker_run(int instance_id)
 {
 #ifdef USE_THREADS
 	uint64_t total_cnt = 0;
@@ -787,13 +803,12 @@ static int worker_run(void)
 #endif
 	int      retval = EX_OK;
 
-	OTELC_FUNC("");
+	OTELC_FUNC("%d", instance_id);
 
 #ifdef USE_THREADS
-	(void)pthread_setname_np(prg.main_thread, "test/wrk: main");
-
-	for (i = 0; i < cfg.threads; i++) {
-		prg.worker[i].id = i + 1;
+	for (i = INSTANCE_BASE(instance_id); i < (INSTANCE_BASE(instance_id) + cfg.threads); i++) {
+		prg.worker[i].id   = i + 1;
+		prg.worker[i].otel = prg.otel + instance_id;
 
 		if (pthread_create(&(prg.worker[i].thread), NULL, worker_thread, prg.worker + i) != 0) {
 			OTELC_LOG(stderr, "ERROR: Unable to start thread for worker %d: %m", prg.worker[i].id);
@@ -805,18 +820,18 @@ static int worker_run(void)
 #  endif
 	}
 
-	prg.flag_run = 1;
+	prg.otel[instance_id].flag_run = 1;
 
 	OTELC_DBG(WORKER, "%d threads started in %" PRId64 " ms", num_threads, OTELC_RUNTIME_MS());
 
-	for (i = 0; i < cfg.threads; i++) {
+	for (i = INSTANCE_BASE(instance_id); i < (INSTANCE_BASE(instance_id) + cfg.threads); i++) {
 		if (prg.worker[i].id == 0)
 			continue;
 
 		if (pthread_join(prg.worker[i].thread, NULL) != 0)
 			OTELC_LOG(stderr, "ERROR: Unable to join worker thread %d: %m", prg.worker[i].id);
 		else
-			OTELC_LOG(stdout, "worker %*d count: %" PRIu64, decimal_width(cfg.threads), prg.worker[i].id, prg.worker[i].count);
+			OTELC_LOG(stdout, "worker %*d count: %" PRIu64, decimal_width(cfg.threads * cfg.otel.instance_cnt), prg.worker[i].id, prg.worker[i].count);
 
 		total_cnt += prg.worker[i].count;
 		total_cps += prg.worker[i].count / (prg.worker[i].runtime_ms / 1000.0);
@@ -824,18 +839,182 @@ static int worker_run(void)
 
 	OTELC_LOG(stdout, "%d worker(s) total count: %" PRIu64", %.2f/sec", cfg.threads, total_cnt, total_cps);
 #else
+	prg.worker.otel = prg.otel + instance_id;
+
 	(void)worker_thread(&(prg.worker));
 #endif /* USE_THREADS */
 
 #ifdef OTELC_USE_THREAD_SHARED_HANDLE
-	int otelc_status  = otelc_statistics_check(NULL, 0, 0, total_cnt * 5, 0, total_cnt * 5, total_cnt * 5);
-	otelc_status     |= otelc_statistics_check(NULL, 1, 0, total_cnt * 2, 0, total_cnt * 2, total_cnt * 2);
-	otelc_status     |= otelc_statistics_check(prg.otel.meter, 2, 5, 5, 0, 0, 0);
-	otelc_status     |= otelc_statistics_check(prg.otel.meter, 3, 1, 1, 0, 0, 0);
+	int otelc_status  = otelc_statistics_check(prg.otel[instance_id].meter, 2, 5, 5, 0, 0, 0);
+	otelc_status     |= otelc_statistics_check(prg.otel[instance_id].meter, 3, 1, 1, 0, 0, 0);
 
-	otelc_statistics(prg.otel.meter, otel_infbuf, sizeof(otel_infbuf));
-	OTELC_LOG(stdout, "OpenTelemetry statistics: %s %s (%" PRIu64 ")", otelc_status ? "ERROR" : "OK", otel_infbuf, prg.drop_cnt);
+	otelc_statistics(prg.otel[instance_id].meter, otel_infbuf, sizeof(otel_infbuf));
+	OTELC_LOG(stdout, "OpenTelemetry instance %d statistics: %s %s", instance_id, otelc_status ? "ERROR" : "OK", otel_infbuf);
 #endif
+
+	OTELC_RETURN_INT(retval);
+}
+
+
+/***
+ * NAME
+ *   instance_thread - per-instance OpenTelemetry pthread entry point
+ *
+ * SYNOPSIS
+ *   static void *instance_thread(void *data)
+ *
+ * ARGUMENTS
+ *   data - pointer to the prg_otel structure owned by this instance
+ *
+ * DESCRIPTION
+ *   Initializes an OpenTelemetry context for the instance, then creates and
+ *   starts the tracer, meter and logger handles before it drives the workers
+ *   through a call to worker_run().  Once the workers stop, or as soon as any
+ *   initialization step fails, the OpenTelemetry handles are released through
+ *   a call to otelc_deinit().  Failures along the chain are logged, and they
+ *   abort the rest of the initialization sequence.
+ *
+ * RETURN VALUE
+ *   This function does not return a value.  In threaded mode it
+ *   terminates via pthread_exit().
+ */
+#ifdef USE_THREADS
+__attribute__((noreturn)) static void *instance_thread(void *data)
+#else
+static void instance_thread(void *data)
+#endif
+{
+#ifdef USE_THREADS
+	char             name[16];
+#endif
+	char            *otel_err = NULL;
+	struct prg_otel *otel = data;
+
+	OTELC_FUNC("%p", data);
+
+#ifdef __linux__
+	OTELC_DBG(WORKER, "Instance started, thread id: %" PRI_PTHREADT, syscall(SYS_gettid));
+#else
+	OTELC_DBG(WORKER, "Instance started, thread id: %" PRI_PTHREADT, otel->thread);
+#endif
+
+#ifdef USE_THREADS
+	(void)snprintf(name, sizeof(name), "test/inst: %d", otel->id);
+	(void)pthread_setname_np(otel->thread, name);
+#endif
+
+	if (_NULL(otel->ctx = otelc_init(cfg.otel.cfg_file, cfg.otel.ctx_name, &otel_err)))
+		OTELC_LOG(stderr, "ERROR: instance %d: %s", otel->id, _NULL(otel_err) ? "Unable to init library" : otel_err);
+	else if (_NULL(otel->tracer = otelc_tracer_create(otel->ctx, &otel_err)))
+		OTELC_LOG(stderr, "ERROR: instance %d: %s", otel->id, _NULL(otel_err) ? "Unable to init traces" : otel_err);
+	else if (OTELC_OPS(otel->tracer, start) == OTELC_RET_ERROR)
+		OTELC_LOG(stderr, "ERROR: instance %d: %s", otel->id, _NULL(otel->tracer->err) ? "Unable to start traces" : otel->tracer->err);
+	else if (_NULL(otel->meter = otelc_meter_create(otel->ctx, &otel_err)))
+		OTELC_LOG(stderr, "ERROR: instance %d: %s", otel->id, _NULL(otel_err) ? "Unable to init metrics" : otel_err);
+	else if (OTELC_OPS(otel->meter, start) == OTELC_RET_ERROR)
+		OTELC_LOG(stderr, "ERROR: instance %d: %s", otel->id, _NULL(otel->meter->err) ? "Unable to start metrics" : otel->meter->err);
+	else if (_NULL(otel->logger = otelc_logger_create(otel->ctx, &otel_err)))
+		OTELC_LOG(stderr, "ERROR: instance %d: %s", otel->id, _NULL(otel_err) ? "Unable to init logs" : otel_err);
+	else if (OTELC_OPS(otel->logger, start) == OTELC_RET_ERROR)
+		OTELC_LOG(stderr, "ERROR: instance %d: %s", otel->id, _NULL(otel->logger->err) ? "Unable to start logs" : otel->logger->err);
+	else
+		(void)worker_run(otel->id);
+
+	otelc_deinit(&(otel->ctx), &(otel->tracer), &(otel->meter), &(otel->logger));
+
+	OTELC_SFREE(otel_err);
+
+#ifdef __linux__
+	OTELC_DBG(WORKER, "Instance stopped, thread id: %" PRI_PTHREADT, syscall(SYS_gettid));
+#else
+	OTELC_DBG(WORKER, "Instance stopped, thread id: %" PRI_PTHREADT, otel->thread);
+#endif
+
+	OTELC_FUNC_END("}");
+
+#ifdef USE_THREADS
+	pthread_exit(NULL);
+#endif
+}
+
+
+/***
+ * NAME
+ *   instance_run - launches every OpenTelemetry instance in parallel
+ *
+ * SYNOPSIS
+ *   static int instance_run(void)
+ *
+ * ARGUMENTS
+ *   This function takes no arguments.
+ *
+ * DESCRIPTION
+ *   Iterates over the configured cfg.otel.instance_cnt entries of prg.otel and
+ *   spawns one pthread per instance through pthread_create(); a second pass
+ *   then waits for every thread to terminate through pthread_join().  The two-
+ *   phase layout lets every instance run concurrently rather than back to back.
+ *   In non-threaded builds the per-instance routine is invoked directly on the
+ *   calling thread, one entry at a time.  Thread creation or join failures are
+ *   reported through the log and the resulting exit code is propagated back to
+ *   the caller.  When OTELC_USE_THREAD_SHARED_HANDLE is defined, the function
+ *   also reports the cumulative global span and context counts collected across
+ *   all instances after the second-pass join has completed.
+ *
+ * RETURN VALUE
+ *   Returns EX_OK on success, or EX_OSERR if any instance thread could
+ *   not be started or joined.
+ */
+static int instance_run(void)
+{
+	int i, retval = EX_OK;
+
+	OTELC_FUNC("");
+
+#ifdef USE_THREADS
+	for (i = 0; i < cfg.otel.instance_cnt; i++) {
+		prg.otel[i].id = i;
+
+		if (pthread_create(&(prg.otel[i].thread), NULL, instance_thread, prg.otel + i) != 0) {
+			OTELC_LOG(stderr, "ERROR: Unable to start thread for instance %d: %m", i);
+
+			prg.otel[i].id = -1;
+			retval         = EX_OSERR;
+		} else {
+			OTELC_DBG(WORKER, "instance %d started in %" PRId64 " ms", i, OTELC_RUNTIME_MS());
+		}
+	}
+
+	for (i = 0; i < cfg.otel.instance_cnt; i++) {
+		if (prg.otel[i].id != i)
+			continue;
+
+		if (pthread_join(prg.otel[i].thread, NULL) != 0) {
+			OTELC_LOG(stderr, "ERROR: Unable to join instance thread %d: %m", i);
+
+			retval = EX_OSERR;
+		}
+	}
+
+#ifdef OTELC_USE_THREAD_SHARED_HANDLE
+	{
+		uint64_t total_cnt = 0;
+		int      otelc_status;
+
+		for (i = 0; i < (cfg.threads * cfg.otel.instance_cnt); i++)
+			total_cnt += prg.worker[i].count;
+
+		otelc_status  = otelc_statistics_check(NULL, 0, 0, total_cnt * 5, 0, total_cnt * 5, total_cnt * 5);
+		otelc_status |= otelc_statistics_check(NULL, 1, 0, total_cnt * 2, 0, total_cnt * 2, total_cnt * 2);
+
+		OTELC_LOG(stdout, "OpenTelemetry global statistics: %s (drops: %" PRIu64 ")", otelc_status ? "ERROR" : "OK", prg.drop_cnt);
+	}
+#endif
+#else
+	for (i = 0; i < cfg.otel.instance_cnt; i++) {
+		prg.otel[i].id = i;
+		instance_thread(prg.otel + i);
+	}
+#endif /* USE_THREADS */
 
 	OTELC_RETURN_INT(retval);
 }
@@ -875,6 +1054,11 @@ static void usage(const char *program_name, bool_t flag_verbose)
 		(void)printf("  -d, --debug=LEVEL        " _ "Debug level (default: 0x%04x).\n", DEFAULT_DEBUG_LEVEL);
 #endif
 		(void)printf("  -h, --help               " _ "Show this text.\n");
+#ifdef USE_THREADS
+		(void)printf("  -i, --instances=VALUE    " _ "Number of instances (default: %d, max: %d).\n", DEFAULT_INSTANCES, MAX_INSTANCES);
+#else
+		(void)printf("  -i, --instances=VALUE    " _ "Ignored (threads are not enabled).\n");
+#endif
 		(void)printf("  -n, --name=NAME          " _ "Context name used for signal lookup (default: %s).\n", DEFAULT_CTX_NAME);
 		(void)printf("  -p, --pidfile=FILE       " _ "Write the process ID to FILE.\n");
 		(void)printf("  -R, --runcount=VALUE     " _ "Number of passes to run (default: %d, 0 = unlimited).\n", DEFAULT_RUNCOUNT);
@@ -980,6 +1164,7 @@ int main(int argc, char **argv)
 		{ "debug",               required_argument, NULL, 'd' },
 #endif
 		{ "help",                no_argument,       NULL, 'h' },
+		{ "instances",           required_argument, NULL, 'i' },
 		{ "name",                required_argument, NULL, 'n' },
 		{ "pidfile",             required_argument, NULL, 'p' },
 		{ "runcount",            required_argument, NULL, 'R' },
@@ -993,7 +1178,7 @@ int main(int argc, char **argv)
 	static struct otelc_dbg_mem_data  dbg_mem_data[1000000];
 	struct otelc_dbg_mem              dbg_mem;
 #endif
-	const char                       *shortopts = "c:D:d:hn:p:R:r:s:Tt:V";
+	const char                       *shortopts = "c:D:d:hi:n:p:R:r:s:Tt:V";
 	char                             *otel_err = NULL;
 	int                               rc, c, longopts_idx = -1, retval = EX_OK;
 	bool_t                            flag_error = 0;
@@ -1011,6 +1196,7 @@ int main(int argc, char **argv)
 	prg.name        = basename(argv[0]);
 #ifdef USE_THREADS
 	prg.main_thread = pthread_self();
+	(void)pthread_setname_np(prg.main_thread, "test/wrk: main");
 #endif
 
 	(void)otelc_runtime();
@@ -1041,6 +1227,10 @@ int main(int argc, char **argv)
 #endif
 		else if (c == 'h')
 			cfg.opt_flags |= FLAG_OPT_HELP;
+#ifdef USE_THREADS
+		else if (c == 'i')
+			cfg.otel.instance_cnt = atoi(optarg);
+#endif
 		else if (c == 'n')
 			cfg.otel.ctx_name = optarg;
 		else if (c == 'p')
@@ -1123,12 +1313,20 @@ int main(int argc, char **argv)
 			cfg.runcount = DEFAULT_RUNCOUNT;
 
 #ifdef USE_THREADS
+		if (!OTELC_IN_RANGE(cfg.otel.instance_cnt, 1, MAX_INSTANCES)) {
+			OTELC_LOG(stderr, "ERROR: Invalid number of instances '%d'", cfg.otel.instance_cnt);
+			flag_error = 1;
+		}
+
 		if (!OTELC_IN_RANGE(cfg.threads, 1, (int)OTELC_TABLESIZE(prg.worker))) {
 			OTELC_LOG(stderr, "ERROR: Invalid number of threads '%d'", cfg.threads);
 			flag_error = 1;
+		} else if (OTELC_IN_RANGE(cfg.otel.instance_cnt, 1, MAX_INSTANCES) && !OTELC_IN_RANGE(cfg.threads * cfg.otel.instance_cnt, 1, (int)OTELC_TABLESIZE(prg.worker))) {
+			OTELC_LOG(stderr, "ERROR: threads * instances (%d) exceeds worker pool size (%d)", cfg.threads * cfg.otel.instance_cnt, (int)OTELC_TABLESIZE(prg.worker));
+			flag_error = 1;
 		} else {
-			OTELC_DBG_IFDEF(otelc_dbg_tid_width = decimal_width(cfg.threads), );
-			atomic_init(&thread_id_offset, next_power_of_10(cfg.threads));
+			OTELC_DBG_IFDEF(otelc_dbg_tid_width = decimal_width(cfg.threads * cfg.otel.instance_cnt), );
+			atomic_init(&thread_id_offset, next_power_of_10(cfg.threads * cfg.otel.instance_cnt));
 		}
 #endif
 
@@ -1139,54 +1337,15 @@ int main(int argc, char **argv)
 	if (flag_error || (cfg.opt_flags & (FLAG_OPT_HELP | FLAG_OPT_VERSION)))
 		OTELC_RETURN_INT(flag_error ? EX_USAGE : EX_OK);
 
-	if (_NULL(prg.otel.ctx = otelc_init(cfg.otel.cfg_file, cfg.otel.ctx_name, &otel_err))) {
-		OTELC_LOG(stderr, "ERROR: %s", _NULL(otel_err) ? "Unable to init library" : otel_err);
+	/***
+	 * Pidfile creation and write failures are non-fatal: an error is logged
+	 * but the test continues to run.
+	 */
+	(void)pidfile(cfg.pid_file);
 
-		retval = EX_SOFTWARE;
-	}
-	else if (_NULL(prg.otel.tracer = otelc_tracer_create(prg.otel.ctx, &otel_err))) {
-		OTELC_LOG(stderr, "ERROR: %s", _NULL(otel_err) ? "Unable to init traces" : otel_err);
+	otelc_log_set_handler(log_handler_cb, NULL, false);
 
-		retval = EX_SOFTWARE;
-	}
-	else if (OTELC_OPS(prg.otel.tracer, start) == OTELC_RET_ERROR) {
-		OTELC_LOG(stderr, "ERROR: %s", _NULL(prg.otel.tracer->err) ? "Unable to start traces" : prg.otel.tracer->err);
-
-		retval = EX_SOFTWARE;
-	}
-	else if (_NULL(prg.otel.meter = otelc_meter_create(prg.otel.ctx, &otel_err))) {
-		OTELC_LOG(stderr, "ERROR: %s", _NULL(otel_err) ? "Unable to init metrics" : otel_err);
-
-		retval = EX_SOFTWARE;
-	}
-	else if (OTELC_OPS(prg.otel.meter, start) == OTELC_RET_ERROR) {
-		OTELC_LOG(stderr, "ERROR: %s", _NULL(prg.otel.meter->err) ? "Unable to start metrics" : prg.otel.meter->err);
-
-		retval = EX_SOFTWARE;
-	}
-	else if (_NULL(prg.otel.logger = otelc_logger_create(prg.otel.ctx, &otel_err))) {
-		OTELC_LOG(stderr, "ERROR: %s", _NULL(otel_err) ? "Unable to init logs" : otel_err);
-
-		retval = EX_SOFTWARE;
-	}
-	else if (OTELC_OPS(prg.otel.logger, start) == OTELC_RET_ERROR) {
-		OTELC_LOG(stderr, "ERROR: %s", _NULL(prg.otel.logger->err) ? "Unable to start logs" : prg.otel.logger->err);
-
-		retval = EX_SOFTWARE;
-	}
-	else {
-		/*
-		 * Pidfile creation and write failures are non-fatal: an error
-		 * is logged but the test continues to run.
-		 */
-		(void)pidfile(cfg.pid_file);
-
-		otelc_log_set_handler(log_handler_cb, NULL, false);
-
-		retval = worker_run();
-	}
-
-	otelc_deinit(&(prg.otel.ctx), &(prg.otel.tracer), &(prg.otel.meter), &(prg.otel.logger));
+	retval = instance_run();
 
 	OTELC_SFREE(otel_err);
 	OTELC_LOG(stdout, "Program runtime: %" PRId64 " ms", OTELC_RUNTIME_MS());
