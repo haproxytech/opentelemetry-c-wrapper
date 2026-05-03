@@ -857,7 +857,7 @@ static void usage(const char *program_name, bool_t flag_verbose)
 		(void)printf("  -c, --config=FILE        " _ "OpenTelemetry configuration file (default: %s).\n", DEFAULT_CFG_FILE);
 		(void)printf("  -D, --delay=TIME         " _ "Delay between OpenTelemetry operations (default: %d ms).\n", DEFAULT_SPAN_TIME_DELAY);
 #ifdef DEBUG
-		(void)printf("  -d, --debug=LEVEL        " _ "Debug level (default: 0x%04x).", DEFAULT_DEBUG_LEVEL);
+		(void)printf("  -d, --debug=LEVEL        " _ "Debug level (default: 0x%04x).\n", DEFAULT_DEBUG_LEVEL);
 #endif
 		(void)printf("  -h, --help               " _ "Show this text.\n");
 		(void)printf("  -R, --runcount=VALUE     " _ "Number of passes to run (default: %d, 0 = unlimited).\n", DEFAULT_RUNCOUNT);
