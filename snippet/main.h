@@ -53,7 +53,7 @@
 #define OTELC_RETURN()           do { OTELC_DBG("}"); return; } while (0)
 #define OTELC_RETURN_EX(a,t,f)   do { t _r = (a); OTELC_DBG("} = " f, _r); return _r; } while (0)
 #define OTELC_RETURN_INT(a)      OTELC_RETURN_EX((a), int, "%d")
-#define OTELC_RETURN_PTR(a)      OTELC_RETURN_EX((a), typeof(a), "%p")
+#define OTELC_RETURN_PTR(a)      OTELC_RETURN_EX((a), decltype(a), "%p")
 
 
 namespace otel_baggage          = OPENTELEMETRY_NAMESPACE::baggage;

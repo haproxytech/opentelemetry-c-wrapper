@@ -459,9 +459,9 @@ static int otel_span_set_baggage_var(const struct otelc_span *span, const char *
 	for (retval = 0; !OTEL_NULL(key) && !OTEL_NULL(value); retval++) {
 		baggage = baggage->Set(key, value);
 
-		key = va_arg(ap, typeof(key));
+		key = va_arg(ap, decltype(key));
 		if (!OTEL_NULL(key))
-			value = va_arg(ap, typeof(value));
+			value = va_arg(ap, decltype(value));
 	}
 
 	OTEL_SPAN_UPDATE_BAGGAGE(handle, baggage, retval);
@@ -521,7 +521,7 @@ static int otel_span_set_baggage_kv_var(const struct otelc_span *span, const str
 			OTEL_SPAN_RETURN_INT("Invalid value data type");
 		}
 
-		kv = va_arg(ap, typeof(kv));
+		kv = va_arg(ap, decltype(kv));
 	}
 
 	OTEL_SPAN_UPDATE_BAGGAGE(handle, baggage, retval);
@@ -669,7 +669,7 @@ static char *otel_span_get_baggage(const struct otelc_span *span, const char *ke
 			OTEL_SPAN_RETURN_PTR(OTEL_ERROR_MSG_ENOMEM("baggage value"));
 	}
 
-	OTELC_RETURN_EX(retptr, typeof(retptr), "\"%s\"");
+	OTELC_RETURN_EX(retptr, decltype(retptr), "\"%s\"");
 }
 
 
@@ -712,7 +712,7 @@ static struct otelc_text_map *otel_span_get_baggage_var(const struct otelc_span 
 		OTEL_SPAN_RETURN_PTR("Invalid baggage name");
 
 	va_start(ap, key);
-	for (n = 1; !OTEL_NULL(va_arg(ap, typeof(key))); n++);
+	for (n = 1; !OTEL_NULL(va_arg(ap, decltype(key))); n++);
 	va_end(ap);
 
 	if (OTEL_NULL(retptr = OTELC_TEXT_MAP_NEW(nullptr, n)))
@@ -749,7 +749,7 @@ static struct otelc_text_map *otel_span_get_baggage_var(const struct otelc_span 
 			OTELC_DBG(OTELC, "get baggage[%d]: \"%s\" -> UNSET", i, key);
 		}
 
-		key = va_arg(ap, typeof(key));
+		key = va_arg(ap, decltype(key));
 	}
 
 	OTELC_RETURN_PTR(retptr);
@@ -841,9 +841,9 @@ static int otel_span_set_attribute_var(const struct otelc_span *span, const char
 		if (otel_span_set_one_attribute(handle->span, key, value) == OTELC_RET_ERROR)
 			OTEL_SPAN_RETURN_INT("Unable to set span attribute");
 
-		key = va_arg(ap, typeof(key));
+		key = va_arg(ap, decltype(key));
 		if (!OTEL_NULL(key))
-			value = va_arg(ap, typeof(value));
+			value = va_arg(ap, decltype(value));
 	}
 
 	OTELC_RETURN_INT(retval);
@@ -892,7 +892,7 @@ static int otel_span_set_attribute_kv_var(const struct otelc_span *span, const s
 		if (otel_span_set_one_attribute(handle->span, kv->key, &(kv->value)) == OTELC_RET_ERROR)
 			OTEL_SPAN_RETURN_INT("Unable to set span attribute");
 
-		kv = va_arg(ap, typeof(kv));
+		kv = va_arg(ap, decltype(kv));
 	}
 
 	OTELC_RETURN_INT(retval);
@@ -1037,9 +1037,9 @@ static int otel_span_add_event_var(const struct otelc_span *span, const char *na
 		if (otel_span_add_one_event(span, attr, key, value) == OTELC_RET_ERROR)
 			OTEL_SPAN_RETURN_INT("Unable to set span event attribute");
 
-		key = va_arg(ap, typeof(key));
+		key = va_arg(ap, decltype(key));
 		if (!OTEL_NULL(key))
-			value = va_arg(ap, typeof(value));
+			value = va_arg(ap, decltype(value));
 	}
 
 	if (retval > 0)
@@ -1099,7 +1099,7 @@ static int otel_span_add_event_kv_var(const struct otelc_span *span, const char 
 		if (otel_span_add_one_event(span, attr, kv->key, &(kv->value)) == OTELC_RET_ERROR)
 			OTEL_SPAN_RETURN_INT("Unable to set span event attribute");
 
-		kv = va_arg(ap, typeof(kv));
+		kv = va_arg(ap, decltype(kv));
 	}
 
 	if (retval > 0)

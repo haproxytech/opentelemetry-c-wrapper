@@ -1068,9 +1068,9 @@ int otelc_text_map_add(OTELC_DBG_IFDEF(OTELC_ARGS(const char *func, int line, ),
 	 * (for example: 8 -> 12 -> 18 -> 27 -> 40 -> 60 ...).
 	 */
 	if (text_map->count >= text_map->size) {
-		typeof(text_map->flags) ptr_flags;
-		typeof(text_map->key)   ptr_key;
-		typeof(text_map->value) ptr_value;
+		decltype(text_map->flags) ptr_flags;
+		decltype(text_map->key)   ptr_key;
+		decltype(text_map->value) ptr_value;
 		const size_t            size_add = (text_map->size > 1) ? (text_map->size / 2) : 1;
 
 		OTELC_DBG(OTEL, "reallocating text_map: %zu + %zu", text_map->size, size_add);

@@ -708,9 +708,9 @@ static int yaml_get_node_v(OTEL_YAML_DOC *fyd, char **err, const char *desc, con
 	else if (OTEL_NULL(name) || (*name == '\0'))
 		OTEL_ERR_RETURN_INT("YAML node name not specified");
 
-	for ( ; type != OTEL_YAML_END; type = va_arg(ap, typeof(type))) {
-		int         arg_is_mandatory = va_arg(ap, typeof(arg_is_mandatory));
-		const char *arg_path         = va_arg(ap, typeof(arg_path));
+	for ( ; type != OTEL_YAML_END; type = va_arg(ap, decltype(type))) {
+		int         arg_is_mandatory = va_arg(ap, decltype(arg_is_mandatory));
+		const char *arg_path         = va_arg(ap, decltype(arg_path));
 		const char *path_desc        = strrchr(arg_path, '/');
 
 		*subarg = '\0';
@@ -725,7 +725,7 @@ static int yaml_get_node_v(OTEL_YAML_DOC *fyd, char **err, const char *desc, con
 			path_desc++;
 
 		if (type == OTEL_YAML_MAP) {
-			struct otelc_text_map **arg_map = va_arg(ap, typeof(arg_map));
+			struct otelc_text_map **arg_map = va_arg(ap, decltype(arg_map));
 
 PRAGMA_DIAG_IGNORE("-Wformat-nonliteral")
 			(void)snprintf(fmt, sizeof(fmt), arg_path, name);
@@ -769,8 +769,8 @@ PRAGMA_DIAG_RESTORE
 		OTELC_DBG(DEBUG, "found: '%s'", subarg);
 
 		if (type == OTEL_YAML_STR) {
-			char *arg_str_ptr  = va_arg(ap, typeof(arg_str_ptr));
-			int   arg_str_size = va_arg(ap, typeof(arg_str_size));
+			char *arg_str_ptr  = va_arg(ap, decltype(arg_str_ptr));
+			int   arg_str_size = va_arg(ap, decltype(arg_str_size));
 
 			if (rc != 1)
 				continue;
@@ -778,7 +778,7 @@ PRAGMA_DIAG_RESTORE
 			(void)otelc_strlcpy(arg_str_ptr, arg_str_size, subarg, 0);
 		}
 		else if (type == OTEL_YAML_BOOL) {
-			int *arg_value_ptr = va_arg(ap, typeof(arg_value_ptr));
+			int *arg_value_ptr = va_arg(ap, decltype(arg_value_ptr));
 
 			if (rc != 1)
 				continue;
@@ -793,9 +793,9 @@ PRAGMA_DIAG_RESTORE
 		else if (type == OTEL_YAML_INT64) {
 			char    *endptr = nullptr;
 			int64_t  value;
-			int64_t *arg_value_ptr = va_arg(ap, typeof(arg_value_ptr));
-			int64_t  arg_value_min = va_arg(ap, typeof(arg_value_min));
-			int64_t  arg_value_max = va_arg(ap, typeof(arg_value_max));
+			int64_t *arg_value_ptr = va_arg(ap, decltype(arg_value_ptr));
+			int64_t  arg_value_min = va_arg(ap, decltype(arg_value_min));
+			int64_t  arg_value_max = va_arg(ap, decltype(arg_value_max));
 
 			if (rc != 1)
 				continue;
@@ -810,9 +810,9 @@ PRAGMA_DIAG_RESTORE
 		else if (type == OTEL_YAML_DOUBLE) {
 			char   *endptr = nullptr;
 			double  value;
-			double *arg_value_ptr = va_arg(ap, typeof(arg_value_ptr));
-			double  arg_value_min = va_arg(ap, typeof(arg_value_min));
-			double  arg_value_max = va_arg(ap, typeof(arg_value_max));
+			double *arg_value_ptr = va_arg(ap, decltype(arg_value_ptr));
+			double  arg_value_min = va_arg(ap, decltype(arg_value_min));
+			double  arg_value_max = va_arg(ap, decltype(arg_value_max));
 
 			if (rc != 1)
 				continue;

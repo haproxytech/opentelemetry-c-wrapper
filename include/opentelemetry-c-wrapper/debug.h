@@ -96,8 +96,8 @@ enum OTELC_DBG_LEVEL_enum {
 	} while (0)
 #  define OTELC_RETURN()           do { OTELC_FUNC_END("}"); return; } while (0)
 #  define OTELC_RETURN_EX(a,t,f)   do { t r_ = (a); OTELC_FUNC_END("} = " f, r_); return r_; } while (0)
-#  define OTELC_RETURN_PTR(a)      OTELC_RETURN_EX((a), typeof(a), "%p")
-#  define OTELC_RETURN_ENUM(a)     OTELC_RETURN_EX((a), typeof(a), "%d")
+#  define OTELC_RETURN_PTR(a)      OTELC_RETURN_EX((a), __typeof__(a), "%p")
+#  define OTELC_RETURN_ENUM(a)     OTELC_RETURN_EX((a), __typeof__(a), "%d")
 #  define OTELC_RETURN_INT(a)      OTELC_RETURN_EX((a), int, "%d")
 
 

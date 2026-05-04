@@ -495,7 +495,7 @@ char *otelc_dbg_strdup(const char *func, int line, const char *s)
 
 	otelc_dbg_mem_alloc(func, line, nullptr, retptr, len);
 
-	OTELC_RETURN_EX(OTEL_CAST_TYPEOF(retptr, DBG_MEM_RETURN(retptr)), typeof(retptr), "%p");
+	OTELC_RETURN_EX(OTEL_CAST_TYPEOF(retptr, DBG_MEM_RETURN(retptr)), decltype(retptr), "%p");
 }
 
 
@@ -538,7 +538,7 @@ char *otelc_dbg_strndup(const char *func, int line, const char *s, size_t size)
 
 	otelc_dbg_mem_alloc(func, line, nullptr, retptr, len + 1);
 
-	OTELC_RETURN_EX(OTEL_CAST_TYPEOF(retptr, DBG_MEM_RETURN(retptr)), typeof(retptr), "%p");
+	OTELC_RETURN_EX(OTEL_CAST_TYPEOF(retptr, DBG_MEM_RETURN(retptr)), decltype(retptr), "%p");
 }
 
 

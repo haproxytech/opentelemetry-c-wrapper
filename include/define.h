@@ -99,7 +99,7 @@ template <typename T> otel_defer_struct<T>make_defer(T fn) { return { fn }; }
 #define OTEL_CAST_STATIC_PTR(t,e)     std::static_pointer_cast<t>(e)
 #define OTEL_CAST_DYNAMIC(t,e)        dynamic_cast<t>(e)
 #define OTEL_CAST_REINTERPRET(t,e)    reinterpret_cast<t>(e)
-#define OTEL_CAST_TYPEOF(t,e)         OTEL_CAST_REINTERPRET(typeof(t), (e))
+#define OTEL_CAST_TYPEOF(t,e)         OTEL_CAST_REINTERPRET(__typeof__(t), (e))
 
 #define OTEL_ERROR_MSG_ENOMEM(s)      "Unable to allocate memory for " s
 

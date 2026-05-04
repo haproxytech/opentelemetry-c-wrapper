@@ -28,7 +28,7 @@ __CPLUSPLUS_DECL_BEGIN
 #  define OTELC_TEXT_MAP_DUMP(...)        while (0)
 #endif
 
-#define OTELC_VALUE_STR(p)                (((p)->u_type == OTELC_VALUE_STRING) ? (p)->u.value_string : (typeof((p)->u.value_string))(p)->u.value_data)
+#define OTELC_VALUE_STR(p)                (((p)->u_type == OTELC_VALUE_STRING) ? (p)->u.value_string : (__typeof__((p)->u.value_string))(p)->u.value_data)
 
 #define OTELC_DBG_VALUE(l,h,p)            OTELC_DBG(_##l, "%s", otelc_value_dump((p), (h)))
 #define OTELC_DBG_KV(l,h,p)               OTELC_DBG(_##l, "%s", otelc_kv_dump((p), (h)))

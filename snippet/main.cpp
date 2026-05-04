@@ -300,7 +300,7 @@ static char *otel_span_baggage_get(int64_t id, const char *key)
 
 	retptr = strndup(value.c_str(), value.length());
 
-	OTELC_RETURN_EX(retptr, typeof(retptr), "%p");
+	OTELC_RETURN_EX(retptr, decltype(retptr), "%p");
 }
 
 

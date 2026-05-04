@@ -44,7 +44,7 @@ __CPLUSPLUS_DECL_BEGIN
 
 #ifdef OTELC_DBG_MEM
 #  ifndef OTEL_CAST_TYPEOF
-#    define OTEL_CAST_TYPEOF(t,e)   ((typeof(t))(e))
+#    define OTEL_CAST_TYPEOF(t,e)   ((__typeof__(t))(e))
 #  endif
 #  define OTELC_DBG_MEM_TRACKING(p,n)                                \
 	do {                                                         \
