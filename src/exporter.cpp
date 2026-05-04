@@ -175,7 +175,10 @@ static int otel_exporter_set_otlp_grpc_options(const char *desc, const char *pat
 	char    ssl_client_cert_path[OTEL_YAML_BUFSIZ] = "", ssl_client_cert_string[OTEL_YAML_BUFSIZ] = "";
 #endif
 	int     rc, use_ssl_credentials = false;
-	int64_t timeout = 10, max_threads = 0, max_concurrent_requests = 0;
+	int64_t timeout = 10, max_threads = 0;
+#ifdef ENABLE_ASYNC_EXPORT
+	int64_t max_concurrent_requests = 0;
+#endif
 	int64_t cpu_id = -1;
 
 	OTELC_FUNC("\"%s\", \"%s\", \"%s\", <options>, %p:%p, \"%s\"", OTELC_STR_ARG(desc), OTELC_STR_ARG(path), OTELC_STR_ARG(endpoint), OTELC_DPTR_ARGS(err), OTELC_STR_ARG(name));
@@ -204,7 +207,9 @@ static int otel_exporter_set_otlp_grpc_options(const char *desc, const char *pat
 	                   OTEL_YAML_ARG_STR(0, EXPORTERS, user_agent),
 	                   OTEL_YAML_ARG_INT64(0, EXPORTERS, max_threads, 1, 1024),
 	                   OTEL_YAML_ARG_STR(0, EXPORTERS, compression),
+#ifdef ENABLE_ASYNC_EXPORT
 	                   OTEL_YAML_ARG_INT64(0, EXPORTERS, max_concurrent_requests, 1, 1024),
+#endif
 	                   OTEL_YAML_END);
 	if (rc == OTELC_RET_ERROR)
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
@@ -223,7 +228,9 @@ static int otel_exporter_set_otlp_grpc_options(const char *desc, const char *pat
 	options.user_agent                       = user_agent;
 	options.max_threads                      = max_threads;
 	options.compression                      = compression;
+#ifdef ENABLE_ASYNC_EXPORT
 	options.max_concurrent_requests          = max_concurrent_requests;
+#endif
 
 	OTELC_RETURN_INT(OTELC_RET_OK);
 }
@@ -278,7 +285,10 @@ static int otel_exporter_set_otlp_http_options(const char *desc, const char *pat
 	char                             ssl_min_tls[OTEL_YAML_BUFSIZ] = "", ssl_max_tls[OTEL_YAML_BUFSIZ] = "";
 	char                             ssl_cipher[OTEL_YAML_BUFSIZ] = "", ssl_cipher_suite[OTEL_YAML_BUFSIZ] = "", compression[OTEL_YAML_BUFSIZ] = "";
 	int                              rc, use_json_name = false, debug = false, ssl_insecure_skip_verify = false;
-	int64_t                          timeout = 10, max_concurrent_requests = 64, max_requests_per_connection = 8, background_thread_wait_for = 0, cpu_id = -1;
+	int64_t                          timeout = 10, background_thread_wait_for = 0, cpu_id = -1;
+#ifdef ENABLE_ASYNC_EXPORT
+	int64_t                          max_concurrent_requests = 64, max_requests_per_connection = 8;
+#endif
 
 	OTELC_FUNC("\"%s\", \"%s\", \"%s\", <options>, %p, %p:%p, \"%s\"", OTELC_STR_ARG(desc), OTELC_STR_ARG(path), OTELC_STR_ARG(endpoint), thread_wait_time, OTELC_DPTR_ARGS(err), OTELC_STR_ARG(name));
 
@@ -299,8 +309,10 @@ static int otel_exporter_set_otlp_http_options(const char *desc, const char *pat
 	                   OTEL_YAML_ARG_BOOL(0, EXPORTERS, debug),
 	                   OTEL_YAML_ARG_INT64(0, EXPORTERS, timeout, 1, 60),
 	                   OTEL_YAML_ARG_MAP(0, EXPORTERS, http_headers),
+#ifdef ENABLE_ASYNC_EXPORT
 	                   OTEL_YAML_ARG_INT64(0, EXPORTERS, max_concurrent_requests, 1, 1024),
 	                   OTEL_YAML_ARG_INT64(0, EXPORTERS, max_requests_per_connection, 1, 1024),
+#endif
 	                   OTEL_YAML_ARG_INT64(0, EXPORTERS, background_thread_wait_for, 0, 3600000),
 	                   OTEL_YAML_ARG_BOOL(0, EXPORTERS, ssl_insecure_skip_verify),
 	                   OTEL_YAML_ARG_STR(0, EXPORTERS, ssl_ca_cert_path),
@@ -351,8 +363,10 @@ static int otel_exporter_set_otlp_http_options(const char *desc, const char *pat
 	options.console_debug               = debug;
 	options.timeout                     = std::chrono::duration_cast<std::chrono::system_clock::duration>(std::chrono::seconds{timeout});
 	options.http_headers                = std::move(otlp_http_headers);
+#ifdef ENABLE_ASYNC_EXPORT
 	options.max_concurrent_requests     = max_concurrent_requests;
 	options.max_requests_per_connection = max_requests_per_connection;
+#endif
 	options.ssl_insecure_skip_verify    = ssl_insecure_skip_verify;
 	options.ssl_ca_cert_path            = ssl_ca_cert_path;
 	options.ssl_ca_cert_string          = ssl_ca_cert_string;
