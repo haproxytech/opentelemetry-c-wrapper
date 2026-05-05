@@ -51,25 +51,23 @@ namespace otel
 	 *   Creates a std::shared_ptr using a non-throwing new expression,
 	 *   returning a nullptr on allocation failure.  Unlike unique_ptr, the
 	 *   std::shared_ptr constructor allocates a separate control block
-	 *   which can throw std::bad_alloc.  To handle this, ptr is declared
-	 *   before the try block so the catch clause can delete it.  If the
-	 *   constructor of T throws, the new expression frees the raw memory
-	 *   before propagating and ptr remains nullptr, so delete in the catch
-	 *   clause is a safe no-op.
+	 *   which can throw std::bad_alloc.  When that happens the shared_ptr
+	 *   constructor has already taken ownership of the raw pointer and
+	 *   deletes it before propagating, so the catch clause must not
+	 *   delete it again -- doing so would be a double free (and trips
+	 *   GCC -Wuse-after-free).  If the constructor of T throws, the new
+	 *   expression frees the raw memory before propagating, so there is
+	 *   nothing to clean up in either case.
 	 */
 	template <class T, class... Args>
 	std::shared_ptr<T> make_shared_nothrow(Args &&... args) noexcept
 	{
-		T *ptr = nullptr;
-
 		try {
-			ptr = new(std::nothrow) T(std::forward<Args>(args)...);
+			auto *ptr = new(std::nothrow) T(std::forward<Args>(args)...);
 
 			return OTEL_NULL(ptr) ? nullptr : std::shared_ptr<T>(ptr);
 		}
 		catch (...) {
-			delete ptr;
-
 			return nullptr;
 		}
 	}
