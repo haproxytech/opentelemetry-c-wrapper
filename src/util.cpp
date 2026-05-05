@@ -321,6 +321,7 @@ void otel_log_handler::Handle(otel_sdk_internal_log::LogLevel level, const char 
 						kv->value.u.value_string = arg.c_str();
 					}
 					else {
+#ifdef DEBUG
 						const char *type_name = "unknown";
 
 						if constexpr (std::is_same_v<T, std::vector<bool>>)
@@ -341,6 +342,7 @@ void otel_log_handler::Handle(otel_sdk_internal_log::LogLevel level, const char 
 							type_name = "vector<uint8_t>";
 
 						OTELC_DBG(DEBUG, "log_handler: attribute '%s' skipped, unsupported type %s", it.first.c_str(), type_name);
+#endif /* DEBUG */
 
 						return;
 					}
