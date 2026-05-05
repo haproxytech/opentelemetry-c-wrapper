@@ -1869,7 +1869,9 @@ static int otel_span_context_trace_state_set(const struct otelc_span_context *co
 	/* Set the key-value pair in the trace state and serialize the result. */
 	const auto  span_ctx = otel_trace::GetSpan(*(handle->context))->GetContext();
 	const auto &ts = span_ctx.trace_state();
+PRAGMA_DIAG_IGNORE("-Walloc-size-larger-than=")
 	auto        new_ts = ts->Set(key, value);
+PRAGMA_DIAG_RESTORE
 
 	const auto header_str = new_ts->ToHeader();
 	otel_trace_state_copy_header(header_str, header, header_size);
@@ -1916,7 +1918,9 @@ static int otel_span_context_trace_state_delete(const struct otelc_span_context 
 	/* Remove the key from the trace state and serialize the result. */
 	const auto  span_ctx = otel_trace::GetSpan(*(handle->context))->GetContext();
 	const auto &ts = span_ctx.trace_state();
+PRAGMA_DIAG_IGNORE("-Walloc-size-larger-than=")
 	auto        new_ts = ts->Delete(key);
+PRAGMA_DIAG_RESTORE
 
 	const auto header_str = new_ts->ToHeader();
 	otel_trace_state_copy_header(header_str, header, header_size);
