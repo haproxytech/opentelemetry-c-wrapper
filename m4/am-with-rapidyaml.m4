@@ -50,7 +50,8 @@ AC_DEFUN([AX_WITH_RAPIDYAML], [
 			AC_LINK_IFELSE(
 				[
 					AC_LANG_PROGRAM(
-						[[#include <ryml.hpp>] [#include <ryml_std.hpp>]],
+						[[#include <ryml.hpp>]
+						 [#include <ryml_std.hpp>]],
 						[[ryml::Tree tree;]]
 					)
 				],
