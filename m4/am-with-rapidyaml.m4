@@ -15,14 +15,16 @@ AC_DEFUN([AX_WITH_RAPIDYAML], [
 				[test "${with_rapidyaml}" != "yes" && test "${with_rapidyaml}" != "check"],
 				[
 					RAPIDYAML_CPPFLAGS="-I${with_rapidyaml}/include"
-					RAPIDYAML_LDFLAGS="-L${with_rapidyaml}/lib"
+					AX_FIND_LIBDIR([${with_rapidyaml}], [ryml], [_rapidyaml_libdir])
+					RAPIDYAML_LDFLAGS="-L${_rapidyaml_libdir:-${with_rapidyaml}/lib}"
 				],
 				[
 					AS_IF(
 						[test "${prefix}" != "NONE"],
 						[
 							RAPIDYAML_CPPFLAGS="-I${prefix}/include"
-							RAPIDYAML_LDFLAGS="-L${prefix}/lib"
+							AX_FIND_LIBDIR([${prefix}], [ryml], [_rapidyaml_libdir])
+							RAPIDYAML_LDFLAGS="-L${_rapidyaml_libdir:-${prefix}/lib}"
 						],
 						[]
 					)

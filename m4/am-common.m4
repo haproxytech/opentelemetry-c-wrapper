@@ -355,6 +355,47 @@ AC_DEFUN([AX_PATH_PKGCONFIG], [
 	AC_MSG_NOTICE([PKG_CONFIG_PATH=${PKG_CONFIG_PATH}])
 ])
 
+dnl
+dnl AX_FIND_LIBDIR(prefix, libname, output_var)
+dnl
+dnl Locates the directory under ${prefix} that contains the library file
+dnl lib<libname>.{a,so} by probing common subdirectories in this order:
+dnl
+dnl   lib64                       RHEL, Fedora, SUSE family
+dnl   lib/<multiarch tuple>       Debian, Ubuntu, when ${CC} -print-multiarch
+dnl                               returns a non-empty triple
+dnl   lib                         Arch, generic Unix, single-lib roots
+dnl   lib32                       legacy 32-bit installs
+dnl
+dnl Sets the shell variable named by output_var to the matching absolute
+dnl directory, or leaves it empty when no candidate was found.
+dnl
+AC_DEFUN([AX_FIND_LIBDIR], [
+	# Do not replace $n with ${n} here, as these refer to the m4 arguments
+	# of the AX_FIND_LIBDIR function.
+	#
+	$3=
+	_findlib_prefix="$1"
+	_findlib_name="$2"
+	_findlib_multiarch=`${CC-cc} -print-multiarch 2>/dev/null`
+
+	for _findlib_subdir in \
+		lib64 \
+		${_findlib_multiarch:+lib/${_findlib_multiarch}} \
+		lib \
+		lib32
+	do
+		AS_IF(
+			[test -e "${_findlib_prefix}/${_findlib_subdir}/lib${_findlib_name}.a" || test -e "${_findlib_prefix}/${_findlib_subdir}/lib${_findlib_name}.so"],
+			[
+				$3="${_findlib_prefix}/${_findlib_subdir}"
+				break
+			],
+			[]
+		)
+	done
+])
+
 dnl Check whether the C compiler has __attribute__ keyword.
 dnl
 AC_DEFUN([AX_CHECK___ATTRIBUTE__], [
