@@ -762,8 +762,11 @@ static int worker_run(void)
 #ifdef USE_THREADS
 	uint64_t total_cnt = 0;
 	double   total_cps = 0.0;
-	int      i, num_threads = 0;
-#endif
+	int      i;
+#  ifdef DEBUG
+	int      num_threads = 0;
+#  endif
+#endif /* USE_THREADS */
 #ifdef OTELC_USE_THREAD_SHARED_HANDLE
 	char     otel_infbuf[BUFSIZ];
 #endif
@@ -780,8 +783,11 @@ static int worker_run(void)
 		if (pthread_create(&(prg.worker[i].thread), NULL, worker_thread, prg.worker + i) != 0) {
 			OTELC_LOG(stderr, "ERROR: Unable to start thread for worker %d: %m", prg.worker[i].id);
 			prg.worker[i].id = 0;
-		} else
+		}
+#  ifdef DEBUG
+		else
 			num_threads++;
+#  endif
 	}
 
 	prg.flag_run = 1;
