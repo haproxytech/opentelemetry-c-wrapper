@@ -20,6 +20,9 @@ AC_DEFUN([AX_WITH_OPENTELEMETRY], [
 
 		AX_PATH_PKGCONFIG([${with_opentelemetry}])
 		OPENTELEMETRY_CPPFLAGS="${OPENTELEMETRY_CPPFLAGS}`PKG_CONFIG_PATH=${PKG_CONFIG_PATH} pkg-config --cflags opentelemetry_api`"
+		dnl Treat third-party headers as system headers so their diagnostics
+		dnl are not promoted to errors by the project's strict warning posture.
+		OPENTELEMETRY_CPPFLAGS=`printf '%s' "${OPENTELEMETRY_CPPFLAGS}" | sed -e 's/^-I/-isystem /' -e 's/ -I/ -isystem /g'`
 		OPENTELEMETRY_LDFLAGS="`PKG_CONFIG_PATH=${PKG_CONFIG_PATH} pkg-config --libs-only-L --libs-only-other opentelemetry_api`"
 		OPENTELEMETRY_LIBS="`PKG_CONFIG_PATH=${PKG_CONFIG_PATH} pkg-config --libs-only-l opentelemetry_api`"
 		OPENTELEMETRY_INCLUDEDIR="`PKG_CONFIG_PATH=${PKG_CONFIG_PATH} pkg-config --variable=includedir opentelemetry_api`"

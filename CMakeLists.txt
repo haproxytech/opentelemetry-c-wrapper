@@ -840,8 +840,13 @@ target_include_directories(${_lib_name}
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     PRIVATE
         "${CMAKE_CURRENT_BINARY_DIR}"
-        ${OPENTELEMETRY_INCLUDE_DIRS}
-        ${YAML_INCLUDE_DIRS}
+)
+
+## Treat third-party headers as system headers so their diagnostics do
+## not get promoted to errors by the project's -Werror posture.
+target_include_directories(${_lib_name} SYSTEM PRIVATE
+    ${OPENTELEMETRY_INCLUDE_DIRS}
+    ${YAML_INCLUDE_DIRS}
 )
 
 target_compile_definitions(${_lib_name} PRIVATE
@@ -909,7 +914,7 @@ function(add_wrapper_executable _target)
 
     ## Extra include paths for C++ test that needs YAML / OTel headers.
     if(_ARG_CXX)
-        target_include_directories(${_target} PRIVATE
+        target_include_directories(${_target} SYSTEM PRIVATE
             ${OPENTELEMETRY_INCLUDE_DIRS}
             ${YAML_INCLUDE_DIRS}
         )

@@ -15,6 +15,9 @@ AC_DEFUN([AX_WITH_LIBFYAML], [
 
 			AX_PATH_PKGCONFIG([${with_libfyaml}])
 			LIBFYAML_CPPFLAGS="`PKG_CONFIG_PATH=${PKG_CONFIG_PATH} pkg-config --cflags libfyaml`"
+			dnl Treat third-party headers as system headers so their diagnostics
+			dnl are not promoted to errors by the project's strict warning posture.
+			LIBFYAML_CPPFLAGS=`printf '%s' "${LIBFYAML_CPPFLAGS}" | sed -e 's/^-I/-isystem /' -e 's/ -I/ -isystem /g'`
 			LIBFYAML_LDFLAGS="`PKG_CONFIG_PATH=${PKG_CONFIG_PATH} pkg-config --libs-only-L --libs-only-other libfyaml`"
 			LIBFYAML_LIBS="`PKG_CONFIG_PATH=${PKG_CONFIG_PATH} pkg-config --libs-only-l libfyaml`"
 			LIBFYAML_INCLUDEDIR="`PKG_CONFIG_PATH=${PKG_CONFIG_PATH} pkg-config --variable=includedir libfyaml`"

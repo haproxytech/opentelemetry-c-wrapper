@@ -29,6 +29,10 @@ AC_DEFUN([AX_WITH_RAPIDYAML], [
 				]
 			)
 
+			dnl Treat third-party headers as system headers so their diagnostics
+			dnl are not promoted to errors by the project's strict warning posture.
+			RAPIDYAML_CPPFLAGS=`printf '%s' "${RAPIDYAML_CPPFLAGS}" | sed -e 's/^-I/-isystem /' -e 's/ -I/ -isystem /g'`
+
 			AX_VARIABLES_STORE
 
 			CPPFLAGS="${_saved_cppflags} ${RAPIDYAML_CPPFLAGS}"
