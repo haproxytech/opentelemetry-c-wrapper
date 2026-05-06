@@ -123,7 +123,7 @@ public:
 	 *   Keys - iterates over all keys in the carrier
 	 *
 	 * SYNOPSIS
-	 *   virtual bool Keys(otel_nostd::function_ref<bool(otel_nostd::string_view)> f) const noexcept
+	 *   virtual bool Keys(otel_nostd::function_ref<bool(otel_nostd::string_view)> f) const noexcept override
 	 *
 	 * ARGUMENTS
 	 *   f - a function to be called for each key
@@ -136,7 +136,7 @@ public:
 	 *   Returns true if the iteration completed successfully, false
 	 *   otherwise.
 	 */
-	virtual bool Keys(otel_nostd::function_ref<bool(otel_nostd::string_view)> f) const noexcept
+	virtual bool Keys(otel_nostd::function_ref<bool(otel_nostd::string_view)> f) const noexcept override
 	{
 		OTELC_FUNCPP("<f>", OTELC_STRINGIFY(OTEL_MAP_CARRIER));
 
@@ -312,7 +312,7 @@ public:
 	 *   Keys - iterates over all keys in the carrier
 	 *
 	 * SYNOPSIS
-	 *   virtual bool Keys(otel_nostd::function_ref<bool(otel_nostd::string_view)> f) const noexcept
+	 *   virtual bool Keys(otel_nostd::function_ref<bool(otel_nostd::string_view)> f) const noexcept override
 	 *
 	 * ARGUMENTS
 	 *   f - a function to be called for each key
@@ -325,7 +325,7 @@ public:
 	 *   Returns true if the iteration completed successfully, false
 	 *   otherwise.
 	 */
-	virtual bool Keys(otel_nostd::function_ref<bool(otel_nostd::string_view)> f) const noexcept
+	virtual bool Keys(otel_nostd::function_ref<bool(otel_nostd::string_view)> f) const noexcept override
 	{
 		OTELC_FUNCPP("<f>", OTELC_STRINGIFY(OTEL_HTTP_CARRIER));
 
