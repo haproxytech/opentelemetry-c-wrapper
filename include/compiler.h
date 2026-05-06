@@ -16,15 +16,7 @@
 #ifndef _OPENTELEMETRY_C_WRAPPER_COMPILER_H_
 #define _OPENTELEMETRY_C_WRAPPER_COMPILER_H_
 
-#ifdef __GNUC__
-#  define __maybe_unused            __attribute__((unused))
-#  define __fmt(a,b,c)              __attribute__((format(a, b, c)))
-
-#  define PRAGMA_DO(x)              _Pragma(#x)
-#  define PRAGMA_DIAG(c,x)          PRAGMA_DO(c diagnostic x)
-#  define PRAGMA_DIAG_IGNORE(w)     PRAGMA_DIAG(GCC, push) PRAGMA_DIAG(GCC, ignored w)
-#  define PRAGMA_DIAG_RESTORE       PRAGMA_DIAG(GCC, pop)
-#elif defined(__clang__)
+#ifdef __clang__
 #  define __maybe_unused            __attribute__((unused))
 #  define __fmt(a,b,c)              __attribute__((format(a, b, c)))
 
@@ -32,6 +24,14 @@
 #  define PRAGMA_DIAG(...)
 #  define PRAGMA_DIAG_IGNORE(...)
 #  define PRAGMA_DIAG_RESTORE
+#elif defined(__GNUC__)
+#  define __maybe_unused            __attribute__((unused))
+#  define __fmt(a,b,c)              __attribute__((format(a, b, c)))
+
+#  define PRAGMA_DO(x)              _Pragma(#x)
+#  define PRAGMA_DIAG(c,x)          PRAGMA_DO(c diagnostic x)
+#  define PRAGMA_DIAG_IGNORE(w)     PRAGMA_DIAG(GCC, push) PRAGMA_DIAG(GCC, ignored w)
+#  define PRAGMA_DIAG_RESTORE       PRAGMA_DIAG(GCC, pop)
 #else
 #  define __maybe_unused
 #  define __fmt(...)
