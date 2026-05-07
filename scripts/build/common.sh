@@ -81,7 +81,7 @@ sh_archive ()
 		done
 	}
 
-	mkdir build && cd build || exit 1
+	mkdir -p build && cd build || exit 1
 }
 
 

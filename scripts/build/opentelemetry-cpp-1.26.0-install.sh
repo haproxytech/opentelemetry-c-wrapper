@@ -42,8 +42,7 @@ sh_configure_cmake \
 	-DWITH_EXAMPLES=OFF \
 	-DWITH_FUNC_TESTS=OFF \
 	-DBUILD_TESTING=OFF \
-	-DBUILD_SHARED_LIBS=${SH_SHARED_LIBS} \
-	-DCMAKE_BUILD_TYPE=Release
+	-DBUILD_SHARED_LIBS=${SH_SHARED_LIBS}
 sh_make
 
 # rapidyaml and c4core have errors in the cmake installation part and install
