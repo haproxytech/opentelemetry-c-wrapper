@@ -1,0 +1,31 @@
+From 8dab58d097f155e1ea6e7a13dce71d4433dcd5ce Mon Sep 17 00:00:00 2001
+From: Miroslav Zagorac <mzagorac@haproxy.com>
+Date: Thu, 7 May 2026 13:18:57 +0200
+Subject: [PATCH 0/6] Embed install rpath in opentelemetry-cpp pkg-config Libs
+
+The Libs line of the generated opentelemetry-cpp pkg-config file now also
+passes -Wl,--rpath,${libdir} together with -L${libdir}, which embedded the
+install library directory into the DT_RUNPATH of every binary that linked
+against OpenTelemetry C++ through pkg-config.  Installed consumers could
+then locate the OpenTelemetry shared libraries at runtime without having
+to set LD_LIBRARY_PATH or add an ldconfig entry, which mattered when the
+project was installed under a non-standard install prefix like /opt where
+ldconfig did not search the library directory by default.
+---
+ cmake/templates/config.pc.in | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/cmake/templates/config.pc.in b/cmake/templates/config.pc.in
+index eac5fd9..d33140f 100644
+--- a/cmake/templates/config.pc.in
++++ b/cmake/templates/config.pc.in
+@@ -11,5 +11,5 @@ Description: @OPENTELEMETRY_PC_DESCRIPTION@
+ Requires: @OPENTELEMETRY_PC_REQUIRES@
+ Version: @OPENTELEMETRY_VERSION@
+ 
+-Libs: -L${libdir} @OPENTELEMETRY_PC_LIBS@
++Libs: -L${libdir} -Wl,--rpath,${libdir} @OPENTELEMETRY_PC_LIBS@
+ Cflags: -I${includedir} @OPENTELEMETRY_PC_CFLAGS@
+-- 
+2.43.0
+
