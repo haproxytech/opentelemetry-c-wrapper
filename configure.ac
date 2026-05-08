@@ -142,8 +142,13 @@ AC_SUBST([OPENTELEMETRY_C_WRAPPER_LDFLAGS])
 AC_SUBST([OPENTELEMETRY_C_WRAPPER_LIBS])
 
 dnl Libs.private for pkg-config (transitive deps for static linking).
+dnl The wrapper exposes a C API but is implemented in C++; -lstdc++ is
+dnl needed so pure-C consumers can link the static archive with gcc.
+dnl libgrpc.a (pulled in via the OpenTelemetry SDK) references lround()
+dnl from libm, so -lm is required as well under linkers that enforce
+dnl --no-copy-dt-needed-entries (the default on modern toolchains).
 dnl
-LIBS_PRIVATE="${OPENTELEMETRY_LDFLAGS} ${OPENTELEMETRY_LIBS} ${OPENTELEMETRY_SYSLDFLAGS} ${OPENTELEMETRY_SYSLIBS} ${LIBFYAML_LDFLAGS} ${LIBFYAML_LIBS} ${RAPIDYAML_LDFLAGS} ${RAPIDYAML_LIBS} ${THREADS_LDFLAGS} ${THREADS_LIBS}"
+LIBS_PRIVATE="${OPENTELEMETRY_LDFLAGS} ${OPENTELEMETRY_LIBS} ${OPENTELEMETRY_SYSLDFLAGS} ${OPENTELEMETRY_SYSLIBS} ${LIBFYAML_LDFLAGS} ${LIBFYAML_LIBS} ${RAPIDYAML_LDFLAGS} ${RAPIDYAML_LIBS} ${THREADS_LDFLAGS} ${THREADS_LIBS} -lstdc++ -lm"
 AC_SUBST([LIBS_PRIVATE])
 
 dnl version.h

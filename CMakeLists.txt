@@ -748,6 +748,13 @@ if(BUILD_STATIC)
     if(ENABLE_THREADS)
         string(APPEND _pc_libs_private " -lpthread")
     endif()
+
+    ## The wrapper exposes a C API but is implemented in C++; -lstdc++ is needed
+    ## so pure-C consumers can link the static archive with gcc.  libgrpc.a
+    ## (pulled in via the OpenTelemetry SDK) references lround() from libm,
+    ## so -lm is required as well under linkers that enforce
+    ## --no-copy-dt-needed-entries (the default on modern toolchains).
+    string(APPEND _pc_libs_private " -lstdc++ -lm")
     string(STRIP "${_pc_libs_private}" _pc_libs_private)
 
     if(ENABLE_DEBUG)
@@ -895,6 +902,11 @@ function(add_wrapper_executable _target)
     cmake_parse_arguments(_ARG "CXX" "" "SOURCES" ${ARGN})
 
     add_executable(${_target} EXCLUDE_FROM_ALL ${_ARG_SOURCES})
+
+    ## The wrapper library is C++; force the C++ linker so libstdc++ and the C++
+    ## ABI runtime are pulled in for C-only executables, matching the autotools
+    ## _LINK = $(CXXLINK) override.
+    set_target_properties(${_target} PROPERTIES LINKER_LANGUAGE CXX)
 
     target_include_directories(${_target} PRIVATE
         "${CMAKE_CURRENT_BINARY_DIR}"
