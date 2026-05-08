@@ -430,122 +430,125 @@ if(BUILD_STATIC AND EXPORTER_LIBRARIES)
 endif()
 
 ## ---------------------------------------------------------------------------
-## SDK and system libraries  (needed for static linking)
+## SDK and system libraries
 ## ---------------------------------------------------------------------------
+## Probed for both static and shared builds.  Modern linkers default to
+## --no-copy-dt-needed-entries, so the wrapper SO must list the OTel SDK and
+## system shared libraries directly in its own DT_NEEDED -- consumers of the
+## wrapper cannot rely on a second-level NEEDED chain.  The autotools build
+## does the same via OPENTELEMETRY_SYSLIBS in LIBADD.
 set(SDK_LIBRARIES       "")
 set(SYSLIB_LIBRARIES    "")
 set(SYSLIB_LIBRARY_DIRS "")
 
-if(BUILD_STATIC)
-    message(STATUS "Probing OpenTelemetry SDK libraries:")
+message(STATUS "Probing OpenTelemetry SDK libraries:")
 
-    macro(probe_sdk_lib _lib)
-        find_library(_loc_${_lib} NAMES ${_lib}
-            HINTS ${_otel_lib_dirs}
-            NO_DEFAULT_PATH
-        )
-        find_library(_loc_${_lib} NAMES ${_lib})
-        if(_loc_${_lib})
-            list(APPEND SDK_LIBRARIES "${_lib}")
-            message(STATUS "  ${_lib}: found")
-        else()
-            message(STATUS "  ${_lib}: not found")
-        endif()
-    endmacro()
-
-    ## Exporter client / builder libraries
-    probe_sdk_lib(opentelemetry_exporter_otlp_file_client)
-    probe_sdk_lib(opentelemetry_exporter_otlp_file_builder)
-    probe_sdk_lib(opentelemetry_exporter_otlp_file_log_builder)
-    probe_sdk_lib(opentelemetry_exporter_otlp_file_metric_builder)
-    probe_sdk_lib(opentelemetry_exporter_otlp_grpc_client)
-    probe_sdk_lib(opentelemetry_exporter_otlp_grpc_builder)
-    probe_sdk_lib(opentelemetry_exporter_otlp_grpc_log_builder)
-    probe_sdk_lib(opentelemetry_exporter_otlp_grpc_metric_builder)
-    probe_sdk_lib(opentelemetry_exporter_otlp_http_client)
-    probe_sdk_lib(opentelemetry_exporter_otlp_http_builder)
-    probe_sdk_lib(opentelemetry_exporter_otlp_http_log_builder)
-    probe_sdk_lib(opentelemetry_exporter_otlp_http_metric_builder)
-    probe_sdk_lib(opentelemetry_exporter_otlp_builder_utils)
-    probe_sdk_lib(opentelemetry_exporter_ostream_span_builder)
-    probe_sdk_lib(opentelemetry_exporter_ostream_metrics_builder)
-    probe_sdk_lib(opentelemetry_exporter_ostream_logs_builder)
-
-    ## Core SDK libraries
-    probe_sdk_lib(opentelemetry_otlp_recordable)
-    probe_sdk_lib(opentelemetry_http_client_curl)
-    probe_sdk_lib(opentelemetry_trace)
-    probe_sdk_lib(opentelemetry_metrics)
-    probe_sdk_lib(opentelemetry_logs)
-    probe_sdk_lib(opentelemetry_proto)
-    probe_sdk_lib(opentelemetry_proto_grpc)
-    probe_sdk_lib(opentelemetry_resources)
-    probe_sdk_lib(opentelemetry_common)
-    probe_sdk_lib(opentelemetry_configuration)
-    probe_sdk_lib(opentelemetry_version)
-
-    ## System libraries that OTel SDK components depend on (protobuf, curl,
-    ## gRPC).  Use non-static pkg-config --libs so the linker picks up shared
-    ## libraries that resolve their own transitive deps at runtime (avoids
-    ## chasing libunistring, etc.).
-    macro(probe_syslib_pkg _label _pkg)
-        execute_process(
-            COMMAND pkg-config --libs ${_pkg}
-            OUTPUT_VARIABLE _syslib_flags
-            OUTPUT_STRIP_TRAILING_WHITESPACE
-            RESULT_VARIABLE _syslib_rc
-        )
-        if(_syslib_rc EQUAL 0 AND _syslib_flags)
-            ## Split the flags string into a list.
-            separate_arguments(_syslib_list UNIX_COMMAND "${_syslib_flags}")
-            foreach(_flag IN LISTS _syslib_list)
-                if(_flag MATCHES "^-L(.+)")
-                    list(APPEND SYSLIB_LIBRARY_DIRS "${CMAKE_MATCH_1}")
-                elseif(_flag MATCHES "^-l(.+)")
-                    list(APPEND SYSLIB_LIBRARIES "${CMAKE_MATCH_1}")
-                endif()
-            endforeach()
-            message(STATUS "  ${_label}: found")
-        else()
-            message(STATUS "  ${_label}: not found")
-        endif()
-    endmacro()
-
-    probe_syslib_pkg("protobuf" protobuf)
-    probe_syslib_pkg("libcurl"  libcurl)
-    probe_syslib_pkg("grpc++"   grpc++)
-    probe_syslib_pkg("zlib"     zlib)
-    ## TLS/crypto -- both AWS-LC and OpenSSL provide these.
-    probe_syslib_pkg("libssl"    libssl)
-    probe_syslib_pkg("libcrypto" libcrypto)
-    probe_syslib_pkg("libsystemd" libsystemd)
-
-    ## gRPC internal libraries (upb, re2, c-ares, ...).  Must come after grpc++
-    ## on the link line since grpc++ references them.
-    set(_grpc_internal_libs
-        address_sorting re2 cares
-        upb upb_textformat_lib upb_json_lib upb_lex_lib
-        upb_mini_descriptor_lib upb_mini_table_lib
-        upb_reflection_lib upb_wire_lib upb_message_lib
-        upb_hash_lib upb_mem_lib upb_base_lib
-        utf8_range utf8_range_lib utf8_validity
+macro(probe_sdk_lib _lib)
+    find_library(_loc_${_lib} NAMES ${_lib}
+        HINTS ${_otel_lib_dirs}
+        NO_DEFAULT_PATH
     )
-    foreach(_lib IN LISTS _grpc_internal_libs)
-        find_library(_loc_syslib_${_lib} NAMES ${_lib}
-            HINTS ${_otel_lib_dirs}
-            NO_DEFAULT_PATH
-        )
-        find_library(_loc_syslib_${_lib} NAMES ${_lib})
-        if(_loc_syslib_${_lib})
-            list(APPEND SYSLIB_LIBRARIES "${_lib}")
-        endif()
-    endforeach()
+    find_library(_loc_${_lib} NAMES ${_lib})
+    if(_loc_${_lib})
+        list(APPEND SDK_LIBRARIES "${_lib}")
+        message(STATUS "  ${_lib}: found")
+    else()
+        message(STATUS "  ${_lib}: not found")
+    endif()
+endmacro()
 
-    ## Only deduplicate directories; library names must keep their per-package
-    ## order so the linker resolves symbols correctly (e.g. abseil must appear
-    ## after both protobuf and grpc++).
-    list(REMOVE_DUPLICATES SYSLIB_LIBRARY_DIRS)
-endif()
+## Exporter client / builder libraries
+probe_sdk_lib(opentelemetry_exporter_otlp_file_client)
+probe_sdk_lib(opentelemetry_exporter_otlp_file_builder)
+probe_sdk_lib(opentelemetry_exporter_otlp_file_log_builder)
+probe_sdk_lib(opentelemetry_exporter_otlp_file_metric_builder)
+probe_sdk_lib(opentelemetry_exporter_otlp_grpc_client)
+probe_sdk_lib(opentelemetry_exporter_otlp_grpc_builder)
+probe_sdk_lib(opentelemetry_exporter_otlp_grpc_log_builder)
+probe_sdk_lib(opentelemetry_exporter_otlp_grpc_metric_builder)
+probe_sdk_lib(opentelemetry_exporter_otlp_http_client)
+probe_sdk_lib(opentelemetry_exporter_otlp_http_builder)
+probe_sdk_lib(opentelemetry_exporter_otlp_http_log_builder)
+probe_sdk_lib(opentelemetry_exporter_otlp_http_metric_builder)
+probe_sdk_lib(opentelemetry_exporter_otlp_builder_utils)
+probe_sdk_lib(opentelemetry_exporter_ostream_span_builder)
+probe_sdk_lib(opentelemetry_exporter_ostream_metrics_builder)
+probe_sdk_lib(opentelemetry_exporter_ostream_logs_builder)
+
+## Core SDK libraries
+probe_sdk_lib(opentelemetry_otlp_recordable)
+probe_sdk_lib(opentelemetry_http_client_curl)
+probe_sdk_lib(opentelemetry_trace)
+probe_sdk_lib(opentelemetry_metrics)
+probe_sdk_lib(opentelemetry_logs)
+probe_sdk_lib(opentelemetry_proto)
+probe_sdk_lib(opentelemetry_proto_grpc)
+probe_sdk_lib(opentelemetry_resources)
+probe_sdk_lib(opentelemetry_common)
+probe_sdk_lib(opentelemetry_configuration)
+probe_sdk_lib(opentelemetry_version)
+
+## System libraries that OTel SDK components depend on (protobuf, curl, gRPC).
+## Use non-static pkg-config --libs so the linker picks up shared libraries
+## that resolve their own transitive deps at runtime (avoids chasing
+## libunistring, etc.).
+macro(probe_syslib_pkg _label _pkg)
+    execute_process(
+        COMMAND pkg-config --libs ${_pkg}
+        OUTPUT_VARIABLE _syslib_flags
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        RESULT_VARIABLE _syslib_rc
+    )
+    if(_syslib_rc EQUAL 0 AND _syslib_flags)
+        ## Split the flags string into a list.
+        separate_arguments(_syslib_list UNIX_COMMAND "${_syslib_flags}")
+        foreach(_flag IN LISTS _syslib_list)
+            if(_flag MATCHES "^-L(.+)")
+                list(APPEND SYSLIB_LIBRARY_DIRS "${CMAKE_MATCH_1}")
+            elseif(_flag MATCHES "^-l(.+)")
+                list(APPEND SYSLIB_LIBRARIES "${CMAKE_MATCH_1}")
+            endif()
+        endforeach()
+        message(STATUS "  ${_label}: found")
+    else()
+        message(STATUS "  ${_label}: not found")
+    endif()
+endmacro()
+
+probe_syslib_pkg("protobuf" protobuf)
+probe_syslib_pkg("libcurl"  libcurl)
+probe_syslib_pkg("grpc++"   grpc++)
+probe_syslib_pkg("zlib"     zlib)
+## TLS/crypto -- both AWS-LC and OpenSSL provide these.
+probe_syslib_pkg("libssl"    libssl)
+probe_syslib_pkg("libcrypto" libcrypto)
+probe_syslib_pkg("libsystemd" libsystemd)
+
+## gRPC internal libraries (upb, re2, c-ares, ...).  Must come after grpc++ on
+## the link line since grpc++ references them.
+set(_grpc_internal_libs
+    address_sorting re2 cares
+    upb upb_textformat_lib upb_json_lib upb_lex_lib
+    upb_mini_descriptor_lib upb_mini_table_lib
+    upb_reflection_lib upb_wire_lib upb_message_lib
+    upb_hash_lib upb_mem_lib upb_base_lib
+    utf8_range utf8_range_lib utf8_validity
+)
+foreach(_lib IN LISTS _grpc_internal_libs)
+    find_library(_loc_syslib_${_lib} NAMES ${_lib}
+        HINTS ${_otel_lib_dirs}
+        NO_DEFAULT_PATH
+    )
+    find_library(_loc_syslib_${_lib} NAMES ${_lib})
+    if(_loc_syslib_${_lib})
+        list(APPEND SYSLIB_LIBRARIES "${_lib}")
+    endif()
+endforeach()
+
+## Only deduplicate directories; library names must keep their per-package order
+## so the linker resolves symbols correctly (e.g. abseil must appear after both
+## protobuf and grpc++).
+list(REMOVE_DUPLICATES SYSLIB_LIBRARY_DIRS)
 
 ## ---------------------------------------------------------------------------
 ## YAML backend
