@@ -116,7 +116,7 @@ static int otel_logger_enabled(struct otelc_logger *logger, otelc_log_severity_t
 	if (log_severity == otel_logs::Severity::kInvalid)
 		OTEL_LOGGER_RETURN_INT("Invalid log severity level: %d", severity);
 
-	OTELC_RETURN_INT(logger_ptr->Enabled(log_severity) ? true : false);
+	OTELC_RETURN_INT(logger_ptr->Enabled(log_severity));
 }
 
 

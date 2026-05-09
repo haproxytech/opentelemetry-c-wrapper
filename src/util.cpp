@@ -294,7 +294,7 @@ void otel_log_handler::Handle(otel_sdk_internal_log::LogLevel level, const char 
 
 					if constexpr (std::is_same_v<T, bool>) {
 						kv->value.u_type      = OTELC_VALUE_BOOL;
-						kv->value.u.value_bool = arg ? true : false;
+						kv->value.u.value_bool = arg;
 					}
 					else if constexpr (std::is_same_v<T, int32_t>) {
 						kv->value.u_type       = OTELC_VALUE_INT32;
@@ -397,7 +397,7 @@ void otelc_log_set_handler(otelc_log_handler_cb_t handler, void *ctx, bool forwa
 		if (!OTEL_NULL(dfl))
 			otel_sdk_internal_log::GlobalLogHandler::SetLogHandler(dfl);
 	} else {
-		std::shared_ptr<otel_sdk_internal_log::LogHandler> custom = otel::make_shared_nothrow<otel_log_handler>(handler, ctx, forward_attr == true);
+		std::shared_ptr<otel_sdk_internal_log::LogHandler> custom = otel::make_shared_nothrow<otel_log_handler>(handler, ctx, forward_attr);
 		if (!OTEL_NULL(custom))
 			otel_sdk_internal_log::GlobalLogHandler::SetLogHandler(custom);
 	}
@@ -1271,7 +1271,7 @@ int otelc_value_strtonum(struct otelc_value *value, otelc_value_type_t type)
 
 	buffer.u_type = type;
 	if (type == OTELC_VALUE_BOOL) {
-		buffer.u.value_bool = (strtoul(str, &endptr, 0) == 0) ? false : true;
+		buffer.u.value_bool = strtoul(str, &endptr, 0) != 0;
 	}
 	else if (type == OTELC_VALUE_INT32) {
 		long value_long = strtol(str, &endptr, 0);

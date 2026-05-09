@@ -104,7 +104,7 @@ static int otel_span_is_recording(const struct otelc_span *span)
 
 	OTEL_LOCK_SPAN_HANDLE(_INT, span);
 
-	OTELC_RETURN_INT(handle->span->IsRecording() ? true : false);
+	OTELC_RETURN_INT(handle->span->IsRecording());
 }
 
 
@@ -1555,7 +1555,7 @@ static int otel_span_context_is_valid(const struct otelc_span_context *context)
 
 	const auto span_ctx = otel_trace::GetSpan(*(handle->context))->GetContext();
 
-	OTELC_RETURN_INT(span_ctx.IsValid() ? true : false);
+	OTELC_RETURN_INT(span_ctx.IsValid());
 }
 
 
@@ -1589,7 +1589,7 @@ static int otel_span_context_is_sampled(const struct otelc_span_context *context
 
 	const auto span_ctx = otel_trace::GetSpan(*(handle->context))->GetContext();
 
-	OTELC_RETURN_INT(span_ctx.IsSampled() ? true : false);
+	OTELC_RETURN_INT(span_ctx.IsSampled());
 }
 
 
@@ -1624,7 +1624,7 @@ static int otel_span_context_is_remote(const struct otelc_span_context *context)
 
 	const auto span_ctx = otel_trace::GetSpan(*(handle->context))->GetContext();
 
-	OTELC_RETURN_INT(span_ctx.IsRemote() ? true : false);
+	OTELC_RETURN_INT(span_ctx.IsRemote());
 }
 
 
@@ -1830,7 +1830,7 @@ static int otel_span_context_trace_state_empty(const struct otelc_span_context *
 	const auto span_ctx = otel_trace::GetSpan(*(handle->context))->GetContext();
 	const auto &ts = span_ctx.trace_state();
 
-	OTELC_RETURN_INT(ts->Empty() ? true : false);
+	OTELC_RETURN_INT(ts->Empty());
 }
 
 
@@ -2119,7 +2119,7 @@ struct otelc_span_context *otelc_span_context_create(const uint8_t *trace_id, si
 	auto ts = OTEL_NULL(trace_state_header) ? otel_trace::TraceState::GetDefault() : otel_trace::TraceState::FromHeader(trace_state_header);
 
 	/* Construct C++ SpanContext. */
-	otel_trace::SpanContext span_ctx(otel_trace::TraceId{tid}, otel_trace::SpanId{sid}, otel_trace::TraceFlags{trace_flags}, is_remote != false, ts);
+	otel_trace::SpanContext span_ctx(otel_trace::TraceId{tid}, otel_trace::SpanId{sid}, otel_trace::TraceFlags{trace_flags}, is_remote != 0, ts);
 
 	/* Wrap in a DefaultSpan and Context. */
 	otel_nostd::shared_ptr<otel_trace::Span> default_span(new(std::nothrow) otel_trace::DefaultSpan(span_ctx));
