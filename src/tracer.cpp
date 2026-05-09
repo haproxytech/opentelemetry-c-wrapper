@@ -666,7 +666,7 @@ static int otel_tracer_enabled(struct otelc_tracer *tracer)
 	auto *tracer_ptr = tracer_shared.get();
 
 #if defined(OPENTELEMETRY_ABI_VERSION_NO) && (OPENTELEMETRY_ABI_VERSION_NO >= 2)
-	OTELC_RETURN_INT(tracer_ptr->Enabled() ? true : false);
+	OTELC_RETURN_INT(tracer_ptr->Enabled());
 #else
 	OTELC_RETURN_INT(true);
 #endif
