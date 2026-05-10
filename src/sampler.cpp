@@ -90,10 +90,10 @@ int otel_sampler_create(struct otelc_tracer *tracer, std::unique_ptr<otel_sdk_tr
 		 * constructor because they override the built-in defaults.
 		 */
 		std::unique_ptr<otel_sdk_trace::Sampler> delegate_sampler;
-		std::shared_ptr<otel_sdk_trace::Sampler> remote_sampled_sampler     = std::make_shared<otel_sdk_trace::AlwaysOnSampler>();
-		std::shared_ptr<otel_sdk_trace::Sampler> remote_not_sampled_sampler = std::make_shared<otel_sdk_trace::AlwaysOffSampler>();
-		std::shared_ptr<otel_sdk_trace::Sampler> local_sampled_sampler      = std::make_shared<otel_sdk_trace::AlwaysOnSampler>();
-		std::shared_ptr<otel_sdk_trace::Sampler> local_not_sampled_sampler  = std::make_shared<otel_sdk_trace::AlwaysOffSampler>();
+		std::shared_ptr<otel_sdk_trace::Sampler> remote_sampled_sampler     = otel::make_shared_nothrow<otel_sdk_trace::AlwaysOnSampler>();
+		std::shared_ptr<otel_sdk_trace::Sampler> remote_not_sampled_sampler = otel::make_shared_nothrow<otel_sdk_trace::AlwaysOffSampler>();
+		std::shared_ptr<otel_sdk_trace::Sampler> local_sampled_sampler      = otel::make_shared_nothrow<otel_sdk_trace::AlwaysOnSampler>();
+		std::shared_ptr<otel_sdk_trace::Sampler> local_not_sampled_sampler  = otel::make_shared_nothrow<otel_sdk_trace::AlwaysOffSampler>();
 		char                                     delegate[OTEL_YAML_BUFSIZ] = "always_on";
 		char                                     remote_sampled[OTEL_YAML_BUFSIZ] = "", remote_not_sampled[OTEL_YAML_BUFSIZ] = "";
 		char                                     local_sampled[OTEL_YAML_BUFSIZ] = "", local_not_sampled[OTEL_YAML_BUFSIZ] = "";
@@ -132,36 +132,45 @@ int otel_sampler_create(struct otelc_tracer *tracer, std::unique_ptr<otel_sdk_tr
 
 		if (OTELC_STR_IS_VALID(remote_sampled)) {
 			if (strcasecmp(remote_sampled, "always_on") == 0)
-				remote_sampled_sampler = std::make_shared<otel_sdk_trace::AlwaysOnSampler>();
+				remote_sampled_sampler = otel::make_shared_nothrow<otel_sdk_trace::AlwaysOnSampler>();
 			else if (strcasecmp(remote_sampled, "always_off") == 0)
-				remote_sampled_sampler = std::make_shared<otel_sdk_trace::AlwaysOffSampler>();
+				remote_sampled_sampler = otel::make_shared_nothrow<otel_sdk_trace::AlwaysOffSampler>();
 			else
 				OTEL_TRACER_RETURN_INT("Invalid remote_sampled delegate: '%s'", remote_sampled);
 		}
 		if (OTELC_STR_IS_VALID(remote_not_sampled)) {
 			if (strcasecmp(remote_not_sampled, "always_on") == 0)
-				remote_not_sampled_sampler = std::make_shared<otel_sdk_trace::AlwaysOnSampler>();
+				remote_not_sampled_sampler = otel::make_shared_nothrow<otel_sdk_trace::AlwaysOnSampler>();
 			else if (strcasecmp(remote_not_sampled, "always_off") == 0)
-				remote_not_sampled_sampler = std::make_shared<otel_sdk_trace::AlwaysOffSampler>();
+				remote_not_sampled_sampler = otel::make_shared_nothrow<otel_sdk_trace::AlwaysOffSampler>();
 			else
 				OTEL_TRACER_RETURN_INT("Invalid remote_not_sampled delegate: '%s'", remote_not_sampled);
 		}
 		if (OTELC_STR_IS_VALID(local_sampled)) {
 			if (strcasecmp(local_sampled, "always_on") == 0)
-				local_sampled_sampler = std::make_shared<otel_sdk_trace::AlwaysOnSampler>();
+				local_sampled_sampler = otel::make_shared_nothrow<otel_sdk_trace::AlwaysOnSampler>();
 			else if (strcasecmp(local_sampled, "always_off") == 0)
-				local_sampled_sampler = std::make_shared<otel_sdk_trace::AlwaysOffSampler>();
+				local_sampled_sampler = otel::make_shared_nothrow<otel_sdk_trace::AlwaysOffSampler>();
 			else
 				OTEL_TRACER_RETURN_INT("Invalid local_sampled delegate: '%s'", local_sampled);
 		}
 		if (OTELC_STR_IS_VALID(local_not_sampled)) {
 			if (strcasecmp(local_not_sampled, "always_on") == 0)
-				local_not_sampled_sampler = std::make_shared<otel_sdk_trace::AlwaysOnSampler>();
+				local_not_sampled_sampler = otel::make_shared_nothrow<otel_sdk_trace::AlwaysOnSampler>();
 			else if (strcasecmp(local_not_sampled, "always_off") == 0)
-				local_not_sampled_sampler = std::make_shared<otel_sdk_trace::AlwaysOffSampler>();
+				local_not_sampled_sampler = otel::make_shared_nothrow<otel_sdk_trace::AlwaysOffSampler>();
 			else
 				OTEL_TRACER_RETURN_INT("Invalid local_not_sampled delegate: '%s'", local_not_sampled);
 		}
+
+		/***
+		 * make_shared_nothrow returns an empty shared_ptr on allocation
+		 * failure; the ParentBasedSampler constructor would treat any null
+		 * delegate as overriding its built-in default, so reject the build
+		 * here instead of producing a misconfigured sampler.
+		 */
+		if (OTEL_NULL(remote_sampled_sampler) || OTEL_NULL(remote_not_sampled_sampler) || OTEL_NULL(local_sampled_sampler) || OTEL_NULL(local_not_sampled_sampler))
+			OTEL_TRACER_RETURN_INT(OTEL_ERROR_MSG_ENOMEM("parent_based delegate sampler"));
 
 		sampler_maybe = otel::make_unique_nothrow<otel_sdk_trace::ParentBasedSampler>(std::move(delegate_sampler), remote_sampled_sampler, remote_not_sampled_sampler, local_sampled_sampler, local_not_sampled_sampler);
 	}
