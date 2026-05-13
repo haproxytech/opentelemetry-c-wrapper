@@ -1,3 +1,8 @@
+# Optional top-level knob.  Sets the shard count of the otel_span and
+# otel_span_context handle maps; must be a power of two in 1..65536.
+# The first otelc_init() call in the process applies the value.
+# handle_map_shards: 256
+
 exporters:
   exporter_traces_otlp_file:
     type:           otlp_file
