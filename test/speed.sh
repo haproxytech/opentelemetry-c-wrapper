@@ -2,8 +2,8 @@
 #
 # speed.sh by Miroslav Zagorac <mzagorac@haproxy.com>
 #
-SH_ARG_RUNTIME="${1:-60000}"
-SH_ARG_RUNTYPE="${2:-dev_null}"
+SH_ARG_RUNTIME="60000"
+SH_ARG_RUNTYPE="dev_null"
         SH_DIR="$(dirname "${0}")"
        SH_TEST="${SH_DIR}/otel-c-wrapper-test"
         SH_CFG="${SH_DIR}/speed-cfg.yml"
@@ -11,6 +11,7 @@ SH_ARG_RUNTYPE="${2:-dev_null}"
     SH_PIDFILE="_pid_speed"
      SH_ERRLOG="${SH_LOG}-dropped"
      SH_STDERR="${SH_LOG}-stderr"
+  SH_USAGE_MSG="usage: $(basename "${0}") [-r runtime] [-t runtype]"
 
 
 sh_run_count()
@@ -37,6 +38,16 @@ sh_run_dev_null()
 	${SH_TEST} -D0 -c "${SH_CFG}" -p "${SH_PIDFILE}" -r${SH_ARG_RUNTIME} -t${_arg_threads} -s1 2>/dev/null | tee -a "${SH_LOG}"
 }
 
+
+while getopts r:t: c; do
+	case "${c}" in
+	  r)	SH_ARG_RUNTIME="${OPTARG}" ;;
+	  t)	SH_ARG_RUNTYPE="${OPTARG}" ;;
+	  \?)	echo "${SH_USAGE_MSG}"; exit 64 ;;
+	esac
+done
+
+shift $((OPTIND - 1))
 
 test -x "${SH_TEST}" || {
 	echo "${SH_TEST}: missing or not executable"
