@@ -17,8 +17,8 @@
 
 
 #ifdef OTELC_USE_STATIC_HANDLE
-THREAD_LOCAL struct otel_handle<struct otel_span_handle *, OTEL_HANDLE_SHARED>          otel_span{OTEL_HANDLE_MAP_SHARDS};
-THREAD_LOCAL struct otel_handle<struct otel_span_context_handle *, OTEL_HANDLE_SHARED>  otel_span_context{OTEL_HANDLE_MAP_SHARDS};
+THREAD_LOCAL struct otel_handle<struct otel_span_handle *, OTEL_HANDLE_SHARED>          otel_span{otel_handle_map_shards.load()};
+THREAD_LOCAL struct otel_handle<struct otel_span_context_handle *, OTEL_HANDLE_SHARED>  otel_span_context{otel_handle_map_shards.load()};
 #else
 THREAD_LOCAL struct otel_handle<struct otel_span_handle *, OTEL_HANDLE_SHARED>         *otel_span = nullptr;
 THREAD_LOCAL struct otel_handle<struct otel_span_context_handle *, OTEL_HANDLE_SHARED> *otel_span_context = nullptr;

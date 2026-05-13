@@ -21,6 +21,8 @@ static std::atomic<int> otelc_tid = 0;
 otelc_ext_malloc_t      otelc_ext_malloc = OTELC_DBG_IFDEF(otelc_dbg_malloc, malloc);
 otelc_ext_free_t        otelc_ext_free   = OTELC_DBG_IFDEF(otelc_dbg_free,   free);
 
+std::atomic<size_t>     otel_handle_map_shards{OTEL_HANDLE_MAP_SHARDS};
+
 
 #ifdef DEBUG
 __thread int otelc_dbg_indent        = 0;
@@ -1776,6 +1778,58 @@ int otelc_statistics_check(const struct otelc_meter *meter, int type, size_t siz
 
 /***
  * NAME
+ *   otelc_load_handle_map_shards - applies the handle_map_shards YAML override
+ *
+ * SYNOPSIS
+ *   static int otelc_load_handle_map_shards(OTEL_YAML_DOC *fyd, char **err)
+ *
+ * ARGUMENTS
+ *   fyd - parsed YAML configuration document
+ *   err - address of a pointer to store an error message on failure
+ *
+ * DESCRIPTION
+ *   Reads the optional top-level handle_map_shards key from the YAML document
+ *   and validates it as a power of two within the supported range.  On the
+ *   first successful call across the process the value is stored into the
+ *   otel_handle_map_shards global, which is consulted when span and span
+ *   context maps are constructed.  Later calls still validate the value but
+ *   do not change the live setting, because the maps may already exist with a
+ *   different shard count.  Absence of the key leaves the current value
+ *   untouched and is not an error.
+ *
+ * RETURN VALUE
+ *   Returns OTELC_RET_OK on success or when the key is absent, or
+ *   OTELC_RET_ERROR if the value is malformed or out of range.
+ */
+static int otelc_load_handle_map_shards(OTEL_YAML_DOC *fyd, char **err)
+{
+	static std::atomic_flag applied = ATOMIC_FLAG_INIT;
+	char                    buf[OTEL_YAML_BUFSIZ] = "", *endptr = nullptr;
+	int64_t                 value;
+	int                     rc;
+
+	OTELC_FUNC("%p, %p:%p", fyd, OTELC_DPTR_ARGS(err));
+
+	rc = yaml_find(fyd, err, false, "handle_map_shards", "/handle_map_shards", buf, sizeof(buf));
+	if (rc == OTELC_RET_ERROR)
+		OTELC_RETURN_INT(OTELC_RET_ERROR);
+	else if (rc != 1)
+		OTELC_RETURN_INT(OTELC_RET_OK);
+
+	errno = 0;
+	value = strtoll(buf, &endptr, 0);
+	if ((*endptr != '\0') || (errno != 0) || !OTELC_IN_RANGE(value, INT64_C(1), INT64_C(65536)) || ((value & (value - 1)) != 0))
+		OTEL_ERR_RETURN_INT("'%s': invalid handle_map_shards (must be a power of two in 1..65536)", buf);
+
+	if (!applied.test_and_set())
+		otel_handle_map_shards.store(OTEL_CAST_STATIC(size_t, value));
+
+	OTELC_RETURN_INT(OTELC_RET_OK);
+}
+
+
+/***
+ * NAME
  *   otelc_init - initializes the OpenTelemetry C wrapper library
  *
  * SYNOPSIS
@@ -1790,7 +1844,10 @@ int otelc_statistics_check(const struct otelc_meter *meter, int type, size_t siz
  *   Initializes the OpenTelemetry C wrapper library using the specified YAML
  *   configuration file.  This function must be called before any other library
  *   functions are used.  Each call allocates a new library context that owns
- *   the parsed YAML document and a duplicated copy of the supplied name.
+ *   the parsed YAML document and a duplicated copy of the supplied name.  The
+ *   optional top-level handle_map_shards key is read here; the first
+ *   otelc_init() call applies it to the span and span context handle maps,
+ *   later calls validate but do not change the live setting.
  *
  * RETURN VALUE
  *   Returns a pointer to a newly created library context on success,
@@ -1821,6 +1878,11 @@ struct otelc_ctx *otelc_init(const char *cfgfile, const char *name, char **err)
 
 	retptr->fyd = yaml_open(cfgfile, err);
 	if (OTEL_NULL(retptr->fyd)) {
+		OTELC_SFREE(retptr->name);
+		OTELC_SFREE_CLEAR(retptr);
+	}
+	else if (otelc_load_handle_map_shards(retptr->fyd, err) == OTELC_RET_ERROR) {
+		yaml_close(&(retptr->fyd));
 		OTELC_SFREE(retptr->name);
 		OTELC_SFREE_CLEAR(retptr);
 	}

@@ -72,14 +72,16 @@ static int otel_tracer_handle_init(void)
 	const std::lock_guard<std::mutex> guard(init_mutex);
 #endif
 
+	const size_t num_shards = otel_handle_map_shards.load();
+
 	if (OTEL_NULL(otel_span)) {
-		otel_span = new(std::nothrow) struct otel_handle<struct otel_span_handle *, OTEL_HANDLE_SHARED>(OTEL_HANDLE_MAP_SHARDS);
+		otel_span = new(std::nothrow) struct otel_handle<struct otel_span_handle *, OTEL_HANDLE_SHARED>(num_shards);
 		if (OTEL_NULL(otel_span))
 			return OTELC_RET_ERROR;
 	}
 
 	if (OTEL_NULL(otel_span_context)) {
-		otel_span_context = new(std::nothrow) struct otel_handle<struct otel_span_context_handle *, OTEL_HANDLE_SHARED>(OTEL_HANDLE_MAP_SHARDS);
+		otel_span_context = new(std::nothrow) struct otel_handle<struct otel_span_context_handle *, OTEL_HANDLE_SHARED>(num_shards);
 		if (OTEL_NULL(otel_span_context))
 			return OTELC_RET_ERROR;
 	}
