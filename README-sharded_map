@@ -17,10 +17,11 @@ after benchmarks showed no significant acceleration.
 ------------------------------------------------------------------------------
 
 Each span and span_context is stored in an otel_handle<T> structure consisting
-of 64 independently-locked shards.  Each shard contains an
-std::unordered_map<int64_t, T> protected by its own mutex (when thread-shared
-handles are enabled).  The C-facing structures hold an int64_t idx field used
-as a map key.
+of independently-locked shards whose count comes from the handle_map_shards
+YAML key (see README-configuration); when the key is absent, the compile-time
+default applies.  Each shard holds an std::unordered_map<int64_t, T> guarded by
+its own mutex (when thread-shared handles are enabled).  The C-facing structures
+hold an int64_t idx field used as a map key.
 
 Operations:
 
@@ -56,7 +57,8 @@ Properties:
     destroy_cnt) provide visibility into the span lifecycle.
 
   * Thread safety -- per-shard mutexes serialize concurrent access within each
-    shard; 64 shards keep contention low.
+    shard; a higher shard count (set via handle_map_shards) keeps contention
+    low.
 
 
 3. Direct void pointer approach (evaluated and discarded)
@@ -101,9 +103,9 @@ Properties:
   Lookup cost             O(1) hash + bucket        O(1) pointer dereference
                           search + mutex lock
 
-  Memory overhead         64 shard structures,      Negligible
-                          each with mutex and
-                          unordered_map buckets
+  Memory overhead         One mutex and             Negligible
+                          unordered_map per
+                          shard
 
   Per-operation locking   Per-shard mutex           None
 

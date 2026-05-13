@@ -35,10 +35,12 @@ Selects between a shared-handle model and a thread-local model for span and
 span context storage.
 
 When defined, span and span context handles are stored in global structures
-shared across all threads.  Each structure is a sharded map with 64
-independently-locked shards.  Every span operation (lookup, insert, erase)
-acquires the per-shard mutex for the shard selected by the handle's index.
-The THREAD_LOCAL macro expands to nothing, and OTEL_HANDLE_SHARED is true.
+that are shared across all threads.  Each structure is a sharded map made up
+of independently-locked shards whose count is set at runtime via the top-level
+handle_map_shards YAML key (see section 9).  Every span operation on a handle
+(lookup, insert, erase) acquires the per-shard mutex for the shard selected by
+the handle's index.  In this mode the THREAD_LOCAL macro expands to nothing, and
+OTEL_HANDLE_SHARED is true.
 
 When undefined, span and span context handles are thread-local.  Each thread
 owns its own handle map, and no locking is needed.  The THREAD_LOCAL macro
@@ -194,3 +196,27 @@ definitions:
 Any macro not explicitly defined in the custom configuration is left undefined.
 The OTELC_USER_CONFIG guard prevents the default block from executing, giving
 full control over which features are enabled.
+
+
+9. handle_map_shards YAML key
+------------------------------------------------------------------------------
+
+Default: the OTEL_HANDLE_MAP_SHARDS macro defined in include/util.h.
+
+Sets the shard count for the otel_span and otel_span_context handle maps at
+runtime, without recompiling the library.  Place an optional top-level key in
+the YAML configuration file passed to otelc_init():
+
+  handle_map_shards: 1024
+
+The configured value must be a power of two in the range 1..65536.  An invalid
+value fails otelc_init() with a descriptive error.  The first otelc_init() call
+in the process applies the value; later calls still validate the key but do not
+change the live setting, because the handle maps may already have been built
+with a different count.  Threads that touch the static-handle thread-local maps
+before any otelc_init() call construct them with the compile-time default.
+
+A higher shard count reduces per-shard mutex contention at high concurrency, at
+the cost of one mutex and one (initially empty) std::unordered_map per shard.
+The speed measurements supporting the move from the historical default to the
+current one are recorded in README-sharded_map.

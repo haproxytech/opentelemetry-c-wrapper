@@ -21,7 +21,17 @@
  * elements without exceeding maximum load factor and rehashes the container.
  */
 constexpr size_t OTEL_HANDLE_RESERVE_COUNT = 8192;
-constexpr size_t OTEL_HANDLE_MAP_SHARDS    = 64;
+constexpr size_t OTEL_HANDLE_MAP_SHARDS    = 256;
+
+/***
+ * Active per-process shard count for the span and span context handle maps.
+ * Initialised to OTEL_HANDLE_MAP_SHARDS and overridden by the top-level YAML
+ * key handle_map_shards on the first otelc_init() call.  Read at the moment
+ * each handle map is constructed (per-thread in the static-handle build, once
+ * per process in the dynamic build), so otelc_init() must run before any
+ * tracer create on threads that should observe a non-default value.
+ */
+extern std::atomic<size_t> otel_handle_map_shards;
 
 #ifdef OTELC_USE_STATIC_HANDLE
 #  define OTEL_HANDLE(h,m)           ((h).m)
