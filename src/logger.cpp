@@ -89,6 +89,9 @@ static otel_logs::Severity otel_logger_severity(struct otelc_logger *logger, ote
  *   Queries the underlying logger to determine whether it is enabled for the
  *   given severity level.  Callers can use this check to skip expensive log
  *   message construction when the logger would discard the record anyway.
+ *   Returns false when the wrapper-level gate is cleared via
+ *   otel_logger_set_enabled(), even if the underlying SDK logger would
+ *   otherwise accept the severity.
  *
  * RETURN VALUE
  *   Returns true if the logger is enabled for the given severity, false if it
@@ -110,6 +113,9 @@ static int otel_logger_enabled(struct otelc_logger *logger, otelc_log_severity_t
 	if (OTEL_NULL(logger_shared))
 		OTEL_LOGGER_RETURN_INT("Invalid logger");
 
+	if (!logger->enabled)
+		OTELC_RETURN_INT(false);
+
 	auto *logger_ptr = logger_shared.get();
 
 	const auto log_severity = otel_logger_severity(logger, severity);
@@ -117,6 +123,39 @@ static int otel_logger_enabled(struct otelc_logger *logger, otelc_log_severity_t
 		OTEL_LOGGER_RETURN_INT("Invalid log severity level: %d", severity);
 
 	OTELC_RETURN_INT(logger_ptr->Enabled(log_severity));
+}
+
+
+/***
+ * NAME
+ *   otel_logger_set_enabled - toggles the wrapper-level gate at runtime
+ *
+ * SYNOPSIS
+ *   static int otel_logger_set_enabled(struct otelc_logger *logger, bool enabled)
+ *
+ * ARGUMENTS
+ *   logger  - logger instance
+ *   enabled - new state of the wrapper-level gate
+ *
+ * DESCRIPTION
+ *   Sets the wrapper-level gate that controls whether new log records may be
+ *   emitted.  When the gate is cleared, log, log_span, log_body and
+ *   log_body_span become no-ops and return 0.  Records emitted before the
+ *   gate was cleared continue to be exported by the SDK as normal.
+ *
+ * RETURN VALUE
+ *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR in case of an error.
+ */
+static int otel_logger_set_enabled(struct otelc_logger *logger, bool enabled)
+{
+	OTELC_FUNC("%p, %hhu", logger, enabled);
+
+	if (OTEL_NULL(logger))
+		OTELC_RETURN_INT(OTELC_RET_ERROR);
+
+	logger->enabled = enabled;
+
+	OTELC_RETURN_INT(OTELC_RET_OK);
 }
 
 
@@ -303,6 +342,8 @@ static int otel_logger_log_v(struct otelc_logger *logger, otelc_log_severity_t s
 
 	if (OTEL_NULL(logger))
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
+	else if (!logger->enabled)
+		OTELC_RETURN_INT(0);
 	else if (OTEL_NULL(format))
 		OTEL_LOGGER_RETURN_INT("Invalid format string");
 
@@ -513,6 +554,8 @@ static int otel_logger_log_body(struct otelc_logger *logger, otelc_log_severity_
 
 	if (OTEL_NULL(logger))
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
+	else if (!logger->enabled)
+		OTELC_RETURN_INT(0);
 	else if (OTEL_NULL(body))
 		OTEL_LOGGER_RETURN_INT("Invalid body value");
 
@@ -839,6 +882,7 @@ static void otel_logger_destroy(struct otelc_logger **logger)
 
 const static struct otelc_logger_ops otel_logger_ops = {
 	.enabled          = otel_logger_enabled,          /* Locking not required. */
+	.set_enabled      = otel_logger_set_enabled,      /* Locking not required. */
 	.set_min_severity = otel_logger_set_min_severity, /* Locking not required. */
 	.log              = otel_logger_log,              /* Locking not required. */
 	.log_span         = otel_logger_log_span,         /* Locking not required. */
@@ -882,6 +926,7 @@ static struct otelc_logger *otel_logger_new(void)
 		retptr->scope_name   = nullptr;
 		retptr->yaml_prefix  = nullptr;
 		retptr->min_severity = OTELC_LOG_SEVERITY_TRACE;
+		retptr->enabled      = true;
 		retptr->ops          = &otel_logger_ops;
 		retptr->impl         = new(std::nothrow) otel_logger_impl{};
 

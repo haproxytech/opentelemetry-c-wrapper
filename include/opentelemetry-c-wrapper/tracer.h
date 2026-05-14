@@ -18,11 +18,11 @@
 
 __CPLUSPLUS_DECL_BEGIN
 
-#define OTELC_DBG_TRACER(l,h,p)                                               \
-	OTELC_DBG_STRUCT(_##l, h, h " %p:{ %p:\"%s\" %p:\"%s\" %p %p }", (p), \
-	                 (p)->err, OTELC_STR_ARG((p)->err),                   \
-	                 (p)->scope_name, OTELC_STR_ARG((p)->scope_name),     \
-	                 (p)->ops, (p)->ctx)
+#define OTELC_DBG_TRACER(l,h,p)                                                       \
+	OTELC_DBG_STRUCT(_##l, h, h " %p:{ %p:\"%s\" %p:\"%s\" %hhu %p %p }", (p),    \
+	                 (p)->err, OTELC_STR_ARG((p)->err),                           \
+	                 (p)->scope_name, OTELC_STR_ARG((p)->scope_name),             \
+	                 (p)->enabled, (p)->ops, (p)->ctx)
 
 /***
  * The tracer operations vtable.
@@ -152,13 +152,41 @@ struct otelc_tracer_ops {
 	 * DESCRIPTION
 	 *   Queries the underlying tracer to determine whether it is enabled.
 	 *   Callers can use this check to skip expensive span setup when the
-	 *   tracer would discard the data anyway.
+	 *   tracer would discard the data anyway.  Returns false when the
+	 *   wrapper-level gate is cleared via set_enabled(), even if the
+	 *   underlying SDK tracer would otherwise be enabled.
 	 *
 	 * RETURN VALUE
 	 *   Returns true if the tracer is enabled, false if it is not,
 	 *   or OTELC_RET_ERROR in case of an error.
 	 */
 	int (*enabled)(struct otelc_tracer *tracer)
+		OTELC_NONNULL_ALL;
+
+	/***
+	 * NAME
+	 *   set_enabled - toggles the wrapper-level gate at runtime
+	 *
+	 * SYNOPSIS
+	 *   int (*set_enabled)(struct otelc_tracer *tracer, bool enabled)
+	 *
+	 * ARGUMENTS
+	 *   tracer  - tracer instance
+	 *   enabled - new state of the wrapper-level gate
+	 *
+	 * DESCRIPTION
+	 *   Sets the wrapper-level gate that controls whether new spans may
+	 *   be created.  When the gate is cleared, start_span,
+	 *   start_span_with_options, extract_text_map and extract_http_headers
+	 *   become no-ops and return nullptr.  Spans that were created before
+	 *   the gate was cleared continue to function normally and reach the
+	 *   SDK on end().
+	 *
+	 * RETURN VALUE
+	 *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR in case of
+	 *   an error.
+	 */
+	int (*set_enabled)(struct otelc_tracer *tracer, bool enabled)
 		OTELC_NONNULL_ALL;
 
 	/***
@@ -270,6 +298,7 @@ struct otelc_tracer {
 	char                          *err;         /* Character array containing the last library error. */
 	char                          *scope_name;  /* Tracer instrumentation scope name. */
 	char                          *yaml_prefix; /* Resolved YAML path of the tracer signal configuration. */
+	bool                           enabled;     /* Wrapper-level gate; when false, new spans are not created. */
 	const struct otelc_tracer_ops *ops;         /* Pointer to the operations vtable. */
 	const struct otelc_ctx        *ctx;         /* Owning library context; provides the YAML configuration. */
 	void                          *impl;        /* Opaque pointer to the C++ implementation state (provider, tracer, propagator). */

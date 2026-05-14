@@ -165,6 +165,8 @@ static int64_t otel_meter_add_view(struct otelc_meter *meter, const char *view_n
 
 	if (OTEL_NULL(meter))
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
+	else if (!meter->enabled)
+		OTELC_RETURN_INT(OTELC_RET_ERROR);
 	else if (OTEL_NULL(view_name))
 		OTEL_METER_RETURN_INT("Invalid view name");
 	else if (OTEL_NULL(instrument_name))
@@ -509,6 +511,8 @@ static int64_t otel_meter_create_instrument(struct otelc_meter *meter, const cha
 	OTELC_FUNC("%p, \"%s\", \"%s\", \"%s\", %d, %p", meter, OTELC_STR_ARG(name), OTELC_STR_ARG(desc), OTELC_STR_ARG(unit), type, data);
 
 	if (OTEL_NULL(meter))
+		OTELC_RETURN_INT(OTELC_RET_ERROR);
+	else if (!meter->enabled)
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
 	else if (OTEL_NULL(name))
 		OTEL_METER_RETURN_INT("Invalid instrument name");
@@ -1071,8 +1075,9 @@ static int otel_meter_start(struct otelc_meter *meter)
  *   Queries the underlying meter to determine whether it is enabled.  Callers
  *   can use this check to skip expensive metric setup when the meter would
  *   discard the data anyway.  The OpenTelemetry C++ SDK does not yet provide
- *   a Meter::Enabled() method, so this function currently returns true
- *   whenever the meter is valid.
+ *   a Meter::Enabled() method, so this function returns true whenever the
+ *   meter is valid and the wrapper-level gate set via
+ *   otel_meter_set_enabled() is not cleared.
  *
  * RETURN VALUE
  *   Returns true if the meter is enabled, false if it is not,
@@ -1089,7 +1094,41 @@ static int otel_meter_enabled(struct otelc_meter *meter)
 	if (OTEL_NULL(impl) || OTEL_NULL(impl->meter))
 		OTEL_METER_RETURN_INT("Invalid meter");
 
-	OTELC_RETURN_INT(true);
+	OTELC_RETURN_INT(meter->enabled);
+}
+
+
+/***
+ * NAME
+ *   otel_meter_set_enabled - toggles the wrapper-level gate at runtime
+ *
+ * SYNOPSIS
+ *   static int otel_meter_set_enabled(struct otelc_meter *meter, bool enabled)
+ *
+ * ARGUMENTS
+ *   meter   - meter instance
+ *   enabled - new state of the wrapper-level gate
+ *
+ * DESCRIPTION
+ *   Sets the wrapper-level gate that controls whether new instruments and
+ *   views may be registered.  When the gate is cleared, create_instrument
+ *   and add_view become no-ops and return OTELC_RET_ERROR.  Instruments
+ *   registered before the gate was cleared continue to record values
+ *   normally.
+ *
+ * RETURN VALUE
+ *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR in case of an error.
+ */
+static int otel_meter_set_enabled(struct otelc_meter *meter, bool enabled)
+{
+	OTELC_FUNC("%p, %hhu", meter, enabled);
+
+	if (OTEL_NULL(meter))
+		OTELC_RETURN_INT(OTELC_RET_ERROR);
+
+	meter->enabled = enabled;
+
+	OTELC_RETURN_INT(OTELC_RET_OK);
 }
 
 
@@ -1165,6 +1204,7 @@ const static struct otelc_meter_ops otel_meter_ops = {
 	.add_view                   = otel_meter_add_view,                   /* lock otel_view */
 	.get_instrument             = otel_meter_get_instrument,             /* lock otel_instrument */
 	.enabled                    = otel_meter_enabled,                    /* Locking not required. */
+	.set_enabled                = otel_meter_set_enabled,                /* Locking not required. */
 	.force_flush                = otel_meter_force_flush,                /* Locking not required. */
 	.shutdown                   = otel_meter_shutdown,                   /* Locking not required. */
 	.start                      = otel_meter_start,                      /* Locking not required. */
@@ -1201,6 +1241,7 @@ static struct otelc_meter *otel_meter_new(void)
 		retptr->err         = nullptr;
 		retptr->scope_name  = nullptr;
 		retptr->yaml_prefix = nullptr;
+		retptr->enabled     = true;
 		retptr->ops         = &otel_meter_ops;
 		retptr->impl        = new(std::nothrow) otel_meter_impl{};
 

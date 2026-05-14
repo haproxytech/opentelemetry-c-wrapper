@@ -138,6 +138,8 @@ static struct otelc_span *otel_tracer_start_span_with_options(struct otelc_trace
 
 	if (OTEL_NULL(tracer))
 		OTELC_RETURN_PTR(nullptr);
+	else if (!tracer->enabled)
+		OTELC_RETURN_PTR(nullptr);
 	else if (!OTELC_STR_IS_VALID(operation_name))
 		OTEL_TRACER_RETURN_PTR("Invalid operation name");
 	else if (!OTEL_NULL(parent_span) && !OTEL_NULL(parent_context))
@@ -508,6 +510,8 @@ static struct otelc_span_context *otel_tracer_extract_carrier(struct otelc_trace
 
 	if (OTEL_NULL(tracer))
 		OTELC_RETURN_PTR(nullptr);
+	else if (!tracer->enabled)
+		OTELC_RETURN_PTR(nullptr);
 	else if (OTEL_NULL(carrier))
 		OTEL_TRACER_RETURN_PTR("Invalid carrier");
 
@@ -643,7 +647,9 @@ static struct otelc_span_context *otel_tracer_extract_http_headers(struct otelc_
  * DESCRIPTION
  *   Queries the underlying tracer to determine whether it is enabled.  Callers
  *   can use this check to skip expensive span setup when the tracer would
- *   discard the data anyway.
+ *   discard the data anyway.  Returns false when the wrapper-level gate is
+ *   cleared via otel_tracer_set_enabled(), even if the underlying SDK tracer
+ *   would otherwise be enabled.
  *
  * RETURN VALUE
  *   Returns true if the tracer is enabled, false if it is not,
@@ -665,6 +671,9 @@ static int otel_tracer_enabled(struct otelc_tracer *tracer)
 	if (OTEL_NULL(tracer_shared))
 		OTEL_TRACER_RETURN_INT("Invalid tracer");
 
+	if (!tracer->enabled)
+		OTELC_RETURN_INT(false);
+
 	auto *tracer_ptr = tracer_shared.get();
 
 #if defined(OPENTELEMETRY_ABI_VERSION_NO) && (OPENTELEMETRY_ABI_VERSION_NO >= 2)
@@ -672,6 +681,40 @@ static int otel_tracer_enabled(struct otelc_tracer *tracer)
 #else
 	OTELC_RETURN_INT(true);
 #endif
+}
+
+
+/***
+ * NAME
+ *   otel_tracer_set_enabled - toggles the wrapper-level gate at runtime
+ *
+ * SYNOPSIS
+ *   static int otel_tracer_set_enabled(struct otelc_tracer *tracer, bool enabled)
+ *
+ * ARGUMENTS
+ *   tracer  - tracer instance
+ *   enabled - new state of the wrapper-level gate
+ *
+ * DESCRIPTION
+ *   Sets the wrapper-level gate that controls whether new spans may be
+ *   created.  When the gate is cleared, start_span, start_span_with_options,
+ *   extract_text_map and extract_http_headers become no-ops and return
+ *   nullptr.  Spans that were created before the gate was cleared continue to
+ *   function normally and reach the SDK on end().
+ *
+ * RETURN VALUE
+ *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR in case of an error.
+ */
+static int otel_tracer_set_enabled(struct otelc_tracer *tracer, bool enabled)
+{
+	OTELC_FUNC("%p, %hhu", tracer, enabled);
+
+	if (OTEL_NULL(tracer))
+		OTELC_RETURN_INT(OTELC_RET_ERROR);
+
+	tracer->enabled = enabled;
+
+	OTELC_RETURN_INT(OTELC_RET_OK);
 }
 
 
@@ -1041,6 +1084,7 @@ const static struct otelc_tracer_ops otel_tracer_ops = {
 	.extract_text_map        = otel_tracer_extract_text_map,        /* lock span_context */
 	.extract_http_headers    = otel_tracer_extract_http_headers,    /* lock span_context */
 	.enabled                 = otel_tracer_enabled,                 /* Locking not required. */
+	.set_enabled             = otel_tracer_set_enabled,             /* Locking not required. */
 	.force_flush             = otel_tracer_force_flush,             /* Locking not required. */
 	.shutdown                = otel_tracer_shutdown,                /* Locking not required. */
 	.start                   = otel_tracer_start,                   /* Locking not required. */
@@ -1076,6 +1120,7 @@ static struct otelc_tracer *otel_tracer_new(void)
 		retptr->err         = nullptr;
 		retptr->scope_name  = nullptr;
 		retptr->yaml_prefix = nullptr;
+		retptr->enabled     = true;
 		retptr->ops         = &otel_tracer_ops;
 		retptr->impl        = new(std::nothrow) otel_tracer_impl{};
 
