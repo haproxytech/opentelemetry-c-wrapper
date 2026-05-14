@@ -18,11 +18,11 @@
 
 __CPLUSPLUS_DECL_BEGIN
 
-#define OTELC_DBG_LOGGER(l,h,p)                                                  \
-	OTELC_DBG_STRUCT(_##l, h, h " %p:{ %p:\"%s\" %p:\"%s\" %d %p %p }", (p), \
-	                 (p)->err, OTELC_STR_ARG((p)->err), (p)->scope_name,     \
-	                 OTELC_STR_ARG((p)->scope_name), (p)->min_severity,      \
-	                 (p)->ops, (p)->ctx)
+#define OTELC_DBG_LOGGER(l,h,p)                                                       \
+	OTELC_DBG_STRUCT(_##l, h, h " %p:{ %p:\"%s\" %p:\"%s\" %d %hhu %p %p }", (p), \
+	                 (p)->err, OTELC_STR_ARG((p)->err), (p)->scope_name,          \
+	                 OTELC_STR_ARG((p)->scope_name), (p)->min_severity,           \
+	                 (p)->enabled, (p)->ops, (p)->ctx)
 
 /* <opentelemetry/logs/severity.h> */
 #define OTELC_LOG_SEVERITY_DEFINES                \
@@ -78,13 +78,40 @@ struct otelc_logger_ops {
 	 *   Queries the underlying logger to determine whether it is enabled
 	 *   for the given severity level.  Callers can use this check to skip
 	 *   expensive log message construction when the logger would discard
-	 *   the record anyway.
+	 *   the record anyway.  Returns false when the wrapper-level gate is
+	 *   cleared via set_enabled(), even if the underlying SDK logger would
+	 *   otherwise accept the severity.
 	 *
 	 * RETURN VALUE
 	 *   Returns true if the logger is enabled for the given severity,
 	 *   false if it is not, or OTELC_RET_ERROR in case of an error.
 	 */
 	int (*enabled)(struct otelc_logger *logger, otelc_log_severity_t severity)
+		OTELC_NONNULL(1);
+
+	/***
+	 * NAME
+	 *   set_enabled - toggles the wrapper-level gate at runtime
+	 *
+	 * SYNOPSIS
+	 *   int (*set_enabled)(struct otelc_logger *logger, bool enabled)
+	 *
+	 * ARGUMENTS
+	 *   logger  - logger instance
+	 *   enabled - new state of the wrapper-level gate
+	 *
+	 * DESCRIPTION
+	 *   Sets the wrapper-level gate that controls whether new log records
+	 *   may be emitted.  When the gate is cleared, log, log_span, log_body
+	 *   and log_body_span become no-ops and return 0.  Records emitted
+	 *   before the gate was cleared continue to be exported by the SDK as
+	 *   normal.
+	 *
+	 * RETURN VALUE
+	 *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR in case of
+	 *   an error.
+	 */
+	int (*set_enabled)(struct otelc_logger *logger, bool enabled)
 		OTELC_NONNULL(1);
 
 	/***
@@ -366,6 +393,7 @@ struct otelc_logger {
 	char                          *scope_name;   /* Logger instrumentation scope name. */
 	char                          *yaml_prefix;  /* Resolved YAML path of the logger signal configuration. */
 	otelc_log_severity_t           min_severity; /* Minimum allowed log severity level. */
+	bool                           enabled;      /* Wrapper-level gate; when false, log emission is suppressed. */
 	const struct otelc_logger_ops *ops;          /* Pointer to the operations vtable. */
 	const struct otelc_ctx        *ctx;          /* Owning library context; provides the YAML configuration. */
 	void                          *impl;         /* Opaque pointer to the C++ implementation state (provider, logger). */

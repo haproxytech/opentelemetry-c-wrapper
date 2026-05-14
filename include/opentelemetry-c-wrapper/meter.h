@@ -18,11 +18,11 @@
 
 __CPLUSPLUS_DECL_BEGIN
 
-#define OTELC_DBG_METER(l,h,p)                                                \
-	OTELC_DBG_STRUCT(_##l, h, h " %p:{ %p:\"%s\" %p:\"%s\" %p %p }", (p), \
-	                 (p)->err, OTELC_STR_ARG((p)->err),                   \
-	                 (p)->scope_name, OTELC_STR_ARG((p)->scope_name),     \
-			 (p)->ops, (p)->ctx)
+#define OTELC_DBG_METER(l,h,p)                                                        \
+	OTELC_DBG_STRUCT(_##l, h, h " %p:{ %p:\"%s\" %p:\"%s\" %hhu %p %p }", (p),    \
+	                 (p)->err, OTELC_STR_ARG((p)->err),                           \
+	                 (p)->scope_name, OTELC_STR_ARG((p)->scope_name),             \
+	                 (p)->enabled, (p)->ops, (p)->ctx)
 
 #define OTELC_DBG_METRIC_OBSERVABLE_CB(l,h,p) \
 	OTELC_DBG_STRUCT(_##l, h, h " %p:{ %p %p %p }", (p), (p)->func, (p)->value, (p)->data)
@@ -312,13 +312,39 @@ struct otelc_meter_ops {
 	 *   Callers can use this check to skip expensive metric setup when the
 	 *   meter would discard the data anyway.  The OpenTelemetry C++ SDK
 	 *   does not yet provide a Meter::Enabled() method, so this function
-	 *   currently returns true whenever the meter is valid.
+	 *   returns true whenever the meter is valid and the wrapper-level
+	 *   gate set via set_enabled() is not cleared.
 	 *
 	 * RETURN VALUE
 	 *   Returns true if the meter is enabled, false if it is not,
 	 *   or OTELC_RET_ERROR in case of an error.
 	 */
 	int (*enabled)(struct otelc_meter *meter)
+		OTELC_NONNULL_ALL;
+
+	/***
+	 * NAME
+	 *   set_enabled - toggles the wrapper-level gate at runtime
+	 *
+	 * SYNOPSIS
+	 *   int (*set_enabled)(struct otelc_meter *meter, bool enabled)
+	 *
+	 * ARGUMENTS
+	 *   meter   - meter instance
+	 *   enabled - new state of the wrapper-level gate
+	 *
+	 * DESCRIPTION
+	 *   Sets the wrapper-level gate that controls whether new instruments
+	 *   and views may be registered.  When the gate is cleared,
+	 *   create_instrument and add_view become no-ops and return
+	 *   OTELC_RET_ERROR.  Instruments registered before the gate was
+	 *   cleared continue to record values normally.
+	 *
+	 * RETURN VALUE
+	 *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR in case of
+	 *   an error.
+	 */
+	int (*set_enabled)(struct otelc_meter *meter, bool enabled)
 		OTELC_NONNULL_ALL;
 
 	/***
@@ -430,6 +456,7 @@ struct otelc_meter {
 	char                         *err;         /* Character array containing the last library error. */
 	char                         *scope_name;  /* Meter instrumentation scope name. */
 	char                         *yaml_prefix; /* Resolved YAML path of the meter signal configuration. */
+	bool                          enabled;     /* Wrapper-level gate; when false, new instruments/views are not created. */
 	const struct otelc_meter_ops *ops;         /* Pointer to the operations vtable. */
 	const struct otelc_ctx       *ctx;         /* Owning library context; provides the YAML configuration. */
 	void                         *impl;        /* Opaque pointer to the C++ implementation state (provider, meter). */

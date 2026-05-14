@@ -1924,3 +1924,119 @@ Teardown locking:
   invoking destroy, after which the per-shard mutexes inside the handle
   maps cover the implicit teardown of any spans, instruments, or views
   that were still registered.
+
+
+------------------------------------------------------------------------
+18. Runtime Enable/Disable Gate for Signals
+------------------------------------------------------------------------
+
+Each of the three signal-carrying structures -- otelc_tracer, otelc_meter and
+otelc_logger -- carries a bool member named "enabled" that gates the wrapper
+between the caller and the underlying OpenTelemetry C++ SDK.  The member is
+initialised to true when the structure is allocated, so the default behaviour
+matches the wrapper as it existed before the gate was introduced.  When the
+gate is cleared, the wrapper short-circuits requests at its public boundary
+and the SDK is never reached.
+
+The gate is toggled through a vtable entry, set_enabled, present on each of the
+three operations tables.  It accepts a bool and returns OTELC_RET_OK on success
+or OTELC_RET_ERROR when the pointer to the signal structure is NULL.  When the
+wrapper-level gate is cleared, that state is also reflected in the existing
+enabled() vtable entry, so a caller that performs the usual "enabled?" probe
+before constructing telemetry data sees one consistent answer regardless of
+whether the gate or the underlying SDK is the cause of the rejection.
+
+Toggle mechanism:
+
+  Usage from C is identical to any other vtable call:
+
+      tracer->ops->set_enabled(tracer, false);    /* stop new spans */
+      ...
+      tracer->ops->set_enabled(tracer, true);     /* resume         */
+
+  The same pattern applies to meter->ops->set_enabled() and to
+  logger->ops->set_enabled().  Exposing the gate as a vtable entry rather than a
+  direct field assignment keeps it next to the other operations, preserves the
+  OTELC_NONNULL contract, and leaves room to evolve later (for example, by
+  emitting a log message on transition, or by gating against a configuration
+  source other than a single bool) without changing the public ABI.
+
+Gating choice -- behaviour for already-open spans:
+
+  Clearing the gate while a span is in flight, a log record is being prepared,
+  or a metric instrument is being created admits three distinct policies.  The
+  wrapper implements the first; the other two are documented here so that the
+  alternative paths are not lost if the topic is revisited later.
+
+  Gate creation only (implemented):
+
+    Only the entry points that create new telemetry primitives consult the gate:
+
+      * tracer: start_span, start_span_with_options, extract_text_map,
+                extract_http_headers
+
+      * meter:  create_instrument, add_view
+
+      * logger: log, log_span, log_body, log_body_span
+
+    When the gate is cleared, these entry points return their idle value without
+    ever reaching the underlying SDK: nullptr for span creation and context
+    extraction, OTELC_RET_ERROR for instrument and view creation, and 0 (the
+    "severity not enabled" code) for log emission.  Operations performed on the
+    spans that were already started, on the instruments that were already
+    registered, and on the log records that were already submitted continue to
+    run unchanged: they reach the SDK exactly as before, they are exported by
+    the configured processors, and they end on their natural lifecycle.
+
+    This is the simplest and most predictable of the three policies.  It treats
+    the gate as a back-pressure knob over new work rather than as a kill switch
+    for live work, and it never produces a half-formed span or a truncated log
+    record.  The trade-off is that telemetry continues to flow from in-flight
+    objects for as long as those objects live; callers who need an immediate
+    cessation must combine the gate with force_flush followed by shutdown or
+    destroy.
+
+  Gate every operation (not implemented):
+
+    Under this alternative the span, log-record and instrument operations would
+    also consult the gate.  A span->set_attribute() call on a span whose parent
+    tracer is disabled would silently no-op, as would record_value() on a metric
+    instrument under a disabled meter.  Every span carries a back-pointer to its
+    tracer through the otelc_span field "tracer", and the metric and log
+    operations route through their parent structures as well, so the runtime
+    lookup is cheap.
+
+    This alternative produces more uniform observed behaviour after a disable:
+    no further mutation reaches the SDK from any wrapper entry point.  Its
+    drawback is that End() on a span must still be allowed through (otherwise
+    the SDK leaks a span record), so the SDK sees a span whose attributes and
+    events were truncated at an arbitrary point in time.  Downstream consumers
+    that correlate by trace_id may then receive a span that is structurally
+    valid but semantically misleading.
+
+  Hard cut on disable (not implemented):
+
+    The most aggressive policy treats clearing the gate as an implicit cleanup
+    event.  set_enabled(tracer, false) would walk the span handle map, would
+    call End() on every live span, and would clear the map.  set_enabled(meter,
+    false) would force_flush the periodic readers and would drop the instrument
+    and view maps.  set_enabled(logger, false) would force_flush all pending log
+    records.  The SDK then never sees half-formed data: every live object either
+    completes cleanly or is gone before the call returns.
+
+    The drawback is invasiveness.  A caller that toggled the gate twice in quick
+    succession would lose all telemetry context across the toggle, which is
+    rarely what monitoring code wants.  The implementation would also have to
+    acquire the span shard locks in bulk and serialise against in-flight span
+    operations, which is at odds with the wrapper's normal "fine-grained
+    locking, no global mutex" stance.
+
+Interaction with shutdown and destroy:
+
+  Clearing the gate is independent of force_flush, shutdown and destroy.  Those
+  three operations remain available while the gate is cleared, and they behave
+  exactly as they do when the gate is set.  Callers who want to drain the
+  in-flight telemetry after disabling new work should follow set_enabled with
+  force_flush; callers who want the underlying SDK provider to release its
+  resources should follow with shutdown or destroy as appropriate for the
+  affected signal.
