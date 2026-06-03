@@ -45,14 +45,14 @@ struct T {
 		: span(std::move(span_)), context(std::move(context_))
 #endif
 	{
-		OTELC_FUNCPP("", OTELC_STRINGIFY(T));
+		OTELCPP_FUNC("", OTELC_STRINGIFY(T));
 
 		OTELC_RETURN();
 	}
 
 	~T() noexcept
 	{
-		OTELC_FUNCPP("", OTELC_STRINGIFY(T));
+		OTELCPP_FUNC("", OTELC_STRINGIFY(T));
 
 		/***
 		 * Setting the number of references to zero will cause implicit
@@ -78,14 +78,14 @@ struct T {
 	T(otel_nostd::shared_ptr<otel_context::Context> context_) noexcept
 		: context(std::move(context_))
 	{
-		OTELC_FUNCPP("", OTELC_STRINGIFY(T));
+		OTELCPP_FUNC("", OTELC_STRINGIFY(T));
 
 		OTELC_RETURN();
 	}
 
 	~T() noexcept
 	{
-		OTELC_FUNCPP("", OTELC_STRINGIFY(T));
+		OTELCPP_FUNC("", OTELC_STRINGIFY(T));
 
 		context = nullptr;
 

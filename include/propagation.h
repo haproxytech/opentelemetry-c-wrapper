@@ -50,7 +50,7 @@ public:
 	template <typename U>
 	explicit OTEL_MAP_CARRIER(U &&text_map) : tm_data(std::forward<U>(text_map))
 	{
-		OTELC_FUNCPP("", OTELC_STRINGIFY(OTEL_MAP_CARRIER));
+		OTELCPP_FUNC("", OTELC_STRINGIFY(OTEL_MAP_CARRIER));
 
 		OTELC_RETURN();
 	}
@@ -79,7 +79,7 @@ public:
 	{
 		otel_nostd::string_view retval = "";
 
-		OTELC_FUNCPP("\"%s\"", OTELC_STRINGIFY(OTEL_MAP_CARRIER), std::string(key).c_str());
+		OTELCPP_FUNC("\"%s\"", OTELC_STRINGIFY(OTEL_MAP_CARRIER), std::string(key).c_str());
 
 		const auto it = tm_data.find(std::string(key));
 		if (it != tm_data.end())
@@ -111,7 +111,7 @@ public:
 	 */
 	virtual void Set(otel_nostd::string_view key, otel_nostd::string_view value) noexcept override
 	{
-		OTELC_FUNCPP("\"%s\", \"%s\"", OTELC_STRINGIFY(OTEL_MAP_CARRIER), std::string(key).c_str(), std::string(value).c_str());
+		OTELCPP_FUNC("\"%s\", \"%s\"", OTELC_STRINGIFY(OTEL_MAP_CARRIER), std::string(key).c_str(), std::string(value).c_str());
 
 		tm_data[std::string{key}] = std::string{value};
 
@@ -138,7 +138,7 @@ public:
 	 */
 	virtual bool Keys(otel_nostd::function_ref<bool(otel_nostd::string_view)> f) const noexcept override
 	{
-		OTELC_FUNCPP("<f>", OTELC_STRINGIFY(OTEL_MAP_CARRIER));
+		OTELCPP_FUNC("<f>", OTELC_STRINGIFY(OTEL_MAP_CARRIER));
 
 		for (const auto &it : tm_data) {
 			if (!f)
@@ -170,7 +170,7 @@ public:
 	 */
 	bool GetAllEntries(otel_nostd::function_ref<bool(otel_nostd::string_view, otel_nostd::string_view)> f) const noexcept
 	{
-		OTELC_FUNCPP("<f>", OTELC_STRINGIFY(OTEL_MAP_CARRIER));
+		OTELCPP_FUNC("<f>", OTELC_STRINGIFY(OTEL_MAP_CARRIER));
 
 		for (const auto &it : tm_data) {
 			if (!f)
@@ -206,7 +206,7 @@ public:
 
 	~OTEL_MAP_CARRIER() noexcept
 	{
-		OTELC_FUNCPP("", OTELC_STRINGIFY(OTEL_MAP_CARRIER));
+		OTELCPP_FUNC("", OTELC_STRINGIFY(OTEL_MAP_CARRIER));
 
 		OTELC_RETURN();
 	}
@@ -240,7 +240,7 @@ public:
 	template <typename U>
 	explicit OTEL_HTTP_CARRIER(U &&headers) : headers_data(std::forward<U>(headers))
 	{
-		OTELC_FUNCPP("", OTELC_STRINGIFY(OTEL_HTTP_CARRIER));
+		OTELCPP_FUNC("", OTELC_STRINGIFY(OTEL_HTTP_CARRIER));
 
 		OTELC_RETURN();
 	}
@@ -268,7 +268,7 @@ public:
 	{
 		otel_nostd::string_view retval = "";
 
-		OTELC_FUNCPP("\"%s\"", OTELC_STRINGIFY(OTEL_HTTP_CARRIER), std::string(key).c_str());
+		OTELCPP_FUNC("\"%s\"", OTELC_STRINGIFY(OTEL_HTTP_CARRIER), std::string(key).c_str());
 
 		const auto it = headers_data.find(std::string(key));
 		if (it != headers_data.end())
@@ -300,7 +300,7 @@ public:
 	 */
 	virtual void Set(otel_nostd::string_view key, otel_nostd::string_view value) noexcept override
 	{
-		OTELC_FUNCPP("\"%s\", \"%s\"", OTELC_STRINGIFY(OTEL_HTTP_CARRIER), std::string(key).c_str(), std::string(value).c_str());
+		OTELCPP_FUNC("\"%s\", \"%s\"", OTELC_STRINGIFY(OTEL_HTTP_CARRIER), std::string(key).c_str(), std::string(value).c_str());
 
 		headers_data[std::string{key}] = std::string{value};
 
@@ -327,7 +327,7 @@ public:
 	 */
 	virtual bool Keys(otel_nostd::function_ref<bool(otel_nostd::string_view)> f) const noexcept override
 	{
-		OTELC_FUNCPP("<f>", OTELC_STRINGIFY(OTEL_HTTP_CARRIER));
+		OTELCPP_FUNC("<f>", OTELC_STRINGIFY(OTEL_HTTP_CARRIER));
 
 		for (const auto &it : headers_data) {
 			if (!f)
@@ -359,7 +359,7 @@ public:
 	 */
 	bool GetAllEntries(otel_nostd::function_ref<bool(otel_nostd::string_view, otel_nostd::string_view)> f) const noexcept
 	{
-		OTELC_FUNCPP("<f>", OTELC_STRINGIFY(OTEL_HTTP_CARRIER));
+		OTELCPP_FUNC("<f>", OTELC_STRINGIFY(OTEL_HTTP_CARRIER));
 
 		for (const auto &it : headers_data) {
 			if (!f)
@@ -373,7 +373,7 @@ public:
 
 	~OTEL_HTTP_CARRIER() noexcept
 	{
-		OTELC_FUNCPP("", OTELC_STRINGIFY(OTEL_HTTP_CARRIER));
+		OTELCPP_FUNC("", OTELC_STRINGIFY(OTEL_HTTP_CARRIER));
 
 		OTELC_RETURN();
 	}

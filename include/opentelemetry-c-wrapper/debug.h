@@ -79,14 +79,6 @@ enum OTELC_DBG_LEVEL_enum {
 			otelc_dbg_indent += OTELC_DBG_INDENT_STEP;       \
 	} while (0)
 #  define OTELC_FUNC(f, ...)       OTELC_FUNC_EX(FUNC, f, ##__VA_ARGS__)
-#  define OTELC_FUNCPP_EX(l,f,c, ...)                                           \
-	const int dbg_ = otelc_dbg_level & (1 << OTELC_DBG_LEVEL_##l);          \
-	do {                                                                    \
-		OTELC_DBG(_##l, "%s::%s(" f ") {", c, __func__, ##__VA_ARGS__); \
-		if (dbg_)                                                       \
-			otelc_dbg_indent += OTELC_DBG_INDENT_STEP;              \
-	} while (0)
-#  define OTELC_FUNCPP(f,c, ...)   OTELC_FUNCPP_EX(FUNC, f, c, ##__VA_ARGS__)
 #  define OTELC_FUNC_END(f, ...)                                   \
 	do {                                                       \
 		if (dbg_) {                                        \
@@ -114,8 +106,6 @@ extern bool         otelc_dbg_trigger_throw;
 #  define OTELC_DBG_STRUCT(...)    while (0)
 #  define OTELC_FUNC_EX(...)       while (0)
 #  define OTELC_FUNC(...)          while (0)
-#  define OTELC_FUNCPP_EX(...)     while (0)
-#  define OTELC_FUNCPP(...)        while (0)
 #  define OTELC_FUNC_END(...)      while (0)
 #  define OTELC_RETURN()           return
 #  define OTELC_RETURN_EX(a,t,f)   return a

@@ -114,6 +114,7 @@
 
 #include "configuration.h"
 #include "compiler.h"
+#include "debug.h"
 #include "define.h"
 #ifdef DEBUG
 #  include "dbg_malloc.h"

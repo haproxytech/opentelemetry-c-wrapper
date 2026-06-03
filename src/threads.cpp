@@ -35,7 +35,7 @@
  */
 otel_thread_instrumentation::otel_thread_instrumentation()
 {
-	OTELC_FUNCPP("", OTEL_THREAD_INSTRUMENTATION_DEMANGLED_NAME);
+	OTELCPP_FUNC("", OTEL_THREAD_INSTRUMENTATION_DEMANGLED_NAME);
 
 	OTEL_DBG_THREAD_INSTRUMENTATION();
 
@@ -62,7 +62,7 @@ otel_thread_instrumentation::otel_thread_instrumentation()
  */
 otel_thread_instrumentation::~otel_thread_instrumentation()
 {
-	OTELC_FUNCPP("", OTEL_THREAD_INSTRUMENTATION_DEMANGLED_NAME);
+	OTELCPP_FUNC("", OTEL_THREAD_INSTRUMENTATION_DEMANGLED_NAME);
 
 	OTEL_DBG_THREAD_INSTRUMENTATION();
 
@@ -95,7 +95,7 @@ otel_thread_instrumentation::~otel_thread_instrumentation()
  */
 void otel_thread_instrumentation::OnStart(void)
 {
-	OTELC_FUNCPP("", OTEL_THREAD_INSTRUMENTATION_DEMANGLED_NAME);
+	OTELCPP_FUNC("", OTEL_THREAD_INSTRUMENTATION_DEMANGLED_NAME);
 
 	OTEL_DBG_THREAD_INSTRUMENTATION();
 
@@ -139,7 +139,7 @@ void otel_thread_instrumentation::OnStart(void)
  */
 void otel_thread_instrumentation::OnEnd(void)
 {
-	OTELC_FUNCPP("", OTEL_THREAD_INSTRUMENTATION_DEMANGLED_NAME);
+	OTELCPP_FUNC("", OTEL_THREAD_INSTRUMENTATION_DEMANGLED_NAME);
 
 	OTEL_DBG_THREAD_INSTRUMENTATION();
 
@@ -166,7 +166,7 @@ void otel_thread_instrumentation::OnEnd(void)
  */
 void otel_thread_instrumentation::BeforeWait(void)
 {
-	OTELC_FUNCPP("", OTEL_THREAD_INSTRUMENTATION_DEMANGLED_NAME);
+	OTELCPP_FUNC("", OTEL_THREAD_INSTRUMENTATION_DEMANGLED_NAME);
 
 	OTEL_DBG_THREAD_INSTRUMENTATION();
 
@@ -193,7 +193,7 @@ void otel_thread_instrumentation::BeforeWait(void)
  */
 void otel_thread_instrumentation::AfterWait(void)
 {
-	OTELC_FUNCPP("", OTEL_THREAD_INSTRUMENTATION_DEMANGLED_NAME);
+	OTELCPP_FUNC("", OTEL_THREAD_INSTRUMENTATION_DEMANGLED_NAME);
 
 	OTEL_DBG_THREAD_INSTRUMENTATION();
 
@@ -220,7 +220,7 @@ void otel_thread_instrumentation::AfterWait(void)
  */
 void otel_thread_instrumentation::BeforeLoad(void)
 {
-	OTELC_FUNCPP("", OTEL_THREAD_INSTRUMENTATION_DEMANGLED_NAME);
+	OTELCPP_FUNC("", OTEL_THREAD_INSTRUMENTATION_DEMANGLED_NAME);
 
 	OTEL_DBG_THREAD_INSTRUMENTATION();
 
@@ -247,7 +247,7 @@ void otel_thread_instrumentation::BeforeLoad(void)
  */
 void otel_thread_instrumentation::AfterLoad(void)
 {
-	OTELC_FUNCPP("", OTEL_THREAD_INSTRUMENTATION_DEMANGLED_NAME);
+	OTELCPP_FUNC("", OTEL_THREAD_INSTRUMENTATION_DEMANGLED_NAME);
 
 	OTEL_DBG_THREAD_INSTRUMENTATION();
 

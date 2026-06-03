@@ -264,7 +264,7 @@ void otel_log_handler::Handle(otel_sdk_internal_log::LogLevel level, const char 
 {
 	size_t attr_len = 0;
 
-	OTELC_FUNCPP("%d, \"%s\", %d, \"%s\", %zu <attributes>", "otel_log_handler", OTEL_CAST_STATIC(int, level), OTELC_STR_ARG(file), line, OTELC_STR_ARG(msg), attributes.size());
+	OTELCPP_FUNC("%d, \"%s\", %d, \"%s\", %zu <attributes>", "otel_log_handler", OTEL_CAST_STATIC(int, level), OTELC_STR_ARG(file), line, OTELC_STR_ARG(msg), attributes.size());
 
 	if (!forward_attr_ || (attributes.size() == 0)) {
 		OTELC_DBG(DEBUG, "no attributes to forward");

@@ -39,7 +39,7 @@ public:
 	otel_thread_instrumentation(const std::string &thread_name_, int cpu_id_ = -1)
 		: thread_name(thread_name_), cpu_id(cpu_id_)
 	{
-		OTELC_FUNCPP("", OTEL_THREAD_INSTRUMENTATION_DEMANGLED_NAME);
+		OTELCPP_FUNC("", OTEL_THREAD_INSTRUMENTATION_DEMANGLED_NAME);
 
 		OTEL_DBG_THREAD_INSTRUMENTATION();
 

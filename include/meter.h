@@ -33,7 +33,7 @@
 	                                                                                                                          \
 	T(otel_nostd::arg_ptr<otel_metrics::arg_type> arg_member##_, const char *name_, otelc_metric_instrument_t type_) noexcept \
 	{                                                                                                                         \
-		OTELC_FUNCPP("<" #arg_member ">, \"%s\", %d", OTELC_STRINGIFY(T), OTELC_STR_ARG(name_), type_);                   \
+		OTELCPP_FUNC("<" #arg_member ">, \"%s\", %d", OTELC_STRINGIFY(T), OTELC_STR_ARG(name_), type_);                   \
 		                                                                                                                  \
 		arg_member = std::move(arg_member##_);                                                                            \
 		name       = name_;                                                                                               \
@@ -65,7 +65,7 @@ struct T {
 
 	~T() noexcept
 	{
-		OTELC_FUNCPP("", OTELC_STRINGIFY(T));
+		OTELCPP_FUNC("", OTELC_STRINGIFY(T));
 
 		type             = OTEL_CAST_STATIC(otelc_metric_instrument_t, -1);
 
@@ -92,7 +92,7 @@ struct T {
 
 	T(const char *name_) noexcept
 	{
-		OTELC_FUNCPP("\"%s\"", OTELC_STRINGIFY(T), OTELC_STR_ARG(name_));
+		OTELCPP_FUNC("\"%s\"", OTELC_STRINGIFY(T), OTELC_STR_ARG(name_));
 
 		name = name_;
 
@@ -101,7 +101,7 @@ struct T {
 
 	~T() noexcept
 	{
-		OTELC_FUNCPP("", OTELC_STRINGIFY(T));
+		OTELCPP_FUNC("", OTELC_STRINGIFY(T));
 
 		OTELC_RETURN();
 	}

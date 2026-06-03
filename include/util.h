@@ -205,7 +205,7 @@ struct otel_handle {
 
 	void otel_handle_init(void)
 	{
-		OTELC_FUNCPP("", OTEL_HANDLE_DEMANGLED_NAME);
+		OTELCPP_FUNC("", OTEL_HANDLE_DEMANGLED_NAME);
 
 		for (auto &it : shards) {
 			it.map.clear();
@@ -342,7 +342,7 @@ struct otel_handle {
 	{
 		OTELC_DBG_IFDEF(size_t total_size = 0, );
 
-		OTELC_FUNCPP("", OTEL_HANDLE_DEMANGLED_NAME);
+		OTELCPP_FUNC("", OTEL_HANDLE_DEMANGLED_NAME);
 
 		for (auto &it_shard : shards) {
 			OTELC_DBG_IFDEF(total_size += it_shard.map.size(), );
