@@ -161,7 +161,7 @@ static int otel_logger_set_min_severity(struct otelc_logger *logger, otelc_log_s
  *   otel_logger_record_create - creates and populates a log record
  *
  * SYNOPSIS
- *   static int otel_logger_record_create(struct otelc_logger *logger, otel_logs::Logger *logger_ptr, otelc_log_severity_t severity, int64_t event_id, const char *event_name, const uint8_t *span_id, size_t span_id_size, const uint8_t *trace_id, size_t trace_id_size, uint8_t trace_flags, const struct timespec *ts, const struct otelc_kv *attr, size_t attr_len, otel_nostd::unique_ptr<otel_logs::LogRecord> &log_record)
+ *   static int otel_logger_record_create(struct otelc_logger *logger, otel_logs::Logger *logger_ptr, otelc_log_severity_t severity, int64_t event_id, const char *event_name, const uint8_t *span_id, size_t span_id_size, const uint8_t *trace_id, size_t trace_id_size, uint8_t trace_flags, const struct timespec *ts, const struct timespec *ts_obs, const struct otelc_kv *attr, size_t attr_len, otel_nostd::unique_ptr<otel_logs::LogRecord> &log_record)
  *
  * ARGUMENTS
  *   logger        - logger instance
@@ -175,6 +175,7 @@ static int otel_logger_set_min_severity(struct otelc_logger *logger, otelc_log_s
  *   trace_id_size - the size of the trace identifier buffer
  *   trace_flags   - trace flags associated with the trace
  *   ts            - the timestamp of the log event, or NULL for SDK defaults
+ *   ts_obs        - the observed timestamp, or NULL for SDK defaults
  *   attr          - a pointer to an array of key-value attributes to attach to the log record
  *   attr_len      - the number of elements in the 'attr' array
  *   log_record    - output reference for the created log record
@@ -182,22 +183,23 @@ static int otel_logger_set_min_severity(struct otelc_logger *logger, otelc_log_s
  * DESCRIPTION
  *   Validates the logger pointer and severity, checks whether the severity
  *   level is enabled, and creates a new log record populated with trace
- *   context, timestamp, event data, and attributes.  The caller is responsible
- *   for setting the body and emitting the record.  When ts is non-NULL, the
- *   event timestamp is set to the given value and the observed timestamp is
- *   left to the SDK default, the current time; when NULL, both are left to
- *   the SDK defaults.  When event_id is greater than zero, the log record is
- *   tagged with the given event identifier and name.
+ *   context, timestamps, event data, and attributes.  The caller must set the
+ *   body and emit the record.  The event timestamp is taken from ts and the
+ *   observed timestamp from ts_obs; each is applied only when its argument is
+ *   non-NULL, otherwise that field is left to the SDK default -- the event time
+ *   unset and the observed time the instant of emission.  When event_id is
+ *   greater than zero, the log record is tagged with the given event identifier
+ *   and name.
  *
  * RETURN VALUE
  *   Returns 1 when a log record was created, 0 if the severity level is not
  *   enabled, or OTELC_RET_ERROR on failure.
  */
-static int otel_logger_record_create(struct otelc_logger *logger, otel_logs::Logger *logger_ptr, otelc_log_severity_t severity, int64_t event_id, const char *event_name, const uint8_t *span_id, size_t span_id_size, const uint8_t *trace_id, size_t trace_id_size, uint8_t trace_flags, const struct timespec *ts, const struct otelc_kv *attr, size_t attr_len, otel_nostd::unique_ptr<otel_logs::LogRecord> &log_record)
+static int otel_logger_record_create(struct otelc_logger *logger, otel_logs::Logger *logger_ptr, otelc_log_severity_t severity, int64_t event_id, const char *event_name, const uint8_t *span_id, size_t span_id_size, const uint8_t *trace_id, size_t trace_id_size, uint8_t trace_flags, const struct timespec *ts, const struct timespec *ts_obs, const struct otelc_kv *attr, size_t attr_len, otel_nostd::unique_ptr<otel_logs::LogRecord> &log_record)
 {
 	uint8_t span_id_buf[otel_trace::SpanId::kSize] = { 0 }, trace_id_buf[otel_trace::TraceId::kSize] = { 0 };
 
-	OTELC_FUNC("%p, %p, %hhu, %" PRId64 ", \"%s\", %p, %zu, %p, %zu, 0x%02hhx, %p, %p, %zu", logger, logger_ptr, severity, event_id, OTELC_STR_ARG(event_name), span_id, span_id_size, trace_id, trace_id_size, trace_flags, ts, attr, attr_len);
+	OTELC_FUNC("%p, %p, %hhu, %" PRId64 ", \"%s\", %p, %zu, %p, %zu, 0x%02hhx, %p, %p, %p, %zu", logger, logger_ptr, severity, event_id, OTELC_STR_ARG(event_name), span_id, span_id_size, trace_id, trace_id_size, trace_flags, ts, ts_obs, attr, attr_len);
 
 	if (OTEL_NULL(logger_ptr))
 		OTEL_LOGGER_RETURN_INT("Invalid logger");
@@ -224,9 +226,15 @@ static int otel_logger_record_create(struct otelc_logger *logger, otel_logs::Log
 	log_record->SetTraceId(otel_trace::TraceId{trace_id_buf});
 	log_record->SetTraceFlags(otel_trace::TraceFlags{trace_flags});
 
-	/* Record the event time only; leave the observed time at the SDK default. */
+	/* Set the event and observed times; each NULL value defers to the SDK. */
 	if (!OTEL_NULL(ts))
 		log_record->SetTimestamp(otel_system_timestamp(timespec_to_duration(ts)));
+	if (!OTEL_NULL(ts_obs))
+		log_record->SetObservedTimestamp(otel_system_timestamp(timespec_to_duration(ts_obs)));
+
+	/* Note when the event time post-dates the observed time. */
+	if (!OTEL_NULL(ts) && !OTEL_NULL(ts_obs) && (timespec_to_duration(ts) > timespec_to_duration(ts_obs)))
+		OTELC_DBG(DEBUG, "event timestamp is later than observed timestamp");
 
 	if (event_id > 0)
 		log_record->SetEventId(event_id, OTEL_NULL(event_name) ? "" : event_name);
@@ -244,7 +252,7 @@ static int otel_logger_record_create(struct otelc_logger *logger, otel_logs::Log
  *   otel_logger_log_v - logs a formatted message with explicit trace and span identifiers
  *
  * SYNOPSIS
- *   static int otel_logger_log_v(struct otelc_logger *logger, otelc_log_severity_t severity, int64_t event_id, const char *event_name, const uint8_t *span_id, size_t span_id_size, const uint8_t *trace_id, size_t trace_id_size, uint8_t trace_flags, const struct timespec *ts, const struct otelc_kv *attr, size_t attr_len, const char *format, va_list ap)
+ *   static int otel_logger_log_v(struct otelc_logger *logger, otelc_log_severity_t severity, int64_t event_id, const char *event_name, const uint8_t *span_id, size_t span_id_size, const uint8_t *trace_id, size_t trace_id_size, uint8_t trace_flags, const struct timespec *ts, const struct timespec *ts_obs, const struct otelc_kv *attr, size_t attr_len, const char *format, va_list ap)
  *
  * ARGUMENTS
  *   logger        - logger instance
@@ -257,6 +265,7 @@ static int otel_logger_record_create(struct otelc_logger *logger, otel_logs::Log
  *   trace_id_size - the size of the trace identifier buffer
  *   trace_flags   - trace flags associated with the trace
  *   ts            - the timestamp of the log event, or NULL for SDK defaults
+ *   ts_obs        - the observed timestamp, or NULL for SDK defaults
  *   attr          - a pointer to an array of key-value attributes to attach to the log record
  *   attr_len      - the number of elements in the 'attr' array
  *   format        - a printf-style format string for the log message
@@ -264,21 +273,21 @@ static int otel_logger_record_create(struct otelc_logger *logger, otel_logs::Log
  *
  * DESCRIPTION
  *   Creates an explicit log record and populates it with the specified
- *   severity, trace context, body, and attributes.  When ts is non-NULL, the
- *   event timestamp is set to the given value and the observed timestamp is
- *   left to the SDK default, the current time; when NULL, both are left to
- *   the SDK defaults.  When event_id is greater than zero, the log record is
- *   tagged with the given event identifier and name.
+ *   severity, trace context, body, and attributes.  The event timestamp is
+ *   taken from ts and the observed timestamp from ts_obs, each applied only
+ *   when non-NULL and otherwise left to the SDK default.  When event_id is
+ *   greater than zero, the log record is tagged with the given event identifier
+ *   and name.
  *
  * RETURN VALUE
  *   Returns the number of characters written to the buffer on success,
  *   or a negative value on error (OTELC_RET_ERROR).
  */
-static int otel_logger_log_v(struct otelc_logger *logger, otelc_log_severity_t severity, int64_t event_id, const char *event_name, const uint8_t *span_id, size_t span_id_size, const uint8_t *trace_id, size_t trace_id_size, uint8_t trace_flags, const struct timespec *ts, const struct otelc_kv *attr, size_t attr_len, const char *format, va_list ap)
+static int otel_logger_log_v(struct otelc_logger *logger, otelc_log_severity_t severity, int64_t event_id, const char *event_name, const uint8_t *span_id, size_t span_id_size, const uint8_t *trace_id, size_t trace_id_size, uint8_t trace_flags, const struct timespec *ts, const struct timespec *ts_obs, const struct otelc_kv *attr, size_t attr_len, const char *format, va_list ap)
 {
 	char *ptr = nullptr;
 
-	OTELC_FUNC("%p, %hhu, %" PRId64 ", \"%s\", %p, %zu, %p, %zu, 0x%02hhx, %p, %p, %zu, \"%s\", %p", logger, severity, event_id, OTELC_STR_ARG(event_name), span_id, span_id_size, trace_id, trace_id_size, trace_flags, ts, attr, attr_len, OTELC_STR_ARG(format), ap);
+	OTELC_FUNC("%p, %hhu, %" PRId64 ", \"%s\", %p, %zu, %p, %zu, 0x%02hhx, %p, %p, %p, %zu, \"%s\", %p", logger, severity, event_id, OTELC_STR_ARG(event_name), span_id, span_id_size, trace_id, trace_id_size, trace_flags, ts, ts_obs, attr, attr_len, OTELC_STR_ARG(format), ap);
 
 	if (OTEL_NULL(logger))
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
@@ -287,7 +296,7 @@ static int otel_logger_log_v(struct otelc_logger *logger, otelc_log_severity_t s
 
 	otel_nostd::unique_ptr<otel_logs::LogRecord> log_record;
 	auto *logger_ptr = otel_logger.load();
-	auto retval = otel_logger_record_create(logger, logger_ptr, severity, event_id, event_name, span_id, span_id_size, trace_id, trace_id_size, trace_flags, ts, attr, attr_len, log_record);
+	auto retval = otel_logger_record_create(logger, logger_ptr, severity, event_id, event_name, span_id, span_id_size, trace_id, trace_id_size, trace_flags, ts, ts_obs, attr, attr_len, log_record);
 	if (retval <= 0)
 		OTELC_RETURN_INT(retval);
 
@@ -309,7 +318,7 @@ static int otel_logger_log_v(struct otelc_logger *logger, otelc_log_severity_t s
  *   otel_logger_log - logs a formatted message with explicit trace and span identifiers
  *
  * SYNOPSIS
- *   static int otel_logger_log(struct otelc_logger *logger, otelc_log_severity_t severity, int64_t event_id, const char *event_name, const uint8_t *span_id, size_t span_id_size, const uint8_t *trace_id, size_t trace_id_size, uint8_t trace_flags, const struct timespec *ts, const struct otelc_kv *attr, size_t attr_len, const char *format, ...)
+ *   static int otel_logger_log(struct otelc_logger *logger, otelc_log_severity_t severity, int64_t event_id, const char *event_name, const uint8_t *span_id, size_t span_id_size, const uint8_t *trace_id, size_t trace_id_size, uint8_t trace_flags, const struct timespec *ts, const struct timespec *ts_obs, const struct otelc_kv *attr, size_t attr_len, const char *format, ...)
  *
  * ARGUMENTS
  *   logger        - logger instance
@@ -322,6 +331,7 @@ static int otel_logger_log_v(struct otelc_logger *logger, otelc_log_severity_t s
  *   trace_id_size - the size of the trace identifier buffer
  *   trace_flags   - trace flags associated with the trace
  *   ts            - the timestamp of the log event, or NULL for SDK defaults
+ *   ts_obs        - the observed timestamp, or NULL for SDK defaults
  *   attr          - a pointer to an array of key-value attributes to attach to the log record
  *   attr_len      - the number of elements in the 'attr' array
  *   format        - a printf-style format string for the log message
@@ -337,18 +347,18 @@ static int otel_logger_log_v(struct otelc_logger *logger, otelc_log_severity_t s
  *   Returns the number of characters written to the buffer on success,
  *   or a negative value on error (OTELC_RET_ERROR).
  */
-static int otel_logger_log(struct otelc_logger *logger, otelc_log_severity_t severity, int64_t event_id, const char *event_name, const uint8_t *span_id, size_t span_id_size, const uint8_t *trace_id, size_t trace_id_size, uint8_t trace_flags, const struct timespec *ts, const struct otelc_kv *attr, size_t attr_len, const char *format, ...)
+static int otel_logger_log(struct otelc_logger *logger, otelc_log_severity_t severity, int64_t event_id, const char *event_name, const uint8_t *span_id, size_t span_id_size, const uint8_t *trace_id, size_t trace_id_size, uint8_t trace_flags, const struct timespec *ts, const struct timespec *ts_obs, const struct otelc_kv *attr, size_t attr_len, const char *format, ...)
 {
 	va_list ap;
 	int     retval;
 
-	OTELC_FUNC("%p, %hhu, %" PRId64 ", \"%s\", %p, %zu, %p, %zu, 0x%02hhx, %p, %p, %zu, \"%s\", ...", logger, severity, event_id, OTELC_STR_ARG(event_name), span_id, span_id_size, trace_id, trace_id_size, trace_flags, ts, attr, attr_len, OTELC_STR_ARG(format));
+	OTELC_FUNC("%p, %hhu, %" PRId64 ", \"%s\", %p, %zu, %p, %zu, 0x%02hhx, %p, %p, %p, %zu, \"%s\", ...", logger, severity, event_id, OTELC_STR_ARG(event_name), span_id, span_id_size, trace_id, trace_id_size, trace_flags, ts, ts_obs, attr, attr_len, OTELC_STR_ARG(format));
 
 	if (OTEL_NULL(logger))
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
 
 	va_start(ap, format);
-	retval = otel_logger_log_v(logger, severity, event_id, event_name, span_id, span_id_size, trace_id, trace_id_size, trace_flags, ts, attr, attr_len, format, ap);
+	retval = otel_logger_log_v(logger, severity, event_id, event_name, span_id, span_id_size, trace_id, trace_id_size, trace_flags, ts, ts_obs, attr, attr_len, format, ap);
 	va_end(ap);
 
 	OTELC_RETURN_INT(retval);
@@ -360,7 +370,7 @@ static int otel_logger_log(struct otelc_logger *logger, otelc_log_severity_t sev
  *   otel_logger_log_span - logs a formatted message with optional span context and attributes
  *
  * SYNOPSIS
- *   static int otel_logger_log_span(struct otelc_logger *logger, otelc_log_severity_t severity, int64_t event_id, const char *event_name, const struct otelc_span *span, const struct timespec *ts, const struct otelc_kv *attr, size_t attr_len, const char *format, ...)
+ *   static int otel_logger_log_span(struct otelc_logger *logger, otelc_log_severity_t severity, int64_t event_id, const char *event_name, const struct otelc_span *span, const struct timespec *ts, const struct timespec *ts_obs, const struct otelc_kv *attr, size_t attr_len, const char *format, ...)
  *
  * ARGUMENTS
  *   logger     - logger instance
@@ -369,6 +379,7 @@ static int otel_logger_log(struct otelc_logger *logger, otelc_log_severity_t sev
  *   event_name - event name string, or NULL when event_id is 0
  *   span       - span associated with this log entry
  *   ts         - the timestamp of the log event, or NULL for SDK defaults
+ *   ts_obs     - the observed timestamp, or NULL for SDK defaults
  *   attr       - a pointer to an array of key-value attributes to attach to the log record
  *   attr_len   - the number of elements in the 'attr' array
  *   format     - a printf-style format string for the log message
@@ -386,13 +397,13 @@ static int otel_logger_log(struct otelc_logger *logger, otelc_log_severity_t sev
  *   Returns the number of characters written to the buffer on success,
  *   or a negative value on error (OTELC_RET_ERROR).
  */
-static int otel_logger_log_span(struct otelc_logger *logger, otelc_log_severity_t severity, int64_t event_id, const char *event_name, const struct otelc_span *span, const struct timespec *ts, const struct otelc_kv *attr, size_t attr_len, const char *format, ...)
+static int otel_logger_log_span(struct otelc_logger *logger, otelc_log_severity_t severity, int64_t event_id, const char *event_name, const struct otelc_span *span, const struct timespec *ts, const struct timespec *ts_obs, const struct otelc_kv *attr, size_t attr_len, const char *format, ...)
 {
 	va_list ap;
 	uint8_t span_id_buf[otel_trace::SpanId::kSize] = { 0 }, trace_id_buf[otel_trace::TraceId::kSize] = { 0 }, trace_flags = 0;
 	int     retval;
 
-	OTELC_FUNC("%p, %hhu, %" PRId64 ", \"%s\", %p, %p, %p, %zu, \"%s\", ...", logger, severity, event_id, OTELC_STR_ARG(event_name), span, ts, attr, attr_len, OTELC_STR_ARG(format));
+	OTELC_FUNC("%p, %hhu, %" PRId64 ", \"%s\", %p, %p, %p, %p, %zu, \"%s\", ...", logger, severity, event_id, OTELC_STR_ARG(event_name), span, ts, ts_obs, attr, attr_len, OTELC_STR_ARG(format));
 
 	if (OTEL_NULL(logger))
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
@@ -403,7 +414,7 @@ static int otel_logger_log_span(struct otelc_logger *logger, otelc_log_severity_
 			OTELC_DBG(DEBUG, "%s", (OTEL_NULL(span->tracer) || OTEL_NULL(span->tracer->err)) ? "Unable to retrieve span context" : span->tracer->err);
 
 	va_start(ap, format);
-	retval = otel_logger_log_v(logger, severity, event_id, event_name, span_id_buf, sizeof(span_id_buf), trace_id_buf, sizeof(trace_id_buf), trace_flags, ts, attr, attr_len, format, ap);
+	retval = otel_logger_log_v(logger, severity, event_id, event_name, span_id_buf, sizeof(span_id_buf), trace_id_buf, sizeof(trace_id_buf), trace_flags, ts, ts_obs, attr, attr_len, format, ap);
 	va_end(ap);
 
 	OTELC_RETURN_INT(retval);
@@ -415,7 +426,7 @@ static int otel_logger_log_span(struct otelc_logger *logger, otelc_log_severity_
  *   otel_logger_log_body - logs an otelc_value body with explicit trace and span identifiers
  *
  * SYNOPSIS
- *   static int otel_logger_log_body(struct otelc_logger *logger, otelc_log_severity_t severity, int64_t event_id, const char *event_name, const uint8_t *span_id, size_t span_id_size, const uint8_t *trace_id, size_t trace_id_size, uint8_t trace_flags, const struct timespec *ts, const struct otelc_kv *attr, size_t attr_len, const struct otelc_value *body)
+ *   static int otel_logger_log_body(struct otelc_logger *logger, otelc_log_severity_t severity, int64_t event_id, const char *event_name, const uint8_t *span_id, size_t span_id_size, const uint8_t *trace_id, size_t trace_id_size, uint8_t trace_flags, const struct timespec *ts, const struct timespec *ts_obs, const struct otelc_kv *attr, size_t attr_len, const struct otelc_value *body)
  *
  * ARGUMENTS
  *   logger        - logger instance
@@ -428,6 +439,7 @@ static int otel_logger_log_span(struct otelc_logger *logger, otelc_log_severity_
  *   trace_id_size - the size of the trace identifier buffer
  *   trace_flags   - trace flags associated with the trace
  *   ts            - the timestamp of the log event, or NULL for SDK defaults
+ *   ts_obs        - the observed timestamp, or NULL for SDK defaults
  *   attr          - a pointer to an array of key-value attributes to attach to the log record
  *   attr_len      - the number of elements in the 'attr' array
  *   body          - the log body as an otelc_value (int, double, bool, or string)
@@ -442,9 +454,9 @@ static int otel_logger_log_span(struct otelc_logger *logger, otelc_log_severity_
  * RETURN VALUE
  *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR on error.
  */
-static int otel_logger_log_body(struct otelc_logger *logger, otelc_log_severity_t severity, int64_t event_id, const char *event_name, const uint8_t *span_id, size_t span_id_size, const uint8_t *trace_id, size_t trace_id_size, uint8_t trace_flags, const struct timespec *ts, const struct otelc_kv *attr, size_t attr_len, const struct otelc_value *body)
+static int otel_logger_log_body(struct otelc_logger *logger, otelc_log_severity_t severity, int64_t event_id, const char *event_name, const uint8_t *span_id, size_t span_id_size, const uint8_t *trace_id, size_t trace_id_size, uint8_t trace_flags, const struct timespec *ts, const struct timespec *ts_obs, const struct otelc_kv *attr, size_t attr_len, const struct otelc_value *body)
 {
-	OTELC_FUNC("%p, %hhu, %" PRId64 ", \"%s\", %p, %zu, %p, %zu, 0x%02hhx, %p, %p, %zu, %p", logger, severity, event_id, OTELC_STR_ARG(event_name), span_id, span_id_size, trace_id, trace_id_size, trace_flags, ts, attr, attr_len, body);
+	OTELC_FUNC("%p, %hhu, %" PRId64 ", \"%s\", %p, %zu, %p, %zu, 0x%02hhx, %p, %p, %p, %zu, %p", logger, severity, event_id, OTELC_STR_ARG(event_name), span_id, span_id_size, trace_id, trace_id_size, trace_flags, ts, ts_obs, attr, attr_len, body);
 
 	if (OTEL_NULL(logger))
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
@@ -453,7 +465,7 @@ static int otel_logger_log_body(struct otelc_logger *logger, otelc_log_severity_
 
 	otel_nostd::unique_ptr<otel_logs::LogRecord> log_record;
 	auto *logger_ptr = otel_logger.load();
-	const int retval = otel_logger_record_create(logger, logger_ptr, severity, event_id, event_name, span_id, span_id_size, trace_id, trace_id_size, trace_flags, ts, attr, attr_len, log_record);
+	const int retval = otel_logger_record_create(logger, logger_ptr, severity, event_id, event_name, span_id, span_id_size, trace_id, trace_id_size, trace_flags, ts, ts_obs, attr, attr_len, log_record);
 	if (retval <= 0)
 		OTELC_RETURN_INT(retval);
 
@@ -475,7 +487,7 @@ static int otel_logger_log_body(struct otelc_logger *logger, otelc_log_severity_
  *   otel_logger_log_body_span - logs an otelc_value body with optional span context
  *
  * SYNOPSIS
- *   static int otel_logger_log_body_span(struct otelc_logger *logger, otelc_log_severity_t severity, int64_t event_id, const char *event_name, const struct otelc_span *span, const struct timespec *ts, const struct otelc_kv *attr, size_t attr_len, const struct otelc_value *body)
+ *   static int otel_logger_log_body_span(struct otelc_logger *logger, otelc_log_severity_t severity, int64_t event_id, const char *event_name, const struct otelc_span *span, const struct timespec *ts, const struct timespec *ts_obs, const struct otelc_kv *attr, size_t attr_len, const struct otelc_value *body)
  *
  * ARGUMENTS
  *   logger     - logger instance
@@ -484,6 +496,7 @@ static int otel_logger_log_body(struct otelc_logger *logger, otelc_log_severity_
  *   event_name - event name string, or NULL when event_id is 0
  *   span       - span associated with this log entry
  *   ts         - the timestamp of the log event, or NULL for SDK defaults
+ *   ts_obs     - the observed timestamp, or NULL for SDK defaults
  *   attr       - a pointer to an array of key-value attributes to attach to the log record
  *   attr_len   - the number of elements in the 'attr' array
  *   body       - the log body as an otelc_value (int, double, bool, or string)
@@ -498,11 +511,11 @@ static int otel_logger_log_body(struct otelc_logger *logger, otelc_log_severity_
  * RETURN VALUE
  *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR on error.
  */
-static int otel_logger_log_body_span(struct otelc_logger *logger, otelc_log_severity_t severity, int64_t event_id, const char *event_name, const struct otelc_span *span, const struct timespec *ts, const struct otelc_kv *attr, size_t attr_len, const struct otelc_value *body)
+static int otel_logger_log_body_span(struct otelc_logger *logger, otelc_log_severity_t severity, int64_t event_id, const char *event_name, const struct otelc_span *span, const struct timespec *ts, const struct timespec *ts_obs, const struct otelc_kv *attr, size_t attr_len, const struct otelc_value *body)
 {
 	uint8_t span_id_buf[otel_trace::SpanId::kSize] = { 0 }, trace_id_buf[otel_trace::TraceId::kSize] = { 0 }, trace_flags = 0;
 
-	OTELC_FUNC("%p, %hhu, %" PRId64 ", \"%s\", %p, %p, %p, %zu, %p", logger, severity, event_id, OTELC_STR_ARG(event_name), span, ts, attr, attr_len, body);
+	OTELC_FUNC("%p, %hhu, %" PRId64 ", \"%s\", %p, %p, %p, %p, %zu, %p", logger, severity, event_id, OTELC_STR_ARG(event_name), span, ts, ts_obs, attr, attr_len, body);
 
 	if (OTEL_NULL(logger))
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
@@ -512,7 +525,7 @@ static int otel_logger_log_body_span(struct otelc_logger *logger, otelc_log_seve
 		if (OTELC_OPS(span, get_id, span_id_buf, sizeof(span_id_buf), trace_id_buf, sizeof(trace_id_buf), &trace_flags) == OTELC_RET_ERROR)
 			OTELC_DBG(DEBUG, "%s", (OTEL_NULL(span->tracer) || OTEL_NULL(span->tracer->err)) ? "Unable to retrieve span context" : span->tracer->err);
 
-	OTELC_RETURN_INT(otel_logger_log_body(logger, severity, event_id, event_name, span_id_buf, sizeof(span_id_buf), trace_id_buf, sizeof(trace_id_buf), trace_flags, ts, attr, attr_len, body));
+	OTELC_RETURN_INT(otel_logger_log_body(logger, severity, event_id, event_name, span_id_buf, sizeof(span_id_buf), trace_id_buf, sizeof(trace_id_buf), trace_flags, ts, ts_obs, attr, attr_len, body));
 }
 
 

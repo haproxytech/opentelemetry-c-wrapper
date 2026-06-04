@@ -138,7 +138,7 @@ static void test_log_basic(struct otelc_logger *logger)
 {
 	int retval = TEST_FAIL;
 
-	if (OTELC_OPS(logger, log, OTELC_LOG_SEVERITY_INFO, 0, NULL, NULL, 0, NULL, 0, 0, NULL, NULL, 0, "basic log message") >= 0)
+	if (OTELC_OPS(logger, log, OTELC_LOG_SEVERITY_INFO, 0, NULL, NULL, 0, NULL, 0, 0, NULL, NULL, NULL, 0, "basic log message") >= 0)
 		retval = TEST_PASS;
 
 	test_report("log basic INFO", retval);
@@ -165,7 +165,7 @@ static void test_log_severity_trace(struct otelc_logger *logger)
 {
 	int retval = TEST_FAIL;
 
-	if (OTELC_OPS(logger, log, OTELC_LOG_SEVERITY_TRACE, 0, NULL, NULL, 0, NULL, 0, 0, NULL, NULL, 0, "trace message") >= 0)
+	if (OTELC_OPS(logger, log, OTELC_LOG_SEVERITY_TRACE, 0, NULL, NULL, 0, NULL, 0, 0, NULL, NULL, NULL, 0, "trace message") >= 0)
 		retval = TEST_PASS;
 
 	test_report("log TRACE severity", retval);
@@ -192,7 +192,7 @@ static void test_log_severity_debug(struct otelc_logger *logger)
 {
 	int retval = TEST_FAIL;
 
-	if (OTELC_OPS(logger, log, OTELC_LOG_SEVERITY_DEBUG, 0, NULL, NULL, 0, NULL, 0, 0, NULL, NULL, 0, "debug message") >= 0)
+	if (OTELC_OPS(logger, log, OTELC_LOG_SEVERITY_DEBUG, 0, NULL, NULL, 0, NULL, 0, 0, NULL, NULL, NULL, 0, "debug message") >= 0)
 		retval = TEST_PASS;
 
 	test_report("log DEBUG severity", retval);
@@ -219,7 +219,7 @@ static void test_log_severity_warn(struct otelc_logger *logger)
 {
 	int retval = TEST_FAIL;
 
-	if (OTELC_OPS(logger, log, OTELC_LOG_SEVERITY_WARN, 0, NULL, NULL, 0, NULL, 0, 0, NULL, NULL, 0, "warning message") >= 0)
+	if (OTELC_OPS(logger, log, OTELC_LOG_SEVERITY_WARN, 0, NULL, NULL, 0, NULL, 0, 0, NULL, NULL, NULL, 0, "warning message") >= 0)
 		retval = TEST_PASS;
 
 	test_report("log WARN severity", retval);
@@ -246,7 +246,7 @@ static void test_log_severity_error(struct otelc_logger *logger)
 {
 	int retval = TEST_FAIL;
 
-	if (OTELC_OPS(logger, log, OTELC_LOG_SEVERITY_ERROR, 0, NULL, NULL, 0, NULL, 0, 0, NULL, NULL, 0, "error message") >= 0)
+	if (OTELC_OPS(logger, log, OTELC_LOG_SEVERITY_ERROR, 0, NULL, NULL, 0, NULL, 0, 0, NULL, NULL, NULL, 0, "error message") >= 0)
 		retval = TEST_PASS;
 
 	test_report("log ERROR severity", retval);
@@ -273,7 +273,7 @@ static void test_log_severity_fatal(struct otelc_logger *logger)
 {
 	int retval = TEST_FAIL;
 
-	if (OTELC_OPS(logger, log, OTELC_LOG_SEVERITY_FATAL, 0, NULL, NULL, 0, NULL, 0, 0, NULL, NULL, 0, "fatal message") >= 0)
+	if (OTELC_OPS(logger, log, OTELC_LOG_SEVERITY_FATAL, 0, NULL, NULL, 0, NULL, 0, 0, NULL, NULL, NULL, 0, "fatal message") >= 0)
 		retval = TEST_PASS;
 
 	test_report("log FATAL severity", retval);
@@ -303,7 +303,7 @@ static void test_log_with_explicit_ids(struct otelc_logger *logger)
 	static const uint8_t trace_id[OTELC_TRACE_ID_SIZE] = { 0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x70, 0x80, 0x90, 0xa0, 0xb0, 0xc0, 0xd0, 0xe0, 0xf0, 0x01 };
 	int                  retval = TEST_FAIL;
 
-	if (OTELC_OPS(logger, log, OTELC_LOG_SEVERITY_INFO, 0, NULL, span_id, sizeof(span_id), trace_id, sizeof(trace_id), 0x01, NULL, NULL, 0, "log with explicit IDs") >= 0)
+	if (OTELC_OPS(logger, log, OTELC_LOG_SEVERITY_INFO, 0, NULL, span_id, sizeof(span_id), trace_id, sizeof(trace_id), 0x01, NULL, NULL, NULL, 0, "log with explicit IDs") >= 0)
 		retval = TEST_PASS;
 
 	test_report("log with explicit span/trace IDs", retval);
@@ -331,7 +331,7 @@ static void test_log_with_format_args(struct otelc_logger *logger)
 {
 	int retval = TEST_FAIL;
 
-	const int rc = OTELC_OPS(logger, log, OTELC_LOG_SEVERITY_INFO, 0, NULL, NULL, 0, NULL, 0, 0, NULL, NULL, 0, "count=%d pi=%.2f name=%s flag=%s", 42, 3.14, "test", "true");
+	const int rc = OTELC_OPS(logger, log, OTELC_LOG_SEVERITY_INFO, 0, NULL, NULL, 0, NULL, 0, 0, NULL, NULL, NULL, 0, "count=%d pi=%.2f name=%s flag=%s", 42, 3.14, "test", "true");
 	if (rc > 0)
 		retval = TEST_PASS;
 
@@ -363,7 +363,7 @@ static void test_log_with_timestamp(struct otelc_logger *logger)
 
 	(void)clock_gettime(CLOCK_REALTIME, &ts);
 
-	if (OTELC_OPS(logger, log, OTELC_LOG_SEVERITY_INFO, 0, NULL, NULL, 0, NULL, 0, 0, &ts, NULL, 0, "log with timestamp") >= 0)
+	if (OTELC_OPS(logger, log, OTELC_LOG_SEVERITY_INFO, 0, NULL, NULL, 0, NULL, 0, 0, &ts, NULL, NULL, 0, "log with timestamp") >= 0)
 		retval = TEST_PASS;
 
 	test_report("log with timestamp", retval);
@@ -397,7 +397,7 @@ static void test_log_with_attributes(struct otelc_logger *logger)
 	};
 	int retval = TEST_FAIL;
 
-	if (OTELC_OPS(logger, log, OTELC_LOG_SEVERITY_INFO, 0, NULL, NULL, 0, NULL, 0, 0, NULL, attr, OTELC_TABLESIZE(attr), "log with attributes") >= 0)
+	if (OTELC_OPS(logger, log, OTELC_LOG_SEVERITY_INFO, 0, NULL, NULL, 0, NULL, 0, 0, NULL, NULL, attr, OTELC_TABLESIZE(attr), "log with attributes") >= 0)
 		retval = TEST_PASS;
 
 	test_report("log with attributes", retval);
@@ -434,7 +434,7 @@ static void test_log_with_all_options(struct otelc_logger *logger)
 
 	(void)clock_gettime(CLOCK_REALTIME, &ts);
 
-	if (OTELC_OPS(logger, log, OTELC_LOG_SEVERITY_WARN, 0, NULL, span_id, sizeof(span_id), trace_id, sizeof(trace_id), 0x01, &ts, attr, OTELC_TABLESIZE(attr), "full options: item=%d", 7) >= 0)
+	if (OTELC_OPS(logger, log, OTELC_LOG_SEVERITY_WARN, 0, NULL, span_id, sizeof(span_id), trace_id, sizeof(trace_id), 0x01, &ts, NULL, attr, OTELC_TABLESIZE(attr), "full options: item=%d", 7) >= 0)
 		retval = TEST_PASS;
 
 	test_report("log with all options", retval);
@@ -462,7 +462,7 @@ static void test_log_with_event_id(struct otelc_logger *logger)
 {
 	int retval = TEST_FAIL;
 
-	if (OTELC_OPS(logger, log, OTELC_LOG_SEVERITY_INFO, 1001, "user.login", NULL, 0, NULL, 0, 0, NULL, NULL, 0, "User logged in") >= 0)
+	if (OTELC_OPS(logger, log, OTELC_LOG_SEVERITY_INFO, 1001, "user.login", NULL, 0, NULL, 0, 0, NULL, NULL, NULL, 0, "User logged in") >= 0)
 		retval = TEST_PASS;
 
 	test_report("log with event_id", retval);
@@ -524,7 +524,7 @@ static void test_log_span_basic(struct otelc_logger *logger, const struct otelc_
 {
 	int retval = TEST_FAIL;
 
-	if (OTELC_OPS(logger, log_span, OTELC_LOG_SEVERITY_INFO, 0, NULL, span, NULL, NULL, 0, "log with span context") >= 0)
+	if (OTELC_OPS(logger, log_span, OTELC_LOG_SEVERITY_INFO, 0, NULL, span, NULL, NULL, NULL, 0, "log with span context") >= 0)
 		retval = TEST_PASS;
 
 	test_report("log_span basic", retval);
@@ -557,7 +557,7 @@ static void test_log_span_with_attributes(struct otelc_logger *logger, const str
 	};
 	int retval = TEST_FAIL;
 
-	if (OTELC_OPS(logger, log_span, OTELC_LOG_SEVERITY_DEBUG, 0, NULL, span, NULL, attr, OTELC_TABLESIZE(attr), "span log with attrs") >= 0)
+	if (OTELC_OPS(logger, log_span, OTELC_LOG_SEVERITY_DEBUG, 0, NULL, span, NULL, NULL, attr, OTELC_TABLESIZE(attr), "span log with attrs") >= 0)
 		retval = TEST_PASS;
 
 	test_report("log_span with attributes", retval);
@@ -589,7 +589,7 @@ static void test_log_span_with_timestamp(struct otelc_logger *logger, const stru
 
 	(void)clock_gettime(CLOCK_REALTIME, &ts);
 
-	if (OTELC_OPS(logger, log_span, OTELC_LOG_SEVERITY_ERROR, 0, NULL, span, &ts, NULL, 0, "span log with timestamp") >= 0)
+	if (OTELC_OPS(logger, log_span, OTELC_LOG_SEVERITY_ERROR, 0, NULL, span, &ts, NULL, NULL, 0, "span log with timestamp") >= 0)
 		retval = TEST_PASS;
 
 	test_report("log_span with timestamp", retval);
@@ -617,7 +617,7 @@ static void test_log_span_null(struct otelc_logger *logger)
 {
 	int retval = TEST_FAIL;
 
-	if (OTELC_OPS(logger, log_span, OTELC_LOG_SEVERITY_INFO, 0, NULL, NULL, NULL, NULL, 0, "log_span with NULL span") >= 0)
+	if (OTELC_OPS(logger, log_span, OTELC_LOG_SEVERITY_INFO, 0, NULL, NULL, NULL, NULL, NULL, 0, "log_span with NULL span") >= 0)
 		retval = TEST_PASS;
 
 	test_report("log_span with NULL span", retval);
@@ -646,7 +646,7 @@ static void test_log_span_with_format_args(struct otelc_logger *logger, const st
 {
 	int retval = TEST_FAIL;
 
-	const int rc = OTELC_OPS(logger, log_span, OTELC_LOG_SEVERITY_INFO, 0, NULL, span, NULL, NULL, 0, "count=%d pi=%.2f name=%s", 42, 3.14, "test");
+	const int rc = OTELC_OPS(logger, log_span, OTELC_LOG_SEVERITY_INFO, 0, NULL, span, NULL, NULL, NULL, 0, "count=%d pi=%.2f name=%s", 42, 3.14, "test");
 	if (rc > 0)
 		retval = TEST_PASS;
 
@@ -683,7 +683,7 @@ static void test_log_span_with_all_options(struct otelc_logger *logger, const st
 
 	(void)clock_gettime(CLOCK_REALTIME, &ts);
 
-	if (OTELC_OPS(logger, log_span, OTELC_LOG_SEVERITY_WARN, 0, NULL, span, &ts, attr, OTELC_TABLESIZE(attr), "full span options: item=%d", 7) >= 0)
+	if (OTELC_OPS(logger, log_span, OTELC_LOG_SEVERITY_WARN, 0, NULL, span, &ts, NULL, attr, OTELC_TABLESIZE(attr), "full span options: item=%d", 7) >= 0)
 		retval = TEST_PASS;
 
 	test_report("log_span with all options", retval);
@@ -712,7 +712,7 @@ static void test_log_span_with_event_id(struct otelc_logger *logger, const struc
 {
 	int retval = TEST_FAIL;
 
-	if (OTELC_OPS(logger, log_span, OTELC_LOG_SEVERITY_INFO, 2001, "request.complete", span, NULL, NULL, 0, "Request completed") >= 0)
+	if (OTELC_OPS(logger, log_span, OTELC_LOG_SEVERITY_INFO, 2001, "request.complete", span, NULL, NULL, NULL, 0, "Request completed") >= 0)
 		retval = TEST_PASS;
 
 	test_report("log_span with event_id", retval);
@@ -752,12 +752,12 @@ static void test_log_span_invalid_handle(struct otelc_logger *logger, struct ote
 	span->idx = INT64_C(0x7FFFFFFFFFFFFFFF);
 
 	/* Try log_span without attributes -- succeeds without correlation. */
-	rc = OTELC_OPS(logger, log_span, OTELC_LOG_SEVERITY_INFO, 0, NULL, span, NULL, NULL, 0, "should succeed without correlation");
+	rc = OTELC_OPS(logger, log_span, OTELC_LOG_SEVERITY_INFO, 0, NULL, span, NULL, NULL, NULL, 0, "should succeed without correlation");
 	if (rc < 0)
 		retval = TEST_FAIL;
 
 	/* Try log_span with attributes -- succeeds without correlation. */
-	rc = OTELC_OPS(logger, log_span, OTELC_LOG_SEVERITY_ERROR, 0, NULL, span, NULL, attr, OTELC_TABLESIZE(attr), "should also succeed without correlation");
+	rc = OTELC_OPS(logger, log_span, OTELC_LOG_SEVERITY_ERROR, 0, NULL, span, NULL, NULL, attr, OTELC_TABLESIZE(attr), "should also succeed without correlation");
 	if (rc < 0)
 		retval = TEST_FAIL;
 
@@ -765,7 +765,7 @@ static void test_log_span_invalid_handle(struct otelc_logger *logger, struct ote
 	span->idx = saved_idx;
 
 	/* Confirm normal log_span still works. */
-	rc = OTELC_OPS(logger, log_span, OTELC_LOG_SEVERITY_INFO, 0, NULL, span, NULL, NULL, 0, "after restore");
+	rc = OTELC_OPS(logger, log_span, OTELC_LOG_SEVERITY_INFO, 0, NULL, span, NULL, NULL, NULL, 0, "after restore");
 	if (rc < 0)
 		retval = TEST_FAIL;
 
@@ -800,10 +800,10 @@ static void test_set_min_severity(struct otelc_logger *logger)
 
 	if (OTELC_OPS(logger, set_min_severity, OTELC_LOG_SEVERITY_WARN) == OTELC_RET_OK) {
 		/* DEBUG is below WARN -- must be suppressed (returns 0). */
-		rc = OTELC_OPS(logger, log, OTELC_LOG_SEVERITY_DEBUG, 0, NULL, NULL, 0, NULL, 0, 0, NULL, NULL, 0, "should be suppressed");
+		rc = OTELC_OPS(logger, log, OTELC_LOG_SEVERITY_DEBUG, 0, NULL, NULL, 0, NULL, 0, 0, NULL, NULL, NULL, 0, "should be suppressed");
 		if (rc == 0) {
 			/* WARN is at threshold -- must succeed. */
-			rc = OTELC_OPS(logger, log, OTELC_LOG_SEVERITY_WARN, 0, NULL, NULL, 0, NULL, 0, 0, NULL, NULL, 0, "should pass");
+			rc = OTELC_OPS(logger, log, OTELC_LOG_SEVERITY_WARN, 0, NULL, NULL, 0, NULL, 0, 0, NULL, NULL, NULL, 0, "should pass");
 			if (rc > 0)
 				retval = TEST_PASS;
 		}
@@ -844,10 +844,10 @@ static void test_log_body_explicit_ids(struct otelc_logger *logger)
 	const struct otelc_value body_string = { .u_type = OTELC_VALUE_STRING, .u.value_string = "body text" };
 	int                      retval = TEST_FAIL;
 
-	if ((OTELC_OPS(logger, log_body, OTELC_LOG_SEVERITY_INFO, 0, NULL, span_id, sizeof(span_id), trace_id, sizeof(trace_id), 0x01, NULL, NULL, 0, &body_i64) == OTELC_RET_OK) &&
-	    (OTELC_OPS(logger, log_body, OTELC_LOG_SEVERITY_INFO, 0, NULL, NULL, 0, NULL, 0, 0, NULL, NULL, 0, &body_dbl) == OTELC_RET_OK) &&
-	    (OTELC_OPS(logger, log_body, OTELC_LOG_SEVERITY_INFO, 0, NULL, NULL, 0, NULL, 0, 0, NULL, NULL, 0, &body_bool) == OTELC_RET_OK) &&
-	    (OTELC_OPS(logger, log_body, OTELC_LOG_SEVERITY_INFO, 0, NULL, NULL, 0, NULL, 0, 0, NULL, NULL, 0, &body_string) == OTELC_RET_OK))
+	if ((OTELC_OPS(logger, log_body, OTELC_LOG_SEVERITY_INFO, 0, NULL, span_id, sizeof(span_id), trace_id, sizeof(trace_id), 0x01, NULL, NULL, NULL, 0, &body_i64) == OTELC_RET_OK) &&
+	    (OTELC_OPS(logger, log_body, OTELC_LOG_SEVERITY_INFO, 0, NULL, NULL, 0, NULL, 0, 0, NULL, NULL, NULL, 0, &body_dbl) == OTELC_RET_OK) &&
+	    (OTELC_OPS(logger, log_body, OTELC_LOG_SEVERITY_INFO, 0, NULL, NULL, 0, NULL, 0, 0, NULL, NULL, NULL, 0, &body_bool) == OTELC_RET_OK) &&
+	    (OTELC_OPS(logger, log_body, OTELC_LOG_SEVERITY_INFO, 0, NULL, NULL, 0, NULL, 0, 0, NULL, NULL, NULL, 0, &body_string) == OTELC_RET_OK))
 		retval = TEST_PASS;
 
 	test_report("log_body with explicit IDs", retval);
@@ -877,8 +877,8 @@ static void test_log_body_span(struct otelc_logger *logger, const struct otelc_s
 	const struct otelc_value body = { .u_type = OTELC_VALUE_INT64, .u.value_int64 = INT64_C(100) };
 	int                      retval = TEST_FAIL;
 
-	if ((OTELC_OPS(logger, log_body_span, OTELC_LOG_SEVERITY_INFO, 0, NULL, span, NULL, NULL, 0, &body) == OTELC_RET_OK) &&
-	    (OTELC_OPS(logger, log_body_span, OTELC_LOG_SEVERITY_INFO, 0, NULL, NULL, NULL, NULL, 0, &body) == OTELC_RET_OK))
+	if ((OTELC_OPS(logger, log_body_span, OTELC_LOG_SEVERITY_INFO, 0, NULL, span, NULL, NULL, NULL, 0, &body) == OTELC_RET_OK) &&
+	    (OTELC_OPS(logger, log_body_span, OTELC_LOG_SEVERITY_INFO, 0, NULL, NULL, NULL, NULL, NULL, 0, &body) == OTELC_RET_OK))
 		retval = TEST_PASS;
 
 	test_report("log_body_span", retval);

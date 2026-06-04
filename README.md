@@ -237,7 +237,7 @@ int main(void)
     logger = otelc_logger_create(&err);
     logger->ops->start(logger);
 
-    logger->ops->log_span(logger, OTELC_LOG_SEVERITY_INFO, 0, NULL, NULL, NULL, NULL, 0, "Application started successfully");
+    logger->ops->log_span(logger, OTELC_LOG_SEVERITY_INFO, 0, NULL, NULL, NULL, NULL, NULL, 0, "Application started successfully");
 
     otelc_deinit(NULL, NULL, &logger);
     return 0;

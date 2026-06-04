@@ -497,8 +497,8 @@ static void worker_thread(void *data)
 				continue;
 
 			(void)OTELC_OPS(*span_root, get_id, span_id, sizeof(span_id), trace_id, sizeof(trace_id), &trace_flags);
-			OTELC_OPS(*logger, log, OTELC_LOG_SEVERITY_DEBUG, 0, NULL, span_id, sizeof(span_id), trace_id, sizeof(trace_id), trace_flags, &ts, attr, OTELC_TABLESIZE(attr), "debug log from worker %d (span_root)", worker->id);
-			OTELC_OPS(*logger, log_span, OTELC_LOG_SEVERITY_INFO, 0, NULL, *span_root, &ts, attr, OTELC_TABLESIZE(attr), "info log from worker %d (span_root)", worker->id);
+			OTELC_OPS(*logger, log, OTELC_LOG_SEVERITY_DEBUG, 0, NULL, span_id, sizeof(span_id), trace_id, sizeof(trace_id), trace_flags, &ts, NULL, attr, OTELC_TABLESIZE(attr), "debug log from worker %d (span_root)", worker->id);
+			OTELC_OPS(*logger, log_span, OTELC_LOG_SEVERITY_INFO, 0, NULL, *span_root, &ts, NULL, attr, OTELC_TABLESIZE(attr), "info log from worker %d (span_root)", worker->id);
 		}
 		else if (worker->otel_state == WORKER_STATE_SPAN_CHILD_START) {
 			if (_NULL(*tracer))

@@ -1169,7 +1169,7 @@ int main(int argc, char **argv)
 
     /* Emit a log record */
     logger->ops->log_span(logger, OTELC_LOG_SEVERITY_INFO,
-        0, NULL, NULL, NULL, NULL, 0,
+        0, NULL, NULL, NULL, NULL, NULL, 0,
         "Application started successfully");
 
     /* Clean up */
