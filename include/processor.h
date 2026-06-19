@@ -155,6 +155,39 @@ private:
 };
 
 
+/***
+ * Exporter wrapper that counts metric-export outcomes.
+ *
+ * The metrics pipeline uses a periodic reader rather than a queuing batch
+ * processor, so there is no queue depth or drop count to track.  This wrapper
+ * records only the Export() success and failure tallies and the time of the
+ * last successful export, mirroring the span and log exporter wrappers.  All
+ * PushMetricExporter interface methods are forwarded to the wrapped exporter.
+ */
+class otel_counting_metric_exporter : public otel_sdk_metrics::PushMetricExporter
+{
+public:
+	otel_counting_metric_exporter(std::unique_ptr<otel_sdk_metrics::PushMetricExporter> &&exporter);
+
+	otel_sdk_common::ExportResult Export(const otel_sdk_metrics::ResourceMetrics &data) noexcept override;
+	otel_sdk_metrics::AggregationTemporality GetAggregationTemporality(otel_sdk_metrics::InstrumentType instrument_type) const noexcept override;
+	bool ForceFlush(std::chrono::microseconds timeout = (std::chrono::microseconds::max)()) noexcept override;
+	bool Shutdown(std::chrono::microseconds timeout = (std::chrono::microseconds::max)()) noexcept override;
+
+	static uint64_t export_count(bool success) noexcept
+	{
+		return (success ? export_ok_ : export_fail_).load(std::memory_order_relaxed);
+	}
+	static int64_t last_export_age_ms() noexcept;
+
+private:
+	std::unique_ptr<otel_sdk_metrics::PushMetricExporter> inner_;
+	static std::atomic<uint64_t>                          export_ok_;
+	static std::atomic<uint64_t>                          export_fail_;
+	static std::atomic<int64_t>                           last_export_ms_;
+};
+
+
 int otel_tracer_processor_create(struct otelc_tracer *tracer, std::unique_ptr<otel_sdk_trace::SpanExporter> &exporter, std::unique_ptr<otel_sdk_trace::SpanProcessor> &processor, const char *name = nullptr);
 int otel_logger_processor_create(struct otelc_logger *logger, std::unique_ptr<otel_sdk_logs::LogRecordExporter> &exporter, std::unique_ptr<otel_sdk_logs::LogRecordProcessor> &processor, const char *name = nullptr);
 

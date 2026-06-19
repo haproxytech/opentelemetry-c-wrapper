@@ -24,6 +24,9 @@ std::atomic<int64_t>  otel_counting_span_exporter::last_export_ms_{0};
 std::atomic<uint64_t> otel_counting_log_exporter::export_ok_{0};
 std::atomic<uint64_t> otel_counting_log_exporter::export_fail_{0};
 std::atomic<int64_t>  otel_counting_log_exporter::last_export_ms_{0};
+std::atomic<uint64_t> otel_counting_metric_exporter::export_ok_{0};
+std::atomic<uint64_t> otel_counting_metric_exporter::export_fail_{0};
+std::atomic<int64_t>  otel_counting_metric_exporter::last_export_ms_{0};
 
 std::atomic<otel_counting_span_processor *> otel_counting_span_processor::instance_{nullptr};
 std::atomic<otel_counting_log_processor *>  otel_counting_log_processor::instance_{nullptr};
@@ -455,6 +458,81 @@ bool otel_counting_log_processor::Shutdown(std::chrono::microseconds timeout) no
 
 /***
  * NAME
+ *   otel_counting_metric_exporter - exporter wrapper that counts metric exports
+ *
+ * DESCRIPTION
+ *   Decorates a PushMetricExporter to record the outcome of each periodic
+ *   metric export.  The periodic reader calls Export() once per export
+ *   interval; this wrapper tallies the success and failure results and stamps
+ *   the time of the last successful export.  The other PushMetricExporter
+ *   methods are forwarded to the wrapped exporter unchanged.
+ */
+otel_counting_metric_exporter::otel_counting_metric_exporter(std::unique_ptr<otel_sdk_metrics::PushMetricExporter> &&exporter)
+	: inner_(std::move(exporter))
+{
+}
+
+
+otel_sdk_common::ExportResult otel_counting_metric_exporter::Export(const otel_sdk_metrics::ResourceMetrics &data) noexcept
+{
+	otel_sdk_common::ExportResult result = inner_->Export(data);
+
+	if (result == otel_sdk_common::ExportResult::kSuccess) {
+		export_ok_.fetch_add(1, std::memory_order_relaxed);
+		last_export_ms_.store(otel_steady_now_ms(), std::memory_order_relaxed);
+	} else {
+		export_fail_.fetch_add(1, std::memory_order_relaxed);
+	}
+
+	return result;
+}
+
+
+otel_sdk_metrics::AggregationTemporality otel_counting_metric_exporter::GetAggregationTemporality(otel_sdk_metrics::InstrumentType instrument_type) const noexcept
+{
+	return inner_->GetAggregationTemporality(instrument_type);
+}
+
+
+bool otel_counting_metric_exporter::ForceFlush(std::chrono::microseconds timeout) noexcept
+{
+	return inner_->ForceFlush(timeout);
+}
+
+
+bool otel_counting_metric_exporter::Shutdown(std::chrono::microseconds timeout) noexcept
+{
+	return inner_->Shutdown(timeout);
+}
+
+
+/***
+ * NAME
+ *   otel_counting_metric_exporter::last_export_age_ms - age of the last export
+ *
+ * DESCRIPTION
+ *   Returns the number of milliseconds since the most recent successful metric
+ *   export, measured on the steady clock.  The value is process-wide across
+ *   all counting metric exporter instances.
+ *
+ * RETURN VALUE
+ *   Returns the age in milliseconds, or -1 when no export has yet succeeded.
+ */
+int64_t otel_counting_metric_exporter::last_export_age_ms() noexcept
+{
+	int64_t stamp = last_export_ms_.load(std::memory_order_relaxed);
+
+	if (stamp == 0)
+		return -1;
+
+	int64_t now = otel_steady_now_ms();
+
+	return (now > stamp) ? (now - stamp) : 0;
+}
+
+
+/***
+ * NAME
  *   otelc_pipeline_status_get - export-pipeline status for all signals
  *
  * SYNOPSIS
@@ -498,9 +576,9 @@ void otelc_pipeline_status_get(struct otelc_pipeline_status *status)
 	status->metrics.dropped        = -1;
 	status->metrics.queue_depth    = -1;
 	status->metrics.queue_capacity = -1;
-	status->metrics.export_ok      = -1;
-	status->metrics.export_fail    = -1;
-	status->metrics.last_export_ms = -1;
+	status->metrics.export_ok      = OTEL_CAST_STATIC(int64_t, otel_counting_metric_exporter::export_count(true));
+	status->metrics.export_fail    = OTEL_CAST_STATIC(int64_t, otel_counting_metric_exporter::export_count(false));
+	status->metrics.last_export_ms = otel_counting_metric_exporter::last_export_age_ms();
 
 	OTELC_RETURN();
 }

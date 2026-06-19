@@ -199,7 +199,16 @@ int otel_meter_reader_create(struct otelc_meter *meter, std::unique_ptr<otel_sdk
 			rt_options.periodic_thread_instrumentation = thread_instrumentation;
 	}
 
-	auto reader_maybe = otel::make_unique_nothrow<otel_sdk_metrics::PeriodicExportingMetricReader>(std::move(exporter), options, rt_options);
+	/*
+	 * Wrap the exporter so that the periodic reader's export outcomes are
+	 * counted and exposed through otelc_pipeline_status_get().  A metric reader
+	 * has no queue, so there is nothing to count on the way in.
+	 */
+	auto counting_exporter = otel::make_unique_nothrow<otel_counting_metric_exporter>(std::move(exporter));
+	if (OTEL_NULL(counting_exporter))
+		OTEL_METER_RETURN_INT("Unable to create counting metric exporter");
+
+	auto reader_maybe = otel::make_unique_nothrow<otel_sdk_metrics::PeriodicExportingMetricReader>(std::move(counting_exporter), options, rt_options);
 	if (OTEL_NULL(reader_maybe))
 		OTEL_METER_RETURN_INT("Unable to create Periodic Exporting Metric Reader");
 
