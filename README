@@ -408,11 +408,11 @@ the API:
 
 Additional utility functions complete the public API:
 
-  * otelc_ext_init()                - register custom malloc/free/thread-ID
-  * otelc_log_set_handler()         - install an SDK diagnostic log callback
-  * otelc_log_set_level()           - set the SDK internal log level
-  * otelc_processor_dropped_count() - query dropped span/log counts
-  * otelc_span_context_create()     - construct a span context from raw IDs
+  * otelc_ext_init()            - register custom malloc/free/thread-ID
+  * otelc_log_set_handler()     - install an SDK diagnostic log callback
+  * otelc_log_set_level()       - set the SDK internal log level
+  * otelc_pipeline_status()     - read the export-pipeline status
+  * otelc_span_context_create() - construct a span context from raw IDs
 
 All public headers reside under include/opentelemetry-c-wrapper/.  Including
 <opentelemetry-c-wrapper/include.h> pulls in all of them.
@@ -865,9 +865,8 @@ batches at regular intervals.  Additional keys:
   max_export_batch_size (integer, default: 512, range: 1-65536)
       Maximum number of records per export batch.
 
-When the queue fills up, new records are silently dropped.  The library provides
-otelc_processor_dropped_count() to monitor drop rates (see section 11 for
-details).
+When the queue fills up, new records are silently dropped.  The library reports
+the drop count through otelc_pipeline_status() (see section 11 for details).
 
 Type "single" exports each record immediately without batching.  No additional
 configuration keys beyond 'type' and 'thread_name'.
@@ -1240,9 +1239,27 @@ occur:
 
 Drops are an expected part of the SDK's back-pressure mechanism -- they keep the
 application from blocking or running out of memory.  The wrapper library exposes
-otelc_processor_dropped_count(type) (type 0 for traces, 1 for logs) so that
-callers can monitor drop rates and adjust batch processor settings or collector
-capacity accordingly.
+the full export-pipeline state through otelc_pipeline_status(), which fills a
+struct otelc_pipeline_status with one struct otelc_export_status per signal
+(traces, logs, and metrics) so that callers can monitor drops and adjust batch
+processor settings or collector capacity accordingly.
+
+Each otelc_export_status carries the drop count (dropped), how full the batch
+queue is (queue_depth and queue_capacity), the successful and failed export
+counts (export_ok and export_fail), and the age in milliseconds of the most
+recent successful export (last_export_ms, or -1 before the first one).  A rising
+export_fail count is the network-side counterpart to a queue-full drop: the
+queue drains, but the collector rejects or never receives the batches.
+
+Metrics are driven by a periodic reader rather than a batch processor and have
+no queue, so the dropped, queue_depth, and queue_capacity fields of the metrics
+member are always -1; only its export fields are meaningful.  The reader exports
+on its configured interval whether or not any instrument has recorded data, so
+the metric export count tracks those cycles rather than data volume and climbs
+even when no metric is produced.  Note that asynchronous exporters (OTLP/HTTP
+and OTLP/gRPC) count an export as successful once the batch is handed off for
+delivery, so transport failures surface later through the diagnostic log handler
+installed with otelc_log_set_handler(), not in export_fail.
 
 Additional limitations:
   * Span lifecycle: Spans are stored in a shared map accessible from any thread.
@@ -1257,5 +1274,5 @@ Additional limitations:
     warning to stderr ("BatchSpanProcessor queue is full - dropping span.")
     when a span is dropped, but the BatchLogRecordProcessor silently
     discards log records without any diagnostic output.  The wrapper library
-    provides otelc_processor_dropped_count() to query drop counts for both
-    signal types uniformly.
+    reports drop counts for both signal types uniformly through
+    otelc_pipeline_status().
