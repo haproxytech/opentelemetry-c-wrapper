@@ -21,8 +21,12 @@ std::atomic<uint64_t> otel_counting_log_processor::dropped_count_{0};
 std::atomic<uint64_t> otel_counting_span_exporter::export_ok_{0};
 std::atomic<uint64_t> otel_counting_span_exporter::export_fail_{0};
 std::atomic<int64_t>  otel_counting_span_exporter::last_export_ms_{0};
+std::atomic<uint64_t> otel_counting_log_exporter::export_ok_{0};
+std::atomic<uint64_t> otel_counting_log_exporter::export_fail_{0};
+std::atomic<int64_t>  otel_counting_log_exporter::last_export_ms_{0};
 
 std::atomic<otel_counting_span_processor *> otel_counting_span_processor::instance_{nullptr};
+std::atomic<otel_counting_log_processor *>  otel_counting_log_processor::instance_{nullptr};
 
 
 /***
@@ -279,7 +283,41 @@ otel_sdk_common::ExportResult otel_counting_log_exporter::Export(const otel_nost
 {
 	consumed_->fetch_add(records.size(), std::memory_order_relaxed);
 
-	return inner_->Export(records);
+	otel_sdk_common::ExportResult result = inner_->Export(records);
+
+	if (result == otel_sdk_common::ExportResult::kSuccess) {
+		export_ok_.fetch_add(1, std::memory_order_relaxed);
+		last_export_ms_.store(otel_steady_now_ms(), std::memory_order_relaxed);
+	} else {
+		export_fail_.fetch_add(1, std::memory_order_relaxed);
+	}
+
+	return result;
+}
+
+
+/***
+ * NAME
+ *   otel_counting_log_exporter::last_export_age_ms - age of the last export
+ *
+ * DESCRIPTION
+ *   Returns the number of milliseconds since the most recent successful log
+ *   record export, measured on the steady clock.  The value is process-wide
+ *   across all counting log exporter instances.
+ *
+ * RETURN VALUE
+ *   Returns the age in milliseconds, or -1 when no export has yet succeeded.
+ */
+int64_t otel_counting_log_exporter::last_export_age_ms() noexcept
+{
+	int64_t stamp = last_export_ms_.load(std::memory_order_relaxed);
+
+	if (stamp == 0)
+		return -1;
+
+	int64_t now = otel_steady_now_ms();
+
+	return (now > stamp) ? (now - stamp) : 0;
 }
 
 
@@ -318,6 +356,62 @@ bool otel_counting_log_exporter::Shutdown(std::chrono::microseconds timeout) noe
 otel_counting_log_processor::otel_counting_log_processor(std::unique_ptr<otel_sdk_logs::BatchLogRecordProcessor> &&inner, std::shared_ptr<std::atomic<uint64_t>> consumed, size_t max_queue_size)
 	: consumed_(std::move(consumed)), max_queue_size_(max_queue_size), inner_(std::move(inner))
 {
+	instance_.store(this, std::memory_order_release);
+}
+
+
+otel_counting_log_processor::~otel_counting_log_processor()
+{
+	otel_counting_log_processor *self = this;
+
+	instance_.compare_exchange_strong(self, nullptr, std::memory_order_acq_rel);
+}
+
+
+/***
+ * NAME
+ *   otel_counting_log_processor::queue_depth - current log queue depth
+ *
+ * DESCRIPTION
+ *   Returns how many log records are currently buffered in the batch processor
+ *   of the most recently created counting log processor, computed as produced
+ *   minus consumed.  The guard yields 0 when consumed has momentarily raced
+ *   past produced.
+ *
+ * RETURN VALUE
+ *   Returns the queue depth, or 0 when no counting log processor exists.
+ */
+int64_t otel_counting_log_processor::queue_depth() noexcept
+{
+	otel_counting_log_processor *p = instance_.load(std::memory_order_acquire);
+	uint64_t                     prod, cons;
+
+	if (p == nullptr)
+		return 0;
+
+	prod = p->produced_.load(std::memory_order_relaxed);
+	cons = p->consumed_->load(std::memory_order_relaxed);
+
+	return (prod > cons) ? OTEL_CAST_STATIC(int64_t, prod - cons) : 0;
+}
+
+
+/***
+ * NAME
+ *   otel_counting_log_processor::queue_capacity - configured log queue size
+ *
+ * DESCRIPTION
+ *   Returns the maximum queue size (max_queue_size) of the most recently
+ *   created counting log processor.
+ *
+ * RETURN VALUE
+ *   Returns the queue capacity, or 0 when no counting log processor exists.
+ */
+int64_t otel_counting_log_processor::queue_capacity() noexcept
+{
+	otel_counting_log_processor *p = instance_.load(std::memory_order_acquire);
+
+	return (p == nullptr) ? 0 : OTEL_CAST_STATIC(int64_t, p->max_queue_size_);
 }
 
 
@@ -394,12 +488,12 @@ void otelc_pipeline_status_get(struct otelc_pipeline_status *status)
 	status->traces.export_fail     = OTEL_CAST_STATIC(int64_t, otel_counting_span_exporter::export_count(false));
 	status->traces.last_export_ms  = otel_counting_span_exporter::last_export_age_ms();
 
-	status->logs.dropped           = -1;
-	status->logs.queue_depth       = -1;
-	status->logs.queue_capacity    = -1;
-	status->logs.export_ok         = -1;
-	status->logs.export_fail       = -1;
-	status->logs.last_export_ms    = -1;
+	status->logs.dropped           = OTEL_CAST_STATIC(int64_t, otel_counting_log_processor::dropped_count());
+	status->logs.queue_depth       = otel_counting_log_processor::queue_depth();
+	status->logs.queue_capacity    = otel_counting_log_processor::queue_capacity();
+	status->logs.export_ok         = OTEL_CAST_STATIC(int64_t, otel_counting_log_exporter::export_count(true));
+	status->logs.export_fail       = OTEL_CAST_STATIC(int64_t, otel_counting_log_exporter::export_count(false));
+	status->logs.last_export_ms    = otel_counting_log_exporter::last_export_age_ms();
 
 	status->metrics.dropped        = -1;
 	status->metrics.queue_depth    = -1;

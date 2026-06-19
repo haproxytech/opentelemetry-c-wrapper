@@ -101,9 +101,18 @@ public:
 	bool ForceFlush(std::chrono::microseconds timeout = (std::chrono::microseconds::max)()) noexcept override;
 	bool Shutdown(std::chrono::microseconds timeout = (std::chrono::microseconds::max)()) noexcept override;
 
+	static uint64_t export_count(bool success) noexcept
+	{
+		return (success ? export_ok_ : export_fail_).load(std::memory_order_relaxed);
+	}
+	static int64_t last_export_age_ms() noexcept;
+
 private:
 	std::unique_ptr<otel_sdk_logs::LogRecordExporter> inner_;
 	std::shared_ptr<std::atomic<uint64_t>>            consumed_;
+	static std::atomic<uint64_t>                      export_ok_;
+	static std::atomic<uint64_t>                      export_fail_;
+	static std::atomic<int64_t>                       last_export_ms_;
 };
 
 
@@ -118,6 +127,7 @@ class otel_counting_log_processor : public otel_sdk_logs::LogRecordProcessor
 {
 public:
 	otel_counting_log_processor(std::unique_ptr<otel_sdk_logs::BatchLogRecordProcessor> &&inner, std::shared_ptr<std::atomic<uint64_t>> consumed, size_t max_queue_size);
+	~otel_counting_log_processor();
 
 	std::unique_ptr<otel_sdk_logs::Recordable> MakeRecordable() noexcept override;
 	void OnEmit(std::unique_ptr<otel_sdk_logs::Recordable> &&record) noexcept override;
@@ -132,6 +142,8 @@ public:
 	{
 		dropped_count_.store(0, std::memory_order_relaxed);
 	}
+	static int64_t queue_depth() noexcept;
+	static int64_t queue_capacity() noexcept;
 
 private:
 	std::shared_ptr<std::atomic<uint64_t>>                  consumed_;
@@ -139,6 +151,7 @@ private:
 	size_t                                                  max_queue_size_;
 	std::unique_ptr<otel_sdk_logs::BatchLogRecordProcessor> inner_;
 	static std::atomic<uint64_t>                            dropped_count_;
+	static std::atomic<otel_counting_log_processor *>       instance_;
 };
 
 
