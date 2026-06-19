@@ -18,6 +18,30 @@
 
 std::atomic<uint64_t> otel_counting_span_processor::dropped_count_{0};
 std::atomic<uint64_t> otel_counting_log_processor::dropped_count_{0};
+std::atomic<uint64_t> otel_counting_span_exporter::export_ok_{0};
+std::atomic<uint64_t> otel_counting_span_exporter::export_fail_{0};
+std::atomic<int64_t>  otel_counting_span_exporter::last_export_ms_{0};
+
+std::atomic<otel_counting_span_processor *> otel_counting_span_processor::instance_{nullptr};
+
+
+/***
+ * NAME
+ *   otel_steady_now_ms - current steady-clock time in milliseconds
+ *
+ * DESCRIPTION
+ *   Returns the steady (monotonic) clock reading in milliseconds.  Used to
+ *   stamp the time of the last successful export and to compute its age; the
+ *   steady clock is immune to wall-clock adjustments, so the age never goes
+ *   backwards.
+ *
+ * RETURN VALUE
+ *   Returns the elapsed milliseconds of the steady clock epoch.
+ */
+static int64_t otel_steady_now_ms()
+{
+	return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+}
 
 
 /***
@@ -51,7 +75,41 @@ otel_sdk_common::ExportResult otel_counting_span_exporter::Export(const otel_nos
 {
 	consumed_->fetch_add(spans.size(), std::memory_order_relaxed);
 
-	return inner_->Export(spans);
+	otel_sdk_common::ExportResult result = inner_->Export(spans);
+
+	if (result == otel_sdk_common::ExportResult::kSuccess) {
+		export_ok_.fetch_add(1, std::memory_order_relaxed);
+		last_export_ms_.store(otel_steady_now_ms(), std::memory_order_relaxed);
+	} else {
+		export_fail_.fetch_add(1, std::memory_order_relaxed);
+	}
+
+	return result;
+}
+
+
+/***
+ * NAME
+ *   otel_counting_span_exporter::last_export_age_ms - age of the last export
+ *
+ * DESCRIPTION
+ *   Returns the number of milliseconds since the most recent successful span
+ *   export, measured on the steady clock.  The value is process-wide across
+ *   all counting span exporter instances.
+ *
+ * RETURN VALUE
+ *   Returns the age in milliseconds, or -1 when no export has yet succeeded.
+ */
+int64_t otel_counting_span_exporter::last_export_age_ms() noexcept
+{
+	int64_t stamp = last_export_ms_.load(std::memory_order_relaxed);
+
+	if (stamp == 0)
+		return -1;
+
+	int64_t now = otel_steady_now_ms();
+
+	return (now > stamp) ? (now - stamp) : 0;
 }
 
 
@@ -83,11 +141,67 @@ bool otel_counting_span_exporter::Shutdown(std::chrono::microseconds timeout) no
  *
  *   The drop counter is shared across all otel_counting_span_processor
  *   instances and can be queried via the static dropped_count() method or
- *   the C-linkage function otelc_processor_dropped_count().
+ *   the C-linkage function otelc_pipeline_status_get().
  */
 otel_counting_span_processor::otel_counting_span_processor(std::unique_ptr<otel_sdk_trace::BatchSpanProcessor> &&inner, std::shared_ptr<std::atomic<uint64_t>> consumed, size_t max_queue_size)
 	: consumed_(std::move(consumed)), max_queue_size_(max_queue_size), inner_(std::move(inner))
 {
+	instance_.store(this, std::memory_order_release);
+}
+
+
+otel_counting_span_processor::~otel_counting_span_processor()
+{
+	otel_counting_span_processor *self = this;
+
+	instance_.compare_exchange_strong(self, nullptr, std::memory_order_acq_rel);
+}
+
+
+/***
+ * NAME
+ *   otel_counting_span_processor::queue_depth - current span queue depth
+ *
+ * DESCRIPTION
+ *   Returns how many spans are currently buffered in the batch processor of the
+ *   most recently created counting span processor, computed as produced minus
+ *   consumed.  The guard yields 0 when consumed has momentarily raced past
+ *   produced.
+ *
+ * RETURN VALUE
+ *   Returns the queue depth, or 0 when no counting span processor exists.
+ */
+int64_t otel_counting_span_processor::queue_depth() noexcept
+{
+	otel_counting_span_processor *p = instance_.load(std::memory_order_acquire);
+	uint64_t                      prod, cons;
+
+	if (p == nullptr)
+		return 0;
+
+	prod = p->produced_.load(std::memory_order_relaxed);
+	cons = p->consumed_->load(std::memory_order_relaxed);
+
+	return (prod > cons) ? OTEL_CAST_STATIC(int64_t, prod - cons) : 0;
+}
+
+
+/***
+ * NAME
+ *   otel_counting_span_processor::queue_capacity - configured span queue size
+ *
+ * DESCRIPTION
+ *   Returns the maximum queue size (max_queue_size) of the most recently
+ *   created counting span processor.
+ *
+ * RETURN VALUE
+ *   Returns the queue capacity, or 0 when no counting span processor exists.
+ */
+int64_t otel_counting_span_processor::queue_capacity() noexcept
+{
+	otel_counting_span_processor *p = instance_.load(std::memory_order_acquire);
+
+	return (p == nullptr) ? 0 : OTEL_CAST_STATIC(int64_t, p->max_queue_size_);
 }
 
 
@@ -198,7 +312,7 @@ bool otel_counting_log_exporter::Shutdown(std::chrono::microseconds timeout) noe
  *
  *   The drop counter is shared across all otel_counting_log_processor instances
  *   and can be queried via the static dropped_count() method or the C-linkage
- *   function otelc_processor_dropped_count().
+ *   function otelc_pipeline_status_get().
  */
 
 otel_counting_log_processor::otel_counting_log_processor(std::unique_ptr<otel_sdk_logs::BatchLogRecordProcessor> &&inner, std::shared_ptr<std::atomic<uint64_t>> consumed, size_t max_queue_size)
@@ -247,33 +361,54 @@ bool otel_counting_log_processor::Shutdown(std::chrono::microseconds timeout) no
 
 /***
  * NAME
- *   otelc_processor_dropped_count - returns the number of dropped items
+ *   otelc_pipeline_status_get - export-pipeline status for all signals
  *
  * SYNOPSIS
- *   int64_t otelc_processor_dropped_count(int type)
+ *   void otelc_pipeline_status_get(struct otelc_pipeline_status *status)
  *
  * ARGUMENTS
- *   type - processor type: 0 for traces, 1 for logs
+ *   status - pointer to a caller-allocated structure to fill
  *
  * DESCRIPTION
- *   Returns the cumulative number of spans or log records that were dropped
- *   because the batch processor queue was full.  The type argument selects
- *   which counter to query: 0 for trace spans, 1 for log records.
+ *   Fills the caller-provided otelc_pipeline_status with the drop count,
+ *   batch-queue depth and capacity, successful and failed export counts, and
+ *   the age of the last successful export for the trace, log, and metric
+ *   signals.  Metrics are driven by a periodic reader rather than a batch
+ *   processor, so their dropped, queue_depth, and queue_capacity fields are
+ *   reported as -1.
  *
  * RETURN VALUE
- *   Returns the drop count as a non-negative value, or OTELC_RET_ERROR if the
- *   type argument is invalid.
+ *   This function does not return a value.
  */
-int64_t otelc_processor_dropped_count(int type)
+void otelc_pipeline_status_get(struct otelc_pipeline_status *status)
 {
-	OTELC_FUNC("%d", type);
+	OTELC_FUNC("%p", status);
 
-	if (type == 0)
-		OTELC_RETURN_EX(OTEL_CAST_STATIC(int64_t, otel_counting_span_processor::dropped_count()), int64_t, "%" PRId64);
-	else if (type == 1)
-		OTELC_RETURN_EX(OTEL_CAST_STATIC(int64_t, otel_counting_log_processor::dropped_count()), int64_t, "%" PRId64);
+	if (status == nullptr)
+		OTELC_RETURN();
 
-	OTELC_RETURN_EX(OTELC_RET_ERROR, int64_t, "%" PRId64);
+	status->traces.dropped         = OTEL_CAST_STATIC(int64_t, otel_counting_span_processor::dropped_count());
+	status->traces.queue_depth     = otel_counting_span_processor::queue_depth();
+	status->traces.queue_capacity  = otel_counting_span_processor::queue_capacity();
+	status->traces.export_ok       = OTEL_CAST_STATIC(int64_t, otel_counting_span_exporter::export_count(true));
+	status->traces.export_fail     = OTEL_CAST_STATIC(int64_t, otel_counting_span_exporter::export_count(false));
+	status->traces.last_export_ms  = otel_counting_span_exporter::last_export_age_ms();
+
+	status->logs.dropped           = -1;
+	status->logs.queue_depth       = -1;
+	status->logs.queue_capacity    = -1;
+	status->logs.export_ok         = -1;
+	status->logs.export_fail       = -1;
+	status->logs.last_export_ms    = -1;
+
+	status->metrics.dropped        = -1;
+	status->metrics.queue_depth    = -1;
+	status->metrics.queue_capacity = -1;
+	status->metrics.export_ok      = -1;
+	status->metrics.export_fail    = -1;
+	status->metrics.last_export_ms = -1;
+
+	OTELC_RETURN();
 }
 
 

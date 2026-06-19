@@ -1690,13 +1690,17 @@ const char *otel_strerror(int errnum)
  */
 void otelc_statistics(char *buffer, size_t bufsiz)
 {
+	struct otelc_pipeline_status status;
+
 	OTELC_FUNC("%p, %zu", buffer, bufsiz);
 
 	if (OTEL_NULL(buffer) || (bufsiz < 64))
 		OTELC_RETURN();
 
-	const auto cnt_0 = otelc_processor_dropped_count(0);
-	const auto cnt_1 = otelc_processor_dropped_count(1);
+	otelc_pipeline_status_get(&status);
+
+	const auto cnt_0 = status.traces.dropped;
+	const auto cnt_1 = status.logs.dropped;
 
 #ifdef OTELC_USE_STATIC_HANDLE
 	(void)snprintf(buffer, bufsiz, OTEL_HANDLE_FMT("span:") OTEL_HANDLE_FMT(", context:") OTEL_HANDLE_FMT(", instrument:") OTEL_HANDLE_FMT(", view:") ", dropped: %" PRId64 " %" PRId64, OTEL_HANDLE_ARGS(otel_span), OTEL_HANDLE_ARGS(otel_span_context), OTEL_HANDLE_ARGS(otel_instrument), OTEL_HANDLE_ARGS(otel_view), cnt_0, cnt_1);

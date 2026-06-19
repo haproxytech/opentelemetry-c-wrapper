@@ -23,7 +23,7 @@ global:
 	otelc_kv_destroy;
 	otelc_kv_new;
 	otelc_kv_add;
-	otelc_processor_dropped_count;
+	otelc_pipeline_status_get;
 	otelc_statistics;
 	otelc_statistics_check;
 	otelc_text_map_add;

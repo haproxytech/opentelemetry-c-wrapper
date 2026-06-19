@@ -134,6 +134,30 @@ struct otelc_text_map {
 	bool                     is_dynamic; /* True if the structure was dynamically allocated, false otherwise. */
 };
 
+/***
+ * Export-pipeline status for a single signal.  Fields that do not apply to the
+ * signal are reported as -1; the metric signal has no batch queue, so its
+ * dropped, queue_depth, and queue_capacity fields are always -1.
+ */
+struct otelc_export_status {
+	int64_t dropped;        /* Records dropped because the batch queue was full, or -1 if not applicable. */
+	int64_t queue_depth;    /* Records currently buffered in the batch queue, or -1 if not applicable. */
+	int64_t queue_capacity; /* Configured capacity of the batch queue, or -1 if not applicable. */
+	int64_t export_ok;      /* Number of successful exporter Export() calls. */
+	int64_t export_fail;    /* Number of failed exporter Export() calls. */
+	int64_t last_export_ms; /* Milliseconds since the last successful export, or -1 if none yet. */
+};
+
+/***
+ * Export-pipeline status for all signals, as returned by
+ * otelc_pipeline_status_get().
+ */
+struct otelc_pipeline_status {
+	struct otelc_export_status traces;  /* Trace export-pipeline status. */
+	struct otelc_export_status logs;    /* Log export-pipeline status. */
+	struct otelc_export_status metrics; /* Metric export-pipeline status. */
+};
+
 struct otelc_tracer;
 struct otelc_meter;
 struct otelc_logger;
@@ -184,7 +208,7 @@ void                   otelc_kv_destroy(struct otelc_kv **kv, size_t n);
 
 int                    otelc_init(const char *cfgfile, char **err);
 void                   otelc_deinit(struct otelc_tracer **tracer, struct otelc_meter **meter, struct otelc_logger **logger);
-int64_t                otelc_processor_dropped_count(int type);
+void                   otelc_pipeline_status_get(struct otelc_pipeline_status *status);
 
 void                   otelc_log_set_handler(otelc_log_handler_cb_t handler, void *ctx, bool forward_attr);
 void                   otelc_log_set_level(otelc_log_level_t level);
