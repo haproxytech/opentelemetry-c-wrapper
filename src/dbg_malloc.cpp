@@ -127,6 +127,15 @@ static void otelc_dbg_mem_alloc(const char *func, int line, void *old_ptr, void 
 	OTELC_FUNC_EX(MEM, "\"%s\", %d, %p, %p, %zu", OTELC_STR_ARG(func), line, old_ptr, ptr, size);
 
 	if (OTEL_NULL(dbg_mem)) {
+		/*
+		 * The tracker is not yet initialized (this allocation ran
+		 * before otelc_dbg_mem_init()).  The block still carries the
+		 * reserved metadata header, and otelc_dbg_free() relies on a
+		 * valid magic to locate the allocation base; initialize the
+		 * header here so the block stays freeable even while untracked.
+		 */
+		otelc_dbg_set_metadata(ptr, nullptr);
+
 		OTELC_RETURN();
 	}
 	else if (OTEL_NULL(ptr)) {
