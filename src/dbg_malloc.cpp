@@ -453,16 +453,24 @@ void otelc_dbg_free(const char *func, int line, void *ptr)
 
 	OTELC_FUNC_EX(MEM, "\"%s\", %d, %p", OTELC_STR_ARG(func), line, ptr);
 
-	otelc_dbg_mem_release(func, line, ptr, OTELC_DBG_MEM_OP_FREE);
-
 	if (OTEL_NULL(ptr))
 		OTELC_RETURN();
 
+	/***
+	 * If memory was not allocated via these debug functions, it must not be
+	 * released through them either; free it transparently, as the realloc
+	 * path does, rather than flagging it as an invalid free.
+	 */
 	metadata = DBG_MEM_DATA(ptr);
-	if (OTEL_NULL(metadata) || OTEL_NULL(metadata->data) || (metadata->magic != DBG_MEM_MAGIC))
+	if (OTEL_NULL(metadata) || OTEL_NULL(metadata->data) || (metadata->magic != DBG_MEM_MAGIC)) {
 		free(ptr);
-	else
-		free(DBG_MEM_DATA(ptr));
+
+		OTELC_RETURN();
+	}
+
+	otelc_dbg_mem_release(func, line, ptr, OTELC_DBG_MEM_OP_FREE);
+
+	free(DBG_MEM_DATA(ptr));
 
 	OTELC_RETURN();
 }
