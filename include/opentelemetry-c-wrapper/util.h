@@ -137,7 +137,8 @@ struct otelc_text_map {
 /***
  * Export-pipeline status for a single signal.  Fields that do not apply to the
  * signal are reported as -1; the metric signal has no batch queue, so its
- * dropped, queue_depth, and queue_capacity fields are always -1.
+ * dropped, queue_depth, queue_capacity, records_ok, and records_fail fields
+ * are always -1.
  */
 struct otelc_export_status {
 	int64_t dropped;        /* Records dropped because the batch queue was full, or -1 if not applicable. */
@@ -145,6 +146,8 @@ struct otelc_export_status {
 	int64_t queue_capacity; /* Configured capacity of the batch queue, or -1 if not applicable. */
 	int64_t export_ok;      /* Number of successful exporter Export() calls. */
 	int64_t export_fail;    /* Number of failed exporter Export() calls. */
+	int64_t records_ok;     /* Records in successful Export() calls, or -1 if not applicable. */
+	int64_t records_fail;   /* Records in failed Export() calls, or -1 if not applicable. */
 	int64_t last_export_ms; /* Milliseconds since the last successful export, or -1 if none yet. */
 };
 

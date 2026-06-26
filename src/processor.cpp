@@ -20,9 +20,13 @@ std::atomic<uint64_t> otel_counting_span_processor::dropped_count_{0};
 std::atomic<uint64_t> otel_counting_log_processor::dropped_count_{0};
 std::atomic<uint64_t> otel_counting_span_exporter::export_ok_{0};
 std::atomic<uint64_t> otel_counting_span_exporter::export_fail_{0};
+std::atomic<uint64_t> otel_counting_span_exporter::records_ok_{0};
+std::atomic<uint64_t> otel_counting_span_exporter::records_fail_{0};
 std::atomic<int64_t>  otel_counting_span_exporter::last_export_ms_{0};
 std::atomic<uint64_t> otel_counting_log_exporter::export_ok_{0};
 std::atomic<uint64_t> otel_counting_log_exporter::export_fail_{0};
+std::atomic<uint64_t> otel_counting_log_exporter::records_ok_{0};
+std::atomic<uint64_t> otel_counting_log_exporter::records_fail_{0};
 std::atomic<int64_t>  otel_counting_log_exporter::last_export_ms_{0};
 std::atomic<uint64_t> otel_counting_metric_exporter::export_ok_{0};
 std::atomic<uint64_t> otel_counting_metric_exporter::export_fail_{0};
@@ -86,9 +90,11 @@ otel_sdk_common::ExportResult otel_counting_span_exporter::Export(const otel_nos
 
 	if (result == otel_sdk_common::ExportResult::kSuccess) {
 		export_ok_.fetch_add(1, std::memory_order_relaxed);
+		records_ok_.fetch_add(spans.size(), std::memory_order_relaxed);
 		last_export_ms_.store(otel_steady_now_ms(), std::memory_order_relaxed);
 	} else {
 		export_fail_.fetch_add(1, std::memory_order_relaxed);
+		records_fail_.fetch_add(spans.size(), std::memory_order_relaxed);
 	}
 
 	return result;
@@ -290,9 +296,11 @@ otel_sdk_common::ExportResult otel_counting_log_exporter::Export(const otel_nost
 
 	if (result == otel_sdk_common::ExportResult::kSuccess) {
 		export_ok_.fetch_add(1, std::memory_order_relaxed);
+		records_ok_.fetch_add(records.size(), std::memory_order_relaxed);
 		last_export_ms_.store(otel_steady_now_ms(), std::memory_order_relaxed);
 	} else {
 		export_fail_.fetch_add(1, std::memory_order_relaxed);
+		records_fail_.fetch_add(records.size(), std::memory_order_relaxed);
 	}
 
 	return result;
@@ -543,11 +551,12 @@ int64_t otel_counting_metric_exporter::last_export_age_ms() noexcept
  *
  * DESCRIPTION
  *   Fills the caller-provided otelc_pipeline_status with the drop count,
- *   batch-queue depth and capacity, successful and failed export counts, and
- *   the age of the last successful export for the trace, log, and metric
- *   signals.  Metrics are driven by a periodic reader rather than a batch
- *   processor, so their dropped, queue_depth, and queue_capacity fields are
- *   reported as -1.
+ *   batch-queue depth and capacity, successful and failed export counts, the
+ *   records carried by successful and failed exports, and the age of the last
+ *   successful export for the trace, log, and metric signals.  Metrics are
+ *   driven by a periodic reader rather than a batch processor, so their
+ *   dropped, queue_depth, queue_capacity, records_ok, and records_fail fields
+ *   are reported as -1.
  *
  * RETURN VALUE
  *   This function does not return a value.
@@ -564,6 +573,8 @@ void otelc_pipeline_status_get(struct otelc_pipeline_status *status)
 	status->traces.queue_capacity  = otel_counting_span_processor::queue_capacity();
 	status->traces.export_ok       = OTEL_CAST_STATIC(int64_t, otel_counting_span_exporter::export_count(true));
 	status->traces.export_fail     = OTEL_CAST_STATIC(int64_t, otel_counting_span_exporter::export_count(false));
+	status->traces.records_ok      = OTEL_CAST_STATIC(int64_t, otel_counting_span_exporter::record_count(true));
+	status->traces.records_fail    = OTEL_CAST_STATIC(int64_t, otel_counting_span_exporter::record_count(false));
 	status->traces.last_export_ms  = otel_counting_span_exporter::last_export_age_ms();
 
 	status->logs.dropped           = OTEL_CAST_STATIC(int64_t, otel_counting_log_processor::dropped_count());
@@ -571,6 +582,8 @@ void otelc_pipeline_status_get(struct otelc_pipeline_status *status)
 	status->logs.queue_capacity    = otel_counting_log_processor::queue_capacity();
 	status->logs.export_ok         = OTEL_CAST_STATIC(int64_t, otel_counting_log_exporter::export_count(true));
 	status->logs.export_fail       = OTEL_CAST_STATIC(int64_t, otel_counting_log_exporter::export_count(false));
+	status->logs.records_ok        = OTEL_CAST_STATIC(int64_t, otel_counting_log_exporter::record_count(true));
+	status->logs.records_fail      = OTEL_CAST_STATIC(int64_t, otel_counting_log_exporter::record_count(false));
 	status->logs.last_export_ms    = otel_counting_log_exporter::last_export_age_ms();
 
 	status->metrics.dropped        = -1;
@@ -578,6 +591,8 @@ void otelc_pipeline_status_get(struct otelc_pipeline_status *status)
 	status->metrics.queue_capacity = -1;
 	status->metrics.export_ok      = OTEL_CAST_STATIC(int64_t, otel_counting_metric_exporter::export_count(true));
 	status->metrics.export_fail    = OTEL_CAST_STATIC(int64_t, otel_counting_metric_exporter::export_count(false));
+	status->metrics.records_ok     = -1;
+	status->metrics.records_fail   = -1;
 	status->metrics.last_export_ms = otel_counting_metric_exporter::last_export_age_ms();
 
 	OTELC_RETURN();

@@ -34,6 +34,10 @@ public:
 	{
 		return (success ? export_ok_ : export_fail_).load(std::memory_order_relaxed);
 	}
+	static uint64_t record_count(bool success) noexcept
+	{
+		return (success ? records_ok_ : records_fail_).load(std::memory_order_relaxed);
+	}
 	static int64_t last_export_age_ms() noexcept;
 
 private:
@@ -41,6 +45,8 @@ private:
 	std::shared_ptr<std::atomic<uint64_t>>        consumed_;
 	static std::atomic<uint64_t>                  export_ok_;
 	static std::atomic<uint64_t>                  export_fail_;
+	static std::atomic<uint64_t>                  records_ok_;
+	static std::atomic<uint64_t>                  records_fail_;
 	static std::atomic<int64_t>                   last_export_ms_;
 };
 
@@ -105,6 +111,10 @@ public:
 	{
 		return (success ? export_ok_ : export_fail_).load(std::memory_order_relaxed);
 	}
+	static uint64_t record_count(bool success) noexcept
+	{
+		return (success ? records_ok_ : records_fail_).load(std::memory_order_relaxed);
+	}
 	static int64_t last_export_age_ms() noexcept;
 
 private:
@@ -112,6 +122,8 @@ private:
 	std::shared_ptr<std::atomic<uint64_t>>            consumed_;
 	static std::atomic<uint64_t>                      export_ok_;
 	static std::atomic<uint64_t>                      export_fail_;
+	static std::atomic<uint64_t>                      records_ok_;
+	static std::atomic<uint64_t>                      records_fail_;
 	static std::atomic<int64_t>                       last_export_ms_;
 };
 
