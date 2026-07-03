@@ -323,7 +323,7 @@ int yaml_find(OTEL_YAML_DOC *fyd, char **err, bool is_mandatory, const char *des
 	 * functions is not satisfactory because instead of checking the entire
 	 * string, they return a positive result for a substring.
 	 */
-	(void)snprintf(fmt, sizeof(fmt), "%s %%" OTEL_YAML_BUFLEN "[^\n]s", path);
+	(void)snprintf(fmt, sizeof(fmt), "%s %%" OTEL_YAML_BUFLEN "[^\n]", path);
 PRAGMA_DIAG_IGNORE("-Wformat-nonliteral")
 	retval = fy_document_scanf(fyd, fmt, buffer);
 PRAGMA_DIAG_RESTORE
@@ -402,6 +402,8 @@ int yaml_get_sequence(OTEL_YAML_DOC *fyd, char **err, const char *path, struct o
 
 		if (OTEL_NULL(node_iter = fy_node_sequence_iterate(node_seq, &iter_seq)))
 			OTEL_ERR_RETURN_INT("'%s[%d]': error while iterating YAML sequence", path, retval);
+		else if (!fy_node_is_mapping(node_iter))
+			OTEL_ERR_RETURN_INT("'%s[%d]': error while iterating YAML sequence (not a map)", path, retval);
 
 		for (void *iter_map = nullptr; !OTEL_NULL(node_pair = fy_node_mapping_iterate(node_iter, &iter_map)); ) {
 			size_t      key_len = 0, value_len = 0;
@@ -674,7 +676,11 @@ int yaml_find_sequence(OTEL_YAML_DOC *fyd, char **err, bool is_mandatory, const 
 	(void)snprintf(path_seq, sizeof(path_seq), "/%s/%s", sequence, arg);
 	OTELC_DBG(DEBUG, "sequence path: '%s'", path_seq);
 
-	OTELC_RETURN_INT(yaml_get_sequence(fyd, err, path_seq, map));
+	const auto count = yaml_get_sequence(fyd, err, path_seq, map);
+	if ((count == 0) && is_mandatory)
+		OTEL_ERR_RETURN_INT("'%s': sequence not specified", path_seq);
+
+	OTELC_RETURN_INT(count);
 }
 
 
@@ -752,7 +758,7 @@ PRAGMA_DIAG_RESTORE
 		}
 
 #ifdef HAVE_LIBFYAML_H
-		(void)snprintf(subfmt, sizeof(subfmt), "%s %%" OTEL_YAML_BUFLEN "[^\n]s", arg_path);
+		(void)snprintf(subfmt, sizeof(subfmt), "%s %%" OTEL_YAML_BUFLEN "[^\n]", arg_path);
 PRAGMA_DIAG_IGNORE("-Wformat-nonliteral")
 		(void)snprintf(fmt, sizeof(fmt), subfmt, name);
 		rc = fy_document_scanf(fyd, fmt, subarg);
@@ -776,7 +782,7 @@ PRAGMA_DIAG_RESTORE
 		else if (arg_is_mandatory != 0)
 			OTEL_ERR_RETURN_INT("%s %s not specified", desc, path_desc);
 
-		OTELC_DBG(DEBUG, "found: '%s'", subarg);
+		OTELC_DBG(DEBUG, "rc=%d, value: '%s'", rc, subarg);
 
 		if (type == OTEL_YAML_STR) {
 			char *arg_str_ptr  = va_arg(ap, decltype(arg_str_ptr));
@@ -869,7 +875,8 @@ PRAGMA_DIAG_RESTORE
  *   A key whose value is empty is treated as if the key were not present.
  *
  *   If name is nullptr, it is resolved from path using yaml_find().  If name
- *   is non-null, the path parameter is not used.
+ *   is non-null, the path parameter is not used.  A node name must not
+ *   contain the '%' character.
  *
  * RETURN VALUE
  *   Returns the number of successfully parsed properties on success, or
@@ -899,6 +906,8 @@ int yaml_get_node(OTEL_YAML_DOC *fyd, char **err, bool is_mandatory, const char 
 
 	if (OTEL_NULL(name) || (*name == '\0'))
 		OTEL_ERR_RETURN_INT("YAML node name not specified");
+	else if (strchr(name, '%') != nullptr)
+		OTEL_ERR_RETURN_INT("'%s': invalid character in YAML node name", name);
 
 	va_start(ap, type);
 	rc = yaml_get_node_v(fyd, err, desc, name, type, ap);
