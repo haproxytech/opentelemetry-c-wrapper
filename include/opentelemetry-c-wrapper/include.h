@@ -17,6 +17,9 @@
 #define OPENTELEMETRY_C_WRAPPER_INCLUDE_H
 
 #include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+#include <sys/types.h>
 
 #ifdef OTELC_USE_INTERNAL_INCLUDES
 #  include "opentelemetry-c-wrapper/define.h"
