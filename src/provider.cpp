@@ -187,8 +187,8 @@ int otel_meter_reader_create(struct otelc_meter *meter, std::unique_ptr<otel_sdk
 	if (rc == OTELC_RET_ERROR)
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
 
-	if (export_interval < export_timeout)
-		OTEL_METER_RETURN_INT("Periodic Exporting Metric Reader: invalid configuration: export_timeout should not exceed export_interval");
+	if (export_interval <= export_timeout)
+		OTEL_METER_RETURN_INT("Periodic Exporting Metric Reader: invalid configuration: export_timeout must be less than export_interval");
 
 	options.export_interval_millis = std::chrono::milliseconds(export_interval);
 	options.export_timeout_millis  = std::chrono::milliseconds(export_timeout);
