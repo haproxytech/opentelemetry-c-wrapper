@@ -292,7 +292,8 @@ char *yaml_read(const char *file, char **err)
  * DESCRIPTION
  *   Searches for a string value in the YAML document using the specified path.
  *   If the node is found, its value is returned through the data parameter.
- *   If the node is not found and is_mandatory is true, an error is reported.
+ *   A node whose value is empty is treated as not found.  If the node is not
+ *   found and is_mandatory is true, an error is reported.
  *
  * RETURN VALUE
  *   Returns 1 on success, OTELC_RET_ERROR on failure, or 0 if the node is not
@@ -332,7 +333,7 @@ PRAGMA_DIAG_RESTORE
 #else
 
 	const auto node = ryml_get_node_by_path(fyd, path);
-	if (!node.invalid() && node.has_val())
+	if (!node.invalid() && node.has_val() && (node.val().len > 0))
 		retval = (otelc_strlcpy(data, data_size, node.val().str, node.val().len) == OTELC_RET_ERROR) ? 0 : 1;
 #endif /* HAVE_LIBFYAML_H */
 
@@ -363,7 +364,9 @@ PRAGMA_DIAG_RESTORE
  *   Retrieves a YAML sequence from the document at the specified path and
  *   populates a text map with its key-value pairs.  If the text map does not
  *   exist, it is created.  A path that does not exist in the document is not
- *   an error; in that case the text map is left untouched.
+ *   an error; in that case the text map is left untouched.  Entries with an
+ *   empty key or a non-scalar value are skipped, and an empty value is
+ *   stored as an empty string.
  *
  * RETURN VALUE
  *   Returns the number of items in the sequence, 0 if the path does not exist,
@@ -401,9 +404,15 @@ int yaml_get_sequence(OTEL_YAML_DOC *fyd, char **err, const char *path, struct o
 			OTEL_ERR_RETURN_INT("'%s[%d]': error while iterating YAML sequence", path, retval);
 
 		for (void *iter_map = nullptr; !OTEL_NULL(node_pair = fy_node_mapping_iterate(node_iter, &iter_map)); ) {
-			size_t      key_len, value_len;
+			size_t      key_len = 0, value_len = 0;
 			const char *key   = fy_node_get_scalar(fy_node_pair_key(node_pair), &key_len);
 			const char *value = fy_node_get_scalar(fy_node_pair_value(node_pair), &value_len);
+
+			if (OTEL_NULL(key) || (key_len == 0) || OTEL_NULL(value))
+				continue;
+
+			if (value_len == 0)
+				value = "";
 
 			if (OTEL_NULL(*map))
 				if (OTEL_NULL(*map = OTELC_TEXT_MAP_NEW(nullptr, count)))
@@ -429,7 +438,7 @@ int yaml_get_sequence(OTEL_YAML_DOC *fyd, char **err, const char *path, struct o
 			OTEL_ERR_RETURN_INT("'%s[%d]': error while iterating YAML sequence (not a map)", path, retval);
 
 		for (auto kv : child.children()) {
-			if (!kv.has_key() || !kv.has_val())
+			if (!kv.has_key() || (kv.key().len == 0) || !kv.has_val())
 				continue;
 
 			const auto key   = kv.key();
@@ -441,7 +450,7 @@ int yaml_get_sequence(OTEL_YAML_DOC *fyd, char **err, const char *path, struct o
 				if (OTEL_NULL(*map = OTELC_TEXT_MAP_NEW(nullptr, node.num_children())))
 					OTEL_ERR_RETURN_INT(OTEL_ERROR_MSG_ENOMEM("text map"));
 
-			if (OTELC_TEXT_MAP_ADD(*map, key.str, key.len, value.str, value.len, OTELC_TEXT_MAP_AUTO) == OTELC_RET_ERROR)
+			if (OTELC_TEXT_MAP_ADD(*map, key.str, key.len, (value.len == 0) ? "" : value.str, value.len, OTELC_TEXT_MAP_AUTO) == OTELC_RET_ERROR)
 				OTEL_ERR_RETURN_INT("Unable to add a key-value pair to a text map");
 		}
 
@@ -597,7 +606,7 @@ int yaml_get_sequence_value(OTEL_YAML_DOC *fyd, char **err, const char *path, in
 			OTEL_ERR_RETURN_INT("'%s[%d]': index out of bounds", path, index);
 
 	value = fy_node_get_scalar(node_val, &len);
-	if (OTEL_NULL(value))
+	if (OTEL_NULL(value) || (len == 0))
 		OTEL_ERR_RETURN_INT("'%s[%d]': invalid value", path, index);
 	else if (otelc_strlcpy(data, data_size, value, len) == OTELC_RET_ERROR)
 		OTEL_ERR_RETURN_INT("'%s[%d]': invalid value", path, index);
@@ -613,7 +622,7 @@ int yaml_get_sequence_value(OTEL_YAML_DOC *fyd, char **err, const char *path, in
 		OTEL_ERR_RETURN_INT("'%s[%d]': index out of bounds", path, index);
 	else if (!node[index].has_val())
 		OTEL_ERR_RETURN_INT("'%s[%d]': not a scalar value", path, index);
-	else if (otelc_strlcpy(data, data_size, node[index].val().str, node[index].val().len) == OTELC_RET_ERROR)
+	else if ((node[index].val().len == 0) || (otelc_strlcpy(data, data_size, node[index].val().str, node[index].val().len) == OTELC_RET_ERROR))
 		OTEL_ERR_RETURN_INT("'%s[%d]': invalid value", path, index);
 #endif /* HAVE_LIBFYAML_H */
 
@@ -755,7 +764,7 @@ PRAGMA_DIAG_IGNORE("-Wformat-nonliteral")
 		(void)snprintf(fmt, sizeof(fmt), arg_path, name);
 PRAGMA_DIAG_RESTORE
 		const auto node = ryml_get_node_by_path(fyd, fmt);
-		if (!node.invalid() && node.has_val())
+		if (!node.invalid() && node.has_val() && (node.val().len > 0))
 			rc = (otelc_strlcpy(subarg, sizeof(subarg), node.val().str, node.val().len) == OTELC_RET_ERROR) ? 0 : 1;
 		else
 			rc = 0;
@@ -803,7 +812,7 @@ PRAGMA_DIAG_RESTORE
 
 			errno = 0;
 			value = strtoll(subarg, &endptr, 0);
-			if ((*endptr != '\0') || (errno != 0) || !OTELC_IN_RANGE(value, arg_value_min, arg_value_max))
+			if ((endptr == subarg) || (*endptr != '\0') || (errno != 0) || !OTELC_IN_RANGE(value, arg_value_min, arg_value_max))
 				OTEL_ERR_RETURN_INT("'%s': invalid %s %s", subarg, desc, path_desc);
 
 			*arg_value_ptr = value;
@@ -820,7 +829,7 @@ PRAGMA_DIAG_RESTORE
 
 			errno = 0;
 			value = strtod(subarg, &endptr);
-			if ((*endptr != '\0') || (errno != 0) || !OTELC_IN_RANGE(value, arg_value_min, arg_value_max))
+			if ((endptr == subarg) || (*endptr != '\0') || (errno != 0) || !OTELC_IN_RANGE(value, arg_value_min, arg_value_max))
 				OTEL_ERR_RETURN_INT("'%s': invalid %s %s", subarg, desc, path_desc);
 
 			*arg_value_ptr = value;
@@ -857,6 +866,7 @@ PRAGMA_DIAG_RESTORE
  *   placeholders in the property path patterns to form the actual lookup paths.
  *   Supported data types include strings, booleans, integers, doubles, and
  *   maps.  Validation and range checking are performed for numeric types.
+ *   A key whose value is empty is treated as if the key were not present.
  *
  *   If name is nullptr, it is resolved from path using yaml_find().  If name
  *   is non-null, the path parameter is not used.

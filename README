@@ -429,8 +429,9 @@ All public headers reside under include/opentelemetry-c-wrapper/.  Including
 The library reads its configuration from a YAML file whose path is passed to
 the otelc_init() function.  Named pipeline components are defined in top-level
 sections and bound together per signal type in the 'signals' section.  All
-string values have a maximum length of 4095 characters.  Boolean values accept
-"true" / "1" for true and "false" / "0" for false (case-insensitive).
+string values have a maximum length of 4095 characters.  A key with an empty
+value is treated as if the key were absent.  Boolean values accept "true" /
+"1" for true and "false" / "0" for false (case-insensitive).
 
 
 6.1. Document structure
