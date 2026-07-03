@@ -34,30 +34,32 @@ static std::atomic<otel_trace::Tracer *>          otel_tracer{nullptr};
  *   This function takes no arguments.
  *
  * DESCRIPTION
- *   Ensures that thread-local otel_span and otel_span_context handles are
- *   allocated for the calling thread.  When OTELC_USE_STATIC_HANDLE is
- *   defined, the handles are constructed automatically by the C++ runtime
- *   and this function is a no-op.  Otherwise the function allocates both
- *   handles on first call per thread.
+ *   Ensures that the otel_span and otel_span_context handle maps are allocated.
+ *   When OTELC_USE_STATIC_HANDLE is defined, the maps are constructed
+ *   automatically by the C++ runtime and this function is compiled out.
+ *   Otherwise the maps are allocated on the first call -- once globally in the
+ *   shared-handle model, or per thread in the thread-local model.
  *
  * RETURN VALUE
  *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR if allocation fails.
  */
 static int otel_tracer_handle_init(void)
 {
+	OTELC_FUNC("");
+
 	if (OTEL_NULL(otel_span)) {
 		otel_span = new(std::nothrow) struct otel_handle<struct otel_span_handle *, OTEL_HANDLE_SHARED>(OTEL_HANDLE_MAP_SHARDS);
 		if (OTEL_NULL(otel_span))
-			return OTELC_RET_ERROR;
+			OTELC_RETURN_INT(OTELC_RET_ERROR);
 	}
 
 	if (OTEL_NULL(otel_span_context)) {
 		otel_span_context = new(std::nothrow) struct otel_handle<struct otel_span_context_handle *, OTEL_HANDLE_SHARED>(OTEL_HANDLE_MAP_SHARDS);
 		if (OTEL_NULL(otel_span_context))
-			return OTELC_RET_ERROR;
+			OTELC_RETURN_INT(OTELC_RET_ERROR);
 	}
 
-	return OTELC_RET_OK;
+	OTELC_RETURN_INT(OTELC_RET_OK);
 }
 
 #endif /* OTELC_USE_STATIC_HANDLE */
@@ -105,7 +107,7 @@ static struct otelc_span *otel_tracer_start_span_with_options(struct otelc_trace
 	otel_trace::StartSpanOptions                   span_options{};
 	struct otelc_span                             *retptr = nullptr;
 
-	OTELC_FUNC("%p, \"%s\", %p, %p, %p, %p, %d", tracer, OTELC_STR_ARG(operation_name), parent_span, parent_context, ts_steady, ts_system, kind);
+	OTELC_FUNC("%p, \"%s\", %p, %p, %p, %p, %d, %p, %zu", tracer, OTELC_STR_ARG(operation_name), parent_span, parent_context, ts_steady, ts_system, kind, links, links_len);
 
 	if (OTEL_NULL(tracer))
 		OTELC_RETURN_PTR(nullptr);
