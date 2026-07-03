@@ -24,6 +24,7 @@ static const char temp_yaml_content[] =
 	"  scalar_value: hello\n"
 	"  bool_value: true\n"
 	"  int_value: 42\n"
+	"  empty_value: \"\"\n"
 	"  items:\n"
 	"    - alpha\n"
 	"    - beta\n"
@@ -33,6 +34,9 @@ static const char temp_yaml_content[] =
 	"      value: first\n"
 	"    - name: two\n"
 	"      value: second\n"
+	"  headers:\n"
+	"    - key_c: \"\"\n"
+	"    - key_d: val_d\n"
 	"  node_ref: my_node\n"
 	"  group: test_data\n"
 	"\n"
@@ -49,7 +53,8 @@ static const char temp_yaml_content[] =
 	"    ratio: 3.14\n"
 	"    bad_bool: maybe\n"
 	"    big_count: 999999\n"
-	"    big_ratio: 999.9\n";
+	"    big_ratio: 999.9\n"
+	"    empty_num: \"\"\n";
 
 
 /***
@@ -448,6 +453,38 @@ static void test_yaml_find_nonexistent_optional(OTEL_YAML_DOC *doc)
 
 /***
  * NAME
+ *   test_yaml_find_empty_value - tests handling of an empty scalar value
+ *
+ * SYNOPSIS
+ *   static void test_yaml_find_empty_value(OTEL_YAML_DOC *doc)
+ *
+ * ARGUMENTS
+ *   doc - pointer to the parsed YAML document
+ *
+ * DESCRIPTION
+ *   Verifies that yaml_find() treats a node with an empty value as not found
+ *   and leaves the data buffer untouched.
+ *
+ * RETURN VALUE
+ *   This function does not return a value.
+ */
+static void test_yaml_find_empty_value(OTEL_YAML_DOC *doc)
+{
+	char data[OTEL_YAML_BUFSIZ] = "", *err = nullptr;
+	int  result = TEST_FAIL;
+
+	if (yaml_find(doc, &err, false, "empty_value", "/test/empty_value", data, sizeof(data)) == 0)
+		if (*data == '\0')
+			result = TEST_PASS;
+
+	OTELC_SFREE(err);
+
+	test_report("yaml_find empty value", result);
+}
+
+
+/***
+ * NAME
  *   test_yaml_find_null_doc - tests yaml_find with nullptr document
  *
  * SYNOPSIS
@@ -747,6 +784,42 @@ static void test_yaml_get_sequence_valid(OTEL_YAML_DOC *doc)
 	OTELC_SFREE(err);
 
 	test_report("yaml_get_sequence mappings", result);
+}
+
+
+/***
+ * NAME
+ *   test_yaml_get_sequence_empty_value - tests sequence entries with empty values
+ *
+ * SYNOPSIS
+ *   static void test_yaml_get_sequence_empty_value(OTEL_YAML_DOC *doc)
+ *
+ * ARGUMENTS
+ *   doc - pointer to the parsed YAML document
+ *
+ * DESCRIPTION
+ *   Verifies that yaml_get_sequence() stores an entry with an empty value as
+ *   an empty string instead of reading past the scalar.
+ *
+ * RETURN VALUE
+ *   This function does not return a value.
+ */
+static void test_yaml_get_sequence_empty_value(OTEL_YAML_DOC *doc)
+{
+	struct otelc_text_map *map = nullptr;
+	char                  *err = nullptr;
+	int                    result = TEST_FAIL;
+
+	if (yaml_get_sequence(doc, &err, "/test/headers", &map) == 2)
+		if (_nNULL(map) && (map->count == 2) && (strcmp(map->key[0], "key_c") == 0) && (*(map->value[0]) == '\0'))
+			result = TEST_PASS;
+
+	if (_nNULL(map))
+		otelc_text_map_destroy(&map);
+
+	OTELC_SFREE(err);
+
+	test_report("yaml_get_sequence empty value", result);
 }
 
 
@@ -1079,6 +1152,42 @@ static void test_yaml_get_node_optional_missing(OTEL_YAML_DOC *doc)
 	OTELC_SFREE(err);
 
 	test_report("yaml_get_node optional missing", result);
+}
+
+
+/***
+ * NAME
+ *   test_yaml_get_node_empty_num - tests handling of an empty numeric value
+ *
+ * SYNOPSIS
+ *   static void test_yaml_get_node_empty_num(OTEL_YAML_DOC *doc)
+ *
+ * ARGUMENTS
+ *   doc - pointer to the parsed YAML document
+ *
+ * DESCRIPTION
+ *   Verifies that yaml_get_node() treats an empty numeric value as absent and
+ *   does not overwrite the caller's default, even when zero is in range.
+ *
+ * RETURN VALUE
+ *   This function does not return a value.
+ */
+static void test_yaml_get_node_empty_num(OTEL_YAML_DOC *doc)
+{
+	char    *err = nullptr;
+	int64_t  num = 42;
+	int      rc, result = TEST_FAIL;
+
+	rc = yaml_get_node(doc, &err, false, "node", nullptr, "my_node",
+		OTEL_YAML_INT64, 0, "/nodes/%s/empty_num", &num, INT64_C(0), INT64_C(100),
+		OTEL_YAML_END);
+
+	if ((rc == 0) && (num == 42))
+		result = TEST_PASS;
+
+	OTELC_SFREE(err);
+
+	test_report("yaml_get_node empty number", result);
 }
 
 
@@ -1443,6 +1552,7 @@ int main(int argc, char **argv)
 	test_yaml_find_existing(doc);
 	test_yaml_find_nonexistent_mandatory(doc);
 	test_yaml_find_nonexistent_optional(doc);
+	test_yaml_find_empty_value(doc);
 	test_yaml_find_null_doc();
 	test_yaml_find_null_path(doc);
 
@@ -1478,6 +1588,7 @@ int main(int argc, char **argv)
 	OTELC_LOG(stdout, "");
 	OTELC_LOG(stdout, "[yaml_get_sequence]");
 	test_yaml_get_sequence_valid(doc);
+	test_yaml_get_sequence_empty_value(doc);
 
 	/***
 	 * yaml_find_sequence tests.
@@ -1498,6 +1609,7 @@ int main(int argc, char **argv)
 	test_yaml_get_node_from_name_multi(doc);
 	test_yaml_get_node_mandatory_missing(doc);
 	test_yaml_get_node_optional_missing(doc);
+	test_yaml_get_node_empty_num(doc);
 	test_yaml_get_node_invalid_bool(doc);
 	test_yaml_get_node_int64_out_of_range(doc);
 	test_yaml_get_node_double_out_of_range(doc);
