@@ -9,6 +9,7 @@ global:
 	otelc_ext_init;
 	otelc_log_set_handler;
 	otelc_log_set_level;
+	otelc_memdup;
 	otelc_nsleep;
 	otelc_runtime;
 	otelc_sprintf;
@@ -34,6 +35,7 @@ global:
 	otelc_statistics_check;
 	otelc_text_map_add;
 	otelc_text_map_destroy;
+	otelc_text_map_free;
 	otelc_text_map_new;
 	otelc_text_map_dump;
 	otelc_span_context_create;
