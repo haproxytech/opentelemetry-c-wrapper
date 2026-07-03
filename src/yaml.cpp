@@ -362,11 +362,12 @@ PRAGMA_DIAG_RESTORE
  * DESCRIPTION
  *   Retrieves a YAML sequence from the document at the specified path and
  *   populates a text map with its key-value pairs.  If the text map does not
- *   exist, it is created.
+ *   exist, it is created.  A path that does not exist in the document is not
+ *   an error; in that case the text map is left untouched.
  *
  * RETURN VALUE
- *   Returns the number of items in the sequence on success, or OTELC_RET_ERROR
- *   on failure.
+ *   Returns the number of items in the sequence, 0 if the path does not exist,
+ *   or OTELC_RET_ERROR on failure.
  */
 int yaml_get_sequence(OTEL_YAML_DOC *fyd, char **err, const char *path, struct otelc_text_map **map)
 {
@@ -386,7 +387,7 @@ int yaml_get_sequence(OTEL_YAML_DOC *fyd, char **err, const char *path, struct o
 
 	const auto node_seq = fy_node_by_path(fy_document_root(fyd), path, -1, FYNWF_DONT_FOLLOW);
 	if (OTEL_NULL(node_seq))
-		OTEL_ERR_RETURN_INT("'%s': path does not exist", path);
+		OTELC_RETURN_INT(OTELC_RET_OK);
 	else if (!fy_node_is_sequence(node_seq))
 		OTEL_ERR_RETURN_INT("'%s': not a YAML sequence", path);
 
@@ -417,7 +418,7 @@ int yaml_get_sequence(OTEL_YAML_DOC *fyd, char **err, const char *path, struct o
 
 	const auto node = ryml_get_node_by_path(fyd, path);
 	if (node.invalid())
-		OTEL_ERR_RETURN_INT("'%s': path does not exist", path);
+		OTELC_RETURN_INT(OTELC_RET_OK);
 	else if (!node.is_seq())
 		OTEL_ERR_RETURN_INT("'%s': not a YAML sequence", path);
 
