@@ -219,6 +219,11 @@ compiled and installed.  It can also be built in debug mode, which enables
 detailed logging of the library's operations, such as internal function
 calls.
 
+The OTel C wrapper requires the OTel C++ client to be built with ABI version 2
+enabled (CMake option -DWITH_ABI_VERSION_2=ON, which the provided installation
+scripts already set).  Both the autotools and CMake builds check the ABI version
+at configuration time and fail if it is not 2.
+
 In this example, we will install two versions of the library: the release
 version first, followed by the debug version.  Both versions will be installed
 in the /opt directory.
@@ -282,8 +287,8 @@ otel-c-wrapper-test_dbg.  If present at install time, the test binary is
 installed into the <prefix>/bin directory by 'make install'.
 
 For integration testing with an OpenTelemetry Collector and a backend (like
-Elasticsearch/Kibana or ClickHouse), you can use the Docker Compose setup
-provided in `test/elastic-apm/`.
+Elasticsearch/Kibana), you can use the Docker Compose setup provided in the
+`test/elastic-apm/` directory.
 
 A reference OpenTelemetry Collector configuration is provided in test/otelcol/.
 The OpenTelemetry Collector source is available at
@@ -406,12 +411,12 @@ the API:
   * struct otelc_kv       - a key-value pair (key string + otelc_value)
   * struct otelc_text_map - a dynamic array of key-value string pairs
 
-Additional utility functions complete the public API:
+Additional utility functions are also available; the most notable are:
 
   * otelc_ext_init()            - register custom malloc/free/thread-ID
   * otelc_log_set_handler()     - install an SDK diagnostic log callback
   * otelc_log_set_level()       - set the SDK internal log level
-  * otelc_pipeline_status()     - read the export-pipeline status
+  * otelc_pipeline_status_get() - read the export-pipeline status
   * otelc_span_context_create() - construct a span context from raw IDs
 
 All public headers reside under include/opentelemetry-c-wrapper/.  Including
@@ -484,9 +489,9 @@ control the operating system thread properties:
                   to 15 characters.  Useful for identifying SDK threads in
                   debuggers and monitoring tools.
 
-  * cpu_id      - bounds the thread to a specific CPU core via
-                  pthread_setaffinity_np().  Accepts a core number
-                  (0-OTEL_MAX_CPU_ID) or -1 to leave the affinity unset
+  * cpu_id      - binds the thread to a specific CPU core via
+                  pthread_setaffinity_np().  Accepts a core number from 0 to
+                  OTEL_MAX_CPU_ID (4095), or -1 to leave the affinity unset
                   (the default).  This setting requires sched.h and is only
                   effective on Linux.
 
@@ -610,7 +615,7 @@ Sends telemetry data to a collector over gRPC.
 
   max_concurrent_requests (integer, default: 0, range: 1-1024)
       Maximum number of concurrent export requests.  A value of 0 uses the SDK
-      default.
+      default.  Requires the SDK async-export build flag (ENABLE_ASYNC_EXPORT).
 
 
 OTLP HTTP exporter (otlp_http)
@@ -655,11 +660,13 @@ Sends telemetry data to a collector over HTTP using the curl library.
           - Authorization:   "Bearer token"
 
   max_concurrent_requests (integer, default: 64, range: 1-1024)
-      Maximum number of concurrent HTTP requests.
+      Maximum number of concurrent HTTP requests.  Requires the SDK async-export
+      build flag (ENABLE_ASYNC_EXPORT).
 
   max_requests_per_connection (integer, default: 8, range: 1-1024)
-      Maximum number of requests sent over a single HTTP connection before
-      reconnecting.
+      Maximum number of requests sent over a single HTTP connection before the
+      connection is re-established.  Requires the SDK async-export build flag
+      (ENABLE_ASYNC_EXPORT).
 
   background_thread_wait_for (integer, default: 0, range: 0-3600000)
       How long the curl background thread waits (in milliseconds) after its last
@@ -801,7 +808,7 @@ configuration keys.
 Type "trace_id_ratio_based" samples traces based on a configurable
 probability.  Additional key:
 
-  ratio (double, default: 1.0, range: 0.0-1.0)
+  ratio (double, mandatory, range: 0.0-1.0)
       Probability that a trace is sampled.  A value of 0.0 means no traces are
       sampled; 1.0 means all traces are sampled.
 
@@ -813,9 +820,9 @@ keys:
       Root sampler used when there is no parent span.  Accepted values:
       "always_on", "always_off", "trace_id_ratio_based".
 
-  ratio (double, default: 1.0, range: 0.0-1.0)
-      Sampling ratio for the delegate, used only when delegate is set to
-      "trace_id_ratio_based".
+  ratio (double, range: 0.0-1.0)
+      Sampling ratio for the delegate.  Mandatory when the delegate is set to
+      "trace_id_ratio_based"; otherwise not read.
 
   remote_sampled (string, default: "always_on")
       Sampler applied when the remote parent has the sampled flag set.
@@ -860,13 +867,15 @@ batches at regular intervals.  Additional keys:
       Default: 5000 for traces, 1000 for logs.
 
   export_timeout (integer, default: 30000, range: 1-60000)
-      Maximum time in milliseconds allowed for a single export operation.
+      Maximum time in milliseconds allowed for a single export operation.  Read
+      and forwarded for configuration consistency, but the OTel C++ SDK batch
+      processors do not currently use this value.
 
   max_export_batch_size (integer, default: 512, range: 1-65536)
       Maximum number of records per export batch.
 
 When the queue fills up, new records are silently dropped.  The library reports
-the drop count through otelc_pipeline_status() (see section 11 for details).
+the drop count through otelc_pipeline_status_get() (see section 11 for details).
 
 Type "single" exports each record immediately without batching.  No additional
 configuration keys beyond 'type' and 'thread_name'.
@@ -883,8 +892,8 @@ pipelines.
       Name assigned to the reader's background thread.
 
   export_interval (integer, default: 60000, range: 100-3600000)
-      Time in milliseconds between consecutive metric exports.
-      Must be greater than or equal to export_timeout.
+      Time in milliseconds between consecutive metric exports.  Must be greater
+      than export_timeout.
 
   export_timeout (integer, default: 30000, range: 100-3600000)
       Maximum time in milliseconds allowed for a single metric export operation.
@@ -925,11 +934,12 @@ together.  Each signal -- traces, metrics, or logs -- references the named
 components it needs from the other top-level sections.
 
 When exporters and processors (or readers) are specified as YAML lists, each
-entry forms a separate pipeline within the same provider.  The library pairs
-list entries by position: for traces and logs, processor[i] is paired with
-exporter[i]; for metrics, exporter[i] is paired with reader[i].  When one list
-is shorter than the other, its last entry is reused for the remaining pairs.
-A single scalar name (not a list) is also accepted.
+entry forms a separate pipeline within the same provider.  For traces and logs,
+one pipeline is created per processor, pairing processor[i] with exporter[i];
+for metrics, one pipeline is created per exporter, pairing exporter[i] with
+reader[i].  When the exporter (or, for metrics, the reader) list is shorter,
+its last entry is reused for the remaining pipelines; surplus entries in the
+longer list are ignored.  A single scalar name (not a list) is also accepted.
 
 
 Traces signal
@@ -981,7 +991,7 @@ Logs signal
 
   min_severity (string, default: "TRACE")
       Minimum log severity level.  Log records below this severity are discarded
-      before reaching the processor.  Accepted values (case-sensitive): TRACE,
+      before reaching the processor.  Accepted values (case-insensitive): TRACE,
       TRACE2, TRACE3, TRACE4, DEBUG, DEBUG2, DEBUG3, DEBUG4, INFO, INFO2, INFO3,
       INFO4, WARN, WARN2, WARN3, WARN4, ERROR, ERROR2, ERROR3, ERROR4, FATAL,
       FATAL2, FATAL3, FATAL4.
@@ -1239,8 +1249,8 @@ occur:
 
 Drops are an expected part of the SDK's back-pressure mechanism -- they keep the
 application from blocking or running out of memory.  The wrapper library exposes
-the full export-pipeline state through otelc_pipeline_status(), which fills a
-struct otelc_pipeline_status with one struct otelc_export_status per signal
+the full export-pipeline state through otelc_pipeline_status_get(), which fills
+a struct otelc_pipeline_status with one struct otelc_export_status per signal
 (traces, logs, and metrics) so that callers can monitor drops and adjust batch
 processor settings or collector capacity accordingly.
 
@@ -1270,13 +1280,15 @@ Additional limitations:
     It is the caller's responsibility to end all spans before destroying the
     tracer.  If any spans remain when the tracer is destroyed, they are ended
     implicitly.
-  * ABI compatibility: Some features (like `AddLink`) depend on the specific
-    ABI version of the underlying C++ OpenTelemetry library.  The
-    `start_span_with_options` operation provides an alternative for establishing
-    span links at creation time that works on all ABI versions.
+  * ABI compatibility: The library must be built against an OTel C++ client
+    compiled with ABI version 2; both build systems verify this at configuration
+    time and reject any other ABI version.  `AddLink` (an ABI version 2 feature)
+    is therefore always available.  The `start_span_with_options` operation
+    additionally establishes span links at creation time, which the OTel API
+    supports on all ABI versions.
   * Drop reporting asymmetry in the C++ SDK: The BatchSpanProcessor logs a
     warning to stderr ("BatchSpanProcessor queue is full - dropping span.")
     when a span is dropped, but the BatchLogRecordProcessor silently
     discards log records without any diagnostic output.  The wrapper library
     reports drop counts for both signal types uniformly through
-    otelc_pipeline_status().
+    otelc_pipeline_status_get().

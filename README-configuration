@@ -67,9 +67,10 @@ handles already exist.
 When undefined, handle maps are declared as pointers initialized to nullptr.
 The OTEL_HANDLE(h, m) macro expands to ((h)->m), accessing the handle via
 the arrow operator.  The otel_tracer_handle_init() function allocates both
-otel_span and otel_span_context handle maps on first use via new(std::nothrow),
-and is called from otel_tracer_start_span_with_options() and
-otel_tracer_extract_*() before any handle access.
+otel_span and otel_span_context handle maps on first use via new(std::nothrow).
+In the shared-handle model it is called only once, from otelc_tracer_create();
+in the thread-local model each thread calls it on its first handle access, from
+otel_tracer_start_span_with_options() and otel_tracer_extract_carrier().
 
 The dynamic model avoids constructing handle maps for threads that never create
 spans.  The static model avoids the null-pointer check and the allocation call
@@ -164,15 +165,19 @@ When defined, otel_meter_create_instrument() calls
 InstrumentMetaDataValidator::ValidateName(),
 InstrumentMetaDataValidator::ValidateUnit(), and
 InstrumentMetaDataValidator::ValidateDescription() before creating each
-instrument.  These functions compile two std::regex objects on every call.
+instrument.  The validator is a file-static const object whose two std::regex
+members are compiled once, at construction; ValidateName() and ValidateUnit()
+perform a std::regex match on every call, and ValidateDescription() currently
+always returns true.
 
 When undefined, the validation is skipped entirely and instrument names, units,
 and descriptions are passed through without checking.
 
-This macro is intentionally kept undefined because the std::regex construction
-on every otel_meter_create_instrument() call causes a severe performance
-penalty.  It is provided solely for development-time validation and should not
-be enabled in production builds.
+This macro is intentionally kept undefined because the OTel C++ SDK's meter
+already performs the same metadata validation internally when an instrument is
+created, so the wrapper-side check only adds redundant std::regex matching to
+every instrument creation.  It exists solely for development-time validation
+and should not be enabled in production builds.
 
 
 8. Custom configuration

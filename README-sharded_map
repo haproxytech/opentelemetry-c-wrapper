@@ -9,8 +9,8 @@
 Two approaches were evaluated for managing span and span_context handles in the
 C wrapper layer: a sharded map (otel_handle<T>) indexed by int64_t keys, and a
 direct void pointer stored in the C-facing structure.  The void pointer approach
-was implemented in the void_ptr branch and later removed from the master branch
-after benchmarks showed no significant acceleration.
+was implemented in a separate development branch and was later discarded after
+benchmarks showed no significant acceleration.
 
 
 2. Sharded map approach (current)

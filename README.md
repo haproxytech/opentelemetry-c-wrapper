@@ -63,6 +63,10 @@ If none of the attached `build-*.sh` scripts is used, the patches in
 before compilation and the same CMake configuration options found in
 `scripts/build/opentelemetry-cpp-1.26.0-install.sh` must be used.
 
+In particular, the wrapper requires an OTel C++ SDK built with ABI version 2
+(`-DWITH_ABI_VERSION_2=ON`); the wrapper build verifies this at configuration
+time.
+
 ### Building the Wrapper Library
 
 **Autotools** (recommended):
@@ -343,7 +347,7 @@ exporters, and periodic metric readers) accept two optional settings:
 | Setting       | Description                                                     |
 |---------------|-----------------------------------------------------------------|
 | `thread_name` | OS thread name (truncated to 15 characters)                     |
-| `cpu_id`      | Bound thread to a CPU core (0-OTEL_MAX_CPU_ID, or -1 for unset) |
+| `cpu_id`      | Bind thread to a CPU core (0-4095, or -1 for unset)             |
 
 Example:
 

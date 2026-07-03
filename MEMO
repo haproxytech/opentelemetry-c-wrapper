@@ -743,56 +743,56 @@ Access pattern analysis:
 
 Key implementation details:
 
-  Template-based shard count:
-    template<typename T, size_t num_shards = 64>
+  Runtime-configured shard count:
+    template<typename T, bool shared = true>
     struct otel_handle { ... };
 
-    Compile-time configuration.  Different handle types instantiate with
-    different shard counts.  static_assert ensures num_shards is a power of 2.
+    The shard count is a constructor argument; the default constructor uses
+    OTEL_HANDLE_MAP_SHARDS (64).  Different handle instances are created with
+    different shard counts.  The constructor validates that the count is a
+    power of two and throws std::invalid_argument otherwise.
 
-  Storage: std::array not std::vector:
-    std::array<struct shard, num_shards> shards;
+  Storage: std::vector of shards:
+    std::vector<struct shard> shards;
 
-    Stack allocation, not heap.  No malloc on handle manager creation.  No
-    pointer indirection on shard access.  std::vector required heap allocation
-    and added measurable overhead in single-threaded benchmarks.
+    Each shard bundles an std::unordered_map<int64_t, T> with its own
+    std::mutex.  The shard storage is heap-allocated by the vector once, at
+    construction; size_of() accounts for the vector's shard storage as well as
+    each map's buckets and nodes.
 
   Shard selection: bitwise AND not modulo:
     size_t get_shard_index(int64_t key) const noexcept {
-        return static_cast<size_t>(key) & (num_shards - 1);
+        return static_cast<size_t>(key & (shards.size() - 1));
     }
 
     On x86-64: single AND instruction vs IDIV (20-80 cycles).
-    When num_shards=1: (key & 0) = 0, dead code eliminated by optimizer.
-    Requires power-of-2 shard count (enforced by static_assert).
+    When the shard count is 1: (key & 0) = 0, always shard 0.
+    Requires a power-of-2 shard count (validated by the constructor).
 
 Per-operation locking strategy:
 
   Single-key operations (find/emplace/erase):
     Per-shard std::mutex under OTELC_USE_THREAD_SHARED_HANDLE.  Lock only the
     target shard.  Other threads access other shards in parallel.  In
-    single-threaded mode, no mutex exists (not just unlocked, but compiled out
-    entirely).
+    single-threaded mode the mutex member still exists, but it is never taken
+    (the lock macros compile to no-ops).
 
-  Cross-shard operations (find_if/for_each):
-    Global std::shared_mutex for consistent view across all shards.  Shared lock
-    allows multiple concurrent readers.  Exclusive lock for modifications.
+  Cross-shard operations (for_each_locked):
+    Iterates over the shards, acquiring each shard's mutex in turn, invoking a
+    callback on every entry and clearing the map.  Used during tracer
+    destruction to end and delete all remaining handles; taking the mutex
+    drains any in-flight operation that already passed its null-check but has
+    not yet released the shard lock.
 
-  Atomic find-or-insert (find_or_emplace):
-    Prevents duplicate entries when multiple threads try to create the same
-    instrument simultaneously.  Two-phase:
+  Duplicate-instrument detection:
+    Instrument handles live in a single shard and creation runs under the
+    OTEL_LOCK_METER mutex; a plain std::find_if over that shard detects an
+    already-registered instrument by case-insensitive name and type before a
+    new one is created.
 
-    Phase 1 (optimistic):
-      Acquire shared lock, search all shards.  If found, return existing.  Most
-      calls succeed here (instrument already exists).
-
-    Phase 2 (pessimistic):
-      Release shared lock, acquire exclusive lock.  Search again (another
-      thread may have inserted while upgrading).  If still not found, insert.
-      Guarantees exactly one entry per unique predicate.
-
-    Single-threaded version skips all locking, uses plain id++ instead of
-    id.fetch_add(1).
+  ID generation:
+    New handle IDs come from an atomic increment of the id counter in both
+    threading modes.
 
 Why other approaches were rejected:
 
@@ -806,13 +806,13 @@ Why other approaches were rejected:
     handle lookups are infrequent relative to actual span recording operations.
 
   std::shared_mutex for per-shard locks:
-    Overkill.  Single-key operations are short (hash lookup, insert).
-    Shared/exclusive distinction only helps find_or_emplace, which already uses
-    global shared_mutex.
+    Overkill.  Single-key operations are short (hash lookup, insert), so a
+    reader/writer distinction has nothing to parallelize within a shard.
 
-  Runtime-configurable shard count:
-    Every shard access pays indirect lookup cost.  Template specialization at
-    compile time is zero-cost abstraction.
+  Compile-time (template parameter) shard count:
+    Rejected in favor of a constructor argument.  The vector indirection is
+    negligible next to the map lookup and locking, and a runtime count lets
+    every handle type share a single template instantiation.
 
   Larger shard counts (128, 256):
     Diminishing returns.  64 shards sufficient for observed thread counts
@@ -823,15 +823,15 @@ Measured behavior:
 
   Multi-threaded with OTELC_USE_THREAD_SHARED_HANDLE:
     Scaling is sub-linear (2x threads != 2x throughput) due to:
-    - Occasional cross-shard operations (find_or_emplace)
     - Cache line bouncing on atomic id counter
     - Lock acquisition overhead
     Acceptable for production use.
 
   Single-threaded without OTELC_USE_THREAD_SHARED_HANDLE:
     Performance matches non-sharded std::unordered_map baseline.
-    std::array + bitwise AND + no mutexes = near-zero sharding cost.
-    When num_shards=1, optimizer produces identical code to direct map access.
+    Bitwise AND shard selection + no locking = near-zero sharding cost.
+    With a single shard, every lookup resolves to shard 0 and the map behaves
+    like a plain std::unordered_map.
 
 
 ------------------------------------------------------------------------
@@ -850,10 +850,10 @@ Global entry points:
     created.
 
   otelc_deinit (src/util.cpp):
-    Destroys tracer, meter, and logger (if provided), closes the YAML
-    configuration document, and resets external callbacks and log handlers.
+    Closes the YAML configuration document, destroys logger, meter, and tracer
+    (if provided), and resets external callbacks and log handlers.
 
-  otelc_ext_init (include/opentelemetry-c-wrapper/util.h):
+  otelc_ext_init (src/util.cpp):
     Registers external malloc, free, and thread-ID callbacks.  Called from
     otelc_deinit to reset them.
 
@@ -904,8 +904,10 @@ Span and span context lifecycle:
     alloc_fail_cnt on allocation failure.
 
   otel_span_destroy / otel_nolock_span_destroy (src/span.cpp):
-    Ends the span and erases it from the handle map.  The nolock variant skips
-    lock acquisition for use inside already-locked contexts.
+    Deletes the C++ handle (releasing its shared_ptr) and erases it from the
+    handle map without calling End(); a span is ended explicitly through
+    end_with_options() or implicitly during tracer destruction.  The nolock
+    variant skips lock acquisition for use inside already-locked contexts.
 
   otelc_span_context_create / otel_span_context_new (src/span.cpp):
     Constructs an otel_trace::SpanContext from trace/span IDs and trace flags,
@@ -922,15 +924,17 @@ Provider/exporter/processor stack:
 
     1. otel_*_exporter_create (src/exporter.cpp)
        Creates an exporter from YAML config.  Tracer supports: InMemory,
-       OStream, OTLP File, OTLP gRPC, OTLP HTTP, Zipkin, Elasticsearch.
-       Meter and logger support similar variants.
+       OStream, OTLP File, OTLP gRPC, OTLP HTTP, Zipkin.  Meter supports
+       the same set except Zipkin; logger replaces InMemory and Zipkin
+       with Elasticsearch.
 
     2. otel_tracer_processor_create / otel_logger_processor_create
        (src/processor.cpp)
        Wraps the exporter in a Batch or Simple processor.  Batch mode
        is configured via max_queue_size, schedule_delay, export_timeout,
-       and max_export_batch_size.  Wraps with counting_exporter and
-       counting_span_processor for dropped-span tracking.
+       and max_export_batch_size.  Wraps with otel_counting_span_exporter
+       and otel_counting_span_processor (or their log counterparts) for
+       drop and export tracking.
 
     3. otel_sampler_create (src/sampler.cpp)
        Tracer-only.  Creates AlwaysOn, AlwaysOff, TraceIdRatioBased, or
@@ -950,8 +954,8 @@ Provider/exporter/processor stack:
     4. Frees err and scope_name strings.
 
   For the tracer, otel_tracer_destroy additionally:
-    - Ends all remaining spans in the handle map.
-    - Destroys span and span context handles.
+    - Destroys all remaining span context handles.
+    - Ends all remaining spans and destroys the span handles.
     - Clears the global text map propagator.
 
 Global state:
@@ -994,9 +998,12 @@ Overall deinitialization flow:
 
   otelc_deinit
     |
-    +-- otel_*_destroy  (one per component, via ops vtable)
+    +-- close YAML configuration
+    |
+    +-- otel_*_destroy  (logger, meter, tracer, via ops vtable)
           |
           +-- clear atomic pointer
+          +-- destroy span context handles (tracer only)
           +-- end remaining spans          (tracer only)
           +-- destroy handle maps          (tracer, meter only)
           +-- clear text map propagator    (tracer only)
@@ -1004,7 +1011,6 @@ Overall deinitialization flow:
           +-- reset global provider
           +-- free err, scope_name
     |
-    +-- close YAML configuration
     +-- reset external callbacks and log handlers
 
 
@@ -1057,9 +1063,8 @@ Span creation (otel_tracer_start_span_with_options):
     auto span = tracer_ptr->StartSpan(operation_name, span_options);
 
     /* With links: */
-    SpanContextKeyValueIterableView<...> links_view(links_vec);
     auto span = tracer_ptr->StartSpan(
-        operation_name, {}, links_view, span_options);
+        operation_name, {}, links_vec, span_options);
 
   The C enum otelc_span_kind_t maps to otel_trace::SpanKind via a
   constexpr lookup table:
@@ -1084,17 +1089,19 @@ Span creation (otel_tracer_start_span_with_options):
     - otel_nostd::shared_ptr<otel_trace::Scope>     (RAII activation, only when
       OTELC_USE_RUNTIME_CONTEXT is defined)
 
-  The handle is emplaced into the thread-local sharded handle map.
-  On any allocation failure, the span is ended immediately via
-  span->End(EndSpanOptions{}) before cleanup, ensuring no leaked spans
+  The handle is emplaced into the sharded handle map (shared across
+  threads by default, thread-local when OTELC_USE_THREAD_SHARED_HANDLE
+  is undefined).  On any allocation failure, the span is ended immediately
+  via span->End(EndSpanOptions{}) before cleanup, ensuring no leaked spans
   reach the processor pipeline.
 
   When span links are provided (via the links/links_len parameters), the
   function builds a vector of (SpanContext, attributes) pairs before allocating
   the span, so that link resolution errors do not require span cleanup.  The
-  vector is wrapped in a SpanContextKeyValueIterableView and passed to the
-  extended StartSpan(name, attributes, links, options) overload.  When no links
-  are provided, the original StartSpan(name, options) overload is used.
+  vector is passed directly to the templated StartSpan(name, attributes, links,
+  options) overload, which wraps it in a SpanContextKeyValueIterableView
+  internally.  When no links are provided, the original StartSpan(name,
+  options) overload is used.
 
   Unlike AddLink (which requires ABI version 2), links at creation time are
   supported by all ABI versions.
@@ -1200,9 +1207,9 @@ Tracer shutdown (otel_tracer_destroy):
 
     1. Atomically null otel_tracer to gate out concurrent callers.
     2. Release otel_tracer_owner (shared_ptr).
-    3. Iterate all remaining spans in the handle map, calling
+    3. Clear span context handles.
+    4. Iterate all remaining spans in the handle map, calling
        handle->span->End(end_options) on each.
-    4. Clear span context handles.
     5. Clear the global text map propagator.
     6. Destroy the provider and exporter.
     7. Free err and scope_name strings.
@@ -1540,35 +1547,45 @@ Logger enabled check (otel_logger_enabled):
   This allows callers to skip expensive log message construction when the
   logger would discard the record.
 
-Log record creation and emission (otel_logger_log_v):
+Log record creation and emission:
 
-  This is the core function.  It creates a log record, populates it, and emits
-  it in a single call:
+  Record construction is factored into otel_logger_record_create(), which
+  creates and populates a log record without setting its body:
 
-    1. Validate logger pointer and format string.
-    2. Load atomic logger pointer.
-    3. Convert severity to C++ enum via otel_logger_severity().
-    4. Early exit if logger_ptr->Enabled(log_severity) is false.
-    5. Copy span_id (8 bytes) and trace_id (16 bytes) to fixed-size stack
+    1. Validate the logger pointer.
+    2. Convert severity to C++ enum via otel_logger_severity().
+    3. Early exit if logger_ptr->Enabled(log_severity) is false.
+    4. Copy span_id (8 bytes) and trace_id (16 bytes) to fixed-size stack
        buffers, zero-filled if not provided.
-    6. Create log record: logger_ptr->CreateLogRecord().
-    7. Populate the record:
+    5. Create log record: logger_ptr->CreateLogRecord().
+    6. Populate the record:
        - log_record->SetSeverity(log_severity)
        - log_record->SetSpanId(SpanId{span_id_buf})
        - log_record->SetTraceId(TraceId{trace_id_buf})
        - log_record->SetTraceFlags(TraceFlags{trace_flags})
-    8. If timestamp provided:
-       - log_record->SetTimestamp(timestamp)
-       - log_record->SetObservedTimestamp(timestamp)
+    7. If ts provided:
+       - log_record->SetTimestamp(ts)
+    8. If ts_obs provided:
+       - log_record->SetObservedTimestamp(ts_obs)
     9. If event_id > 0:
        - log_record->SetEventId(event_id, event_name)
    10. For each attribute:
        - log_record->SetAttribute(key, value) via OTEL_VALUE_ADD
+
+  The formatted variants delegate to otel_logger_log_v(), which validates the
+  format string, loads the atomic logger pointer, calls
+  otel_logger_record_create(), then:
+
    11. Format body: vasprintf(&ptr, format, ap).
    12. log_record->SetBody(ptr).
    13. logger_ptr->EmitLogRecord(std::move(log_record)).
    14. free(ptr).
    15. Return character count.
+
+  The body variants (log_body, log_body_span) skip otel_logger_log_v() and
+  vasprintf entirely: they call otel_logger_record_create() and set a typed
+  body from an otelc_value (string, integer, double, or boolean) via SetBody()
+  before emitting.
 
   C++ API calls used per log record:
 
@@ -1588,15 +1605,20 @@ Log record creation and emission (otel_logger_log_v):
 
 Log entry points:
 
-  Two public variants map to the same internal otel_logger_log_v():
+  Four public variants exist; the formatted pair maps to the internal
+  otel_logger_log_v(), the body pair emits an otelc_value directly:
 
   log() -- takes explicit span_id, trace_id, and trace_flags as raw byte
   buffers.  The variadic arguments are forwarded via va_list.
 
   log_span() -- takes an otelc_span pointer instead.  Extracts span_id,
-  trace_id, and trace_flags by calling span->tracer->ops->get_id() on the span,
-  then delegates to otel_logger_log_v().  Handles NULL span gracefully by using
-  zeroed buffers.
+  trace_id, and trace_flags by calling the span's own get_id() operation
+  (span->ops->get_id()), then delegates to otel_logger_log_v().  Handles NULL
+  span gracefully by using zeroed buffers.
+
+  log_body() / log_body_span() -- same trace-correlation choices as log() and
+  log_span(), but the body is a typed otelc_value instead of a printf-style
+  format string.
 
 Runtime severity change (otel_logger_set_min_severity):
 
@@ -1633,9 +1655,10 @@ Key differences from tracer and meter:
   set_min_severity().  The C++ SDK's Enabled() method enforces the threshold,
   allowing the wrapper to skip record creation for filtered levels.
 
-  Body formatting -- unlike span attributes and metric values which use the
-  otelc_value union, the log body is a printf-style formatted string produced
-  by vasprintf().  The body is set as a plain string via SetBody().
+  Body formatting -- log() and log_span() produce the body as a printf-style
+  string via vasprintf() and set it with SetBody(); log_body() and
+  log_body_span() set a typed body directly from an otelc_value (string,
+  integer, double, or boolean).
 
   Trace correlation -- log records can be associated with distributed traces
   either by providing raw span/trace IDs (log()) or by passing an otelc_span
@@ -1671,9 +1694,10 @@ Allocation infrastructure:
 
   C++ nothrow wrappers (std.h) -- make_unique_nothrow and make_shared_nothrow
   handle both new(std::nothrow) failure and shared_ptr control block allocation
-  failure.  In make_shared_nothrow, the raw pointer is declared outside the try
-  block so the catch clause can delete it if the shared_ptr constructor throws
-  std::bad_alloc.
+  failure.  In make_shared_nothrow, the catch clause must not delete the raw
+  pointer: when the shared_ptr constructor throws std::bad_alloc it has
+  already taken ownership and deletes the pointer before propagating, so
+  deleting it again would be a double free.
 
   Deferred cleanup (OTELC_DEFER) -- provides RAII-style scope cleanup in C via
   GCC __attribute__((cleanup)).
@@ -1777,8 +1801,8 @@ Path traversal (rapidyaml backend):
 Error handling:
 
   ryml_throw_error() is registered as the rapidyaml error callback.  It throws
-  std::runtime_error, which is caught by the OTEL_CATCH_ERETURN macro that wraps
-  every try block in the YAML module.
+  std::runtime_error, which is caught by the OTEL_CATCH_SIGNAL_RETURN macro in
+  the YAML module's try blocks.
 
   yaml_open() wraps tree allocation and parsing in a single try block.  On
   success the unique_ptr is released to transfer ownership to the caller.
