@@ -167,7 +167,6 @@ static int64_t otel_meter_get_view_id(const char *name)
  */
 static int64_t otel_meter_add_view(struct otelc_meter *meter, const char *view_name, const char *view_desc, const char *instrument_name, const char *instrument_unit, otelc_metric_instrument_t instrument_type, otelc_metric_aggregation_type_t aggregation_type, const double *bounds, size_t bounds_num)
 {
-	OTEL_LOCK_METER(view);
 	std::shared_ptr<otel_sdk_metrics::HistogramAggregationConfig> config{};
 	otel_sdk_metrics::InstrumentType                              instr_type;
 	otel_sdk_metrics::AggregationType                             aggr_type;
@@ -184,6 +183,8 @@ static int64_t otel_meter_add_view(struct otelc_meter *meter, const char *view_n
 
 	OTEL_ARG_DEFAULT(view_desc, "");
 	OTEL_ARG_DEFAULT(instrument_unit, "");
+
+	OTEL_LOCK_METER(view);
 
 	/* If a view with the same name already exists, it will not be added. */
 	if ((view_id = otel_meter_get_view_id(view_name)) != OTELC_RET_ERROR)
