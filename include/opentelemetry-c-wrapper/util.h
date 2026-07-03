@@ -103,7 +103,7 @@ struct otelc_value {
 		uint64_t    value_uint64; /* 64-bit unsigned integer. */
 		double      value_double; /* Double-precision floating-point value. */
 		const char *value_string; /* Read-only null-terminated string (may be NULL). */
-		void       *value_data;   /* Owned pointer to additional data; freed when the structure is destroyed (may be NULL). */
+		void       *value_data;   /* Owned pointer to additional null-terminated data; freed when the structure is destroyed (may be NULL). */
 	} u;
 };
 

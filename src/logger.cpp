@@ -281,7 +281,8 @@ static int otel_logger_record_create(struct otelc_logger *logger, otel_logs::Log
  *
  * RETURN VALUE
  *   Returns the number of characters written to the buffer on success,
- *   or a negative value on error (OTELC_RET_ERROR).
+ *   0 if the record was discarded by the minimum severity check, or a
+ *   negative value on error (OTELC_RET_ERROR).
  */
 static int otel_logger_log_v(struct otelc_logger *logger, otelc_log_severity_t severity, int64_t event_id, const char *event_name, const uint8_t *span_id, size_t span_id_size, const uint8_t *trace_id, size_t trace_id_size, uint8_t trace_flags, const struct timespec *ts, const struct timespec *ts_obs, const struct otelc_kv *attr, size_t attr_len, const char *format, va_list ap)
 {
@@ -345,7 +346,8 @@ static int otel_logger_log_v(struct otelc_logger *logger, otelc_log_severity_t s
  *
  * RETURN VALUE
  *   Returns the number of characters written to the buffer on success,
- *   or a negative value on error (OTELC_RET_ERROR).
+ *   0 if the record was discarded by the minimum severity check, or a
+ *   negative value on error (OTELC_RET_ERROR).
  */
 static int otel_logger_log(struct otelc_logger *logger, otelc_log_severity_t severity, int64_t event_id, const char *event_name, const uint8_t *span_id, size_t span_id_size, const uint8_t *trace_id, size_t trace_id_size, uint8_t trace_flags, const struct timespec *ts, const struct timespec *ts_obs, const struct otelc_kv *attr, size_t attr_len, const char *format, ...)
 {
@@ -395,7 +397,8 @@ static int otel_logger_log(struct otelc_logger *logger, otelc_log_severity_t sev
  *
  * RETURN VALUE
  *   Returns the number of characters written to the buffer on success,
- *   or a negative value on error (OTELC_RET_ERROR).
+ *   0 if the record was discarded by the minimum severity check, or a
+ *   negative value on error (OTELC_RET_ERROR).
  */
 static int otel_logger_log_span(struct otelc_logger *logger, otelc_log_severity_t severity, int64_t event_id, const char *event_name, const struct otelc_span *span, const struct timespec *ts, const struct timespec *ts_obs, const struct otelc_kv *attr, size_t attr_len, const char *format, ...)
 {
@@ -442,14 +445,14 @@ static int otel_logger_log_span(struct otelc_logger *logger, otelc_log_severity_
  *   ts_obs        - the observed timestamp, or NULL for SDK defaults
  *   attr          - a pointer to an array of key-value attributes to attach to the log record
  *   attr_len      - the number of elements in the 'attr' array
- *   body          - the log body as an otelc_value (int, double, bool, or string)
+ *   body          - the log body as an otelc_value (bool, integer, double, string, or data)
  *
  * DESCRIPTION
  *   Creates an explicit log record and populates it with the specified
  *   severity, trace context, body value, and attributes.  Unlike
  *   otel_logger_log_v(), which formats a printf-style string, this function
  *   passes the otelc_value body directly to SetBody(), preserving the native
- *   type.
+ *   type.  A body of type OTELC_VALUE_NULL is emitted as an empty string.
  *
  * RETURN VALUE
  *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR on error.
@@ -499,14 +502,15 @@ static int otel_logger_log_body(struct otelc_logger *logger, otelc_log_severity_
  *   ts_obs     - the observed timestamp, or NULL for SDK defaults
  *   attr       - a pointer to an array of key-value attributes to attach to the log record
  *   attr_len   - the number of elements in the 'attr' array
- *   body       - the log body as an otelc_value (int, double, bool, or string)
+ *   body       - the log body as an otelc_value (bool, integer, double, string, or data)
  *
  * DESCRIPTION
- *   Logs a non-string body value with the specified severity, optionally
+ *   Logs a typed body value with the specified severity, optionally
  *   associated with a span.  If span context retrieval fails, the log is still
  *   emitted without trace correlation.  Unlike log_span(), which formats a
  *   printf-style string, this function passes the otelc_value directly to
- *   SetBody(), preserving the native type.
+ *   SetBody(), preserving the native type.  A body of type OTELC_VALUE_NULL
+ *   is emitted as an empty string.
  *
  * RETURN VALUE
  *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR on error.

@@ -143,7 +143,8 @@ struct otelc_logger_ops {
 	 *
 	 * RETURN VALUE
 	 *   Returns the number of characters written to the buffer on success,
-	 *   or a negative value on error (OTELC_RET_ERROR).
+	 *   0 if the record was discarded by the minimum severity check, or a
+	 *   negative value on error (OTELC_RET_ERROR).
 	 */
 	int (*log)(struct otelc_logger *logger, otelc_log_severity_t severity, int64_t event_id, const char *event_name, const uint8_t *span_id, size_t span_id_size, const uint8_t *trace_id, size_t trace_id_size, uint8_t trace_flags, const struct timespec *ts, const struct timespec *ts_obs, const struct otelc_kv *attr, size_t attr_len, const char *format, ...)
 		OTELC_NONNULL(1, 14);
@@ -179,7 +180,8 @@ struct otelc_logger_ops {
 	 *
 	 * RETURN VALUE
 	 *   Returns the number of characters written to the buffer on success,
-	 *   or a negative value on error (OTELC_RET_ERROR).
+	 *   0 if the record was discarded by the minimum severity check, or a
+	 *   negative value on error (OTELC_RET_ERROR).
 	 */
 	int (*log_span)(struct otelc_logger *logger, otelc_log_severity_t severity, int64_t event_id, const char *event_name, const struct otelc_span *span, const struct timespec *ts, const struct timespec *ts_obs, const struct otelc_kv *attr, size_t attr_len, const char *format, ...)
 		OTELC_NONNULL(1, 10);
@@ -205,15 +207,16 @@ struct otelc_logger_ops {
 	 *   ts_obs        - the observed timestamp, or NULL for SDK defaults
 	 *   attr          - a pointer to an array of key-value attributes to attach to the log record
 	 *   attr_len      - the number of elements in the 'attr' array
-	 *   body          - the log body as an otelc_value (int, double, bool, or string)
+	 *   body          - the log body as an otelc_value (bool, integer, double, string, or data)
 	 *
 	 * DESCRIPTION
-	 *   Logs a non-string body value with the specified severity,
+	 *   Logs a typed body value with the specified severity,
 	 *   explicitly associating it with trace and span identifiers and
 	 *   enriching it with timestamp and attributes.  Unlike the log()
 	 *   operation, which formats a printf-style string, this function
 	 *   passes the otelc_value directly to SetBody(), preserving the
-	 *   native type (int64, double, bool, or string).
+	 *   native type.  A body of type OTELC_VALUE_NULL is emitted as an
+	 *   empty string.
 	 *
 	 * RETURN VALUE
 	 *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR on error.
@@ -238,15 +241,16 @@ struct otelc_logger_ops {
 	 *   ts_obs     - the observed timestamp, or NULL for SDK defaults
 	 *   attr       - a pointer to an array of key-value attributes to attach to the log record
 	 *   attr_len   - the number of elements in the 'attr' array
-	 *   body       - the log body as an otelc_value (int, double, bool, or string)
+	 *   body       - the log body as an otelc_value (bool, integer, double, string, or data)
 	 *
 	 * DESCRIPTION
-	 *   Logs a non-string body value with the specified severity,
+	 *   Logs a typed body value with the specified severity,
 	 *   optionally associated with a span.  If span context retrieval
 	 *   fails, the log is still emitted without trace correlation.  Unlike
 	 *   log_span(), which formats a printf-style string, this function
 	 *   passes the otelc_value directly to SetBody(), preserving the native
-	 *   type.
+	 *   type.  A body of type OTELC_VALUE_NULL is emitted as an empty
+	 *   string.
 	 *
 	 * RETURN VALUE
 	 *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR on error.

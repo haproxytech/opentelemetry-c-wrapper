@@ -849,8 +849,7 @@ PRAGMA_DIAG_RESTORE
  *   path         - the path to the node in the YAML document
  *   name         - the name of the node, or nullptr to resolve from path
  *   type         - the data type of the first property to retrieve
- *   ...          - arguments for the first property, followed by subsequent
- *                  property definitions, terminated by OTEL_YAML_END
+ *   ...          - property definitions, terminated by OTEL_YAML_END
  *
  * DESCRIPTION
  *   Retrieves properties of a YAML node and parses their values according to

@@ -49,9 +49,10 @@
 #define OTELC_USE_INTERNAL_INCLUDES
 
 /***
- * Disabled by default because InstrumentMetaDataValidator compiles two
- * std::regex objects on every call to otel_meter_create_instrument(),
- * causing a severe performance penalty.
+ * Disabled by default because the OTel C++ SDK meter already performs the
+ * same metadata validation internally when an instrument is created, so
+ * this check only adds redundant std::regex matching to every call to
+ * otel_meter_create_instrument().
  */
 #undef OTELC_USE_INSTRUMENT_VALIDATOR
 

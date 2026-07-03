@@ -1,4 +1,6 @@
-# To limit exposure to denial of service attacks, change the host in endpoints below from 0.0.0.0 to a specific network interface.
+# To limit exposure to denial of service attacks, the receiver endpoints below
+# are bound to 127.0.0.1.  Change them to 0.0.0.0 (or another interface) if the
+# Collector needs to accept remote connections.
 # See https://github.com/open-telemetry/opentelemetry-collector/blob/main/docs/security-best-practices.md#safeguards-against-denial-of-service-attacks
 
 extensions:

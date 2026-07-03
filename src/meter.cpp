@@ -158,7 +158,9 @@ static int64_t otel_meter_get_view_id(const char *name)
  *
  *   Note: the view must be registered before the instrument is created,
  *   because in the OpenTelemetry C++ SDK views are not dynamically applied
- *   to existing instruments.
+ *   to existing instruments.  The meter itself must already be started.
+ *   If a view with the same name already exists, its ID is returned and no
+ *   new view is created.
  *
  * RETURN VALUE
  *   Returns the ID of the added view, or OTELC_RET_ERROR in case of an error.
@@ -500,6 +502,10 @@ static int otel_meter_remove_instrument_callback(struct otelc_meter *meter, int 
  *   invoked to collect measurements.  For synchronous instruments, the callback
  *   is ignored.  This function encapsulates the common logic required to create
  *   different metric instrument types in the C wrapper library.
+ *
+ *   If an instrument with the same name and type already exists, its ID is
+ *   returned and the data argument is ignored; use add_instrument_callback()
+ *   to register additional callbacks on an existing instrument.
  *
  * RETURN VALUE
  *   Returns a non-negative instrument ID on success, or OTELC_RET_ERROR on

@@ -1118,8 +1118,7 @@ static void test_span_context_trace_state(struct otelc_tracer *tracer)
 
 /***
  * NAME
- *   test_span_context_invalid_handle - tests span context operations with a
- *                                      corrupted idx
+ *   test_span_context_invalid_handle - tests span context operations with a corrupted idx
  *
  * SYNOPSIS
  *   static void test_span_context_invalid_handle(struct otelc_tracer *tracer)
