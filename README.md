@@ -395,16 +395,18 @@ for details.
 
 ## Documentation
 
-- `README` -- build instructions, API overview, configuration reference, and
-  usage examples.
-- `MEMO` -- in-depth design notes on multithreading, span lifecycle, context
-  propagation, and memory management.
-- `README-sharded_map` -- analysis of span handle management strategies.
-- `README-naming_convention` -- function naming patterns for variadic,
-  key-value, and array-based argument styles.
-- `README-configuration` -- compile-time configuration macros and their
-  effects on threading, context propagation, and provider architecture.
-- `TODO` -- implemented features and planned enhancements.
+- [`README`](README) -- build instructions, API overview, configuration
+  reference, and usage examples.
+- [`MEMO`](MEMO) -- in-depth design notes on multithreading, span lifecycle,
+  context propagation, and memory management.
+- [`README-sharded_map`](README-sharded_map) -- analysis of span handle
+  management strategies.
+- [`README-naming_convention`](README-naming_convention) -- function naming
+  patterns for variadic, key-value, and array-based argument styles.
+- [`README-configuration`](README-configuration) -- compile-time configuration
+  macros and their effects on threading, context propagation, and provider
+  architecture.
+- [`TODO`](TODO) -- implemented features and planned enhancements.
 
 ## License
 
