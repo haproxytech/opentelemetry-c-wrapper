@@ -901,7 +901,7 @@ static int otel_meter_update_instrument(struct otelc_meter *meter, int idx, cons
  */
 static int otel_meter_update_instrument_kv_n(struct otelc_meter *meter, int idx, const struct otelc_value *value, const struct otelc_kv *kv, size_t kv_len)
 {
-	std::map<std::string, otel_attribute_value> attr{};
+	otel_attributes attr{};
 
 	OTELC_FUNC("%p, %d, %p, %p, %zu", meter, idx, value, kv, kv_len);
 
@@ -919,9 +919,16 @@ static int otel_meter_update_instrument_kv_n(struct otelc_meter *meter, int idx,
 	if (OTEL_METRIC_INSTRUMENT_IS_OBSERVABLE(instrument->type))
 		OTELC_RETURN_INT(idx);
 
-	if (!OTEL_NULL(kv) && (kv_len > 0))
+	if (!OTEL_NULL(kv) && (kv_len > 0)) {
+		try {
+			OTEL_DBG_THROW();
+			attr.reserve(kv_len);
+		}
+		OTEL_CATCH_SIGNAL_RETURN( , OTEL_METER_RETURN_INT, "Unable to allocate metric attributes")
+
 		for (size_t i = 0; i < kv_len; i++)
-			OTEL_VALUE_ADD(_INT, attr, emplace, kv[i].key, &(kv[i].value), &(meter->err), "Unable to add metric attribute");
+			OTEL_VALUE_ADD(_INT, attr, emplace_back, kv[i].key, &(kv[i].value), &(meter->err), "Unable to add metric attribute");
+	}
 
 #ifndef OTELC_USE_RUNTIME_CONTEXT
 	otel_context::Context rt_context{};

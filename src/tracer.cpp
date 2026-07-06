@@ -224,8 +224,7 @@ static struct otelc_span *otel_tracer_start_span_with_options(struct otelc_trace
 	 * Build the links vector before allocating the span so that link
 	 * resolution errors do not require span cleanup.
 	 */
-	using otel_link_attrs_t = std::map<std::string, otel_attribute_value>;
-	using otel_link_entry_t = std::pair<otel_trace::SpanContext, otel_link_attrs_t>;
+	using otel_link_entry_t = std::pair<otel_trace::SpanContext, otel_attributes>;
 
 	std::vector<otel_link_entry_t> links_vec{};
 
@@ -238,8 +237,8 @@ static struct otelc_span *otel_tracer_start_span_with_options(struct otelc_trace
 		OTEL_CATCH_SIGNAL_RETURN( , OTEL_TRACER_RETURN_PTR, "Unable to allocate links vector")
 
 		for (size_t i = 0; i < links_len; i++) {
-			otel_link_attrs_t link_attr{};
-			auto              link_ctx = otel_trace::SpanContext::GetInvalid();
+			otel_attributes link_attr{};
+			auto            link_ctx = otel_trace::SpanContext::GetInvalid();
 
 			if (!OTEL_NULL(links[i].span) && !OTEL_NULL(links[i].context))
 				OTEL_TRACER_RETURN_PTR("Link[%zu]: span and context are mutually exclusive", i);
@@ -264,9 +263,16 @@ static struct otelc_span *otel_tracer_start_span_with_options(struct otelc_trace
 				link_ctx = otel_trace::GetSpan(*(ch->context))->GetContext();
 			}
 
-			if (!OTEL_NULL(links[i].kv) && (links[i].kv_len > 0))
+			if (!OTEL_NULL(links[i].kv) && (links[i].kv_len > 0)) {
+				try {
+					OTEL_DBG_THROW();
+					link_attr.reserve(links[i].kv_len);
+				}
+				OTEL_CATCH_SIGNAL_RETURN( , OTEL_TRACER_RETURN_PTR, "Unable to allocate link attributes")
+
 				for (size_t j = 0; j < links[i].kv_len; j++)
-					OTEL_VALUE_ADD(_PTR, link_attr, emplace, links[i].kv[j].key, &(links[i].kv[j].value), &(tracer->err), "Unable to add link attribute");
+					OTEL_VALUE_ADD(_PTR, link_attr, emplace_back, links[i].kv[j].key, &(links[i].kv[j].value), &(tracer->err), "Unable to add link attribute");
+			}
 
 			try {
 				OTEL_DBG_THROW();

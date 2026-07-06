@@ -951,27 +951,29 @@ static int otel_span_set_attribute_kv_n(const struct otelc_span *span, const str
 
 /***
  * NAME
- *   otel_span_add_one_event - adds an attribute to an event's attribute map
+ *   otel_span_add_one_event - adds an attribute to an event's attribute list
  *
  * SYNOPSIS
- *   static int otel_span_add_one_event(const struct otelc_span *span, std::map<std::string, otel_attribute_value> &attr, const char *key, const struct otelc_value *value)
+ *   static int otel_span_add_one_event(const struct otelc_span *span, otel_attributes &attr, const char *key, const struct otelc_value *value)
  *
  * ARGUMENTS
  *   span  - span instance
- *   attr  - map of attributes containing key-value pairs with unique keys
- *   key   - key of the attribute being added to the map
- *   value - value of the attribute being added to the map
+ *   attr  - list of attribute key-value pairs
+ *   key   - key of the attribute being added to the list
+ *   value - value of the attribute being added to the list
  *
  * DESCRIPTION
- *   Adds a single attribute to the event's attribute map.  An attribute is a
- *   key-value pair with a unique key.  The attribute map can later be used as
+ *   Appends a single attribute to the event's attribute list.  The list keeps
+ *   the caller-supplied key and value without copying them, so it avoids the
+ *   per-entry allocations of a keyed map; a duplicate key is resolved by the
+ *   SDK when the event is recorded.  The attribute list can later be used as
  *   an argument when adding the event to the span.
  *
  * RETURN VALUE
  *   Returns OTELC_RET_OK if the attribute has been added, or OTELC_RET_ERROR in
  *   case of an error.
  */
-static int otel_span_add_one_event(const struct otelc_span *span, std::map<std::string, otel_attribute_value> &attr, const char *key, const struct otelc_value *value)
+static int otel_span_add_one_event(const struct otelc_span *span, otel_attributes &attr, const char *key, const struct otelc_value *value)
 {
 	OTELC_FUNC("%p, <attr>, \"%s\", %p", span, OTELC_STR_ARG(key), value);
 
@@ -982,7 +984,7 @@ static int otel_span_add_one_event(const struct otelc_span *span, std::map<std::
 
 	OTELC_DBG(DEBUG, "'%s' -> %s", key, otelc_value_dump(value, ""));
 
-	OTEL_VALUE_ADD(_INT, attr, emplace, key, value, &(span->tracer->err), "Unable to add event");
+	OTEL_VALUE_ADD(_INT, attr, emplace_back, key, value, &(span->tracer->err), "Unable to add event");
 
 	OTELC_RETURN_INT(OTELC_RET_OK);
 }
@@ -1014,10 +1016,10 @@ static int otel_span_add_one_event(const struct otelc_span *span, std::map<std::
  */
 static int otel_span_add_event_var(const struct otelc_span *span, const char *name, const struct timespec *ts_system, const char *key, const struct otelc_value *value, ...)
 {
-	va_list                                     ap;
-	std::map<std::string, otel_attribute_value> attr{};
-	otel_system_timestamp                       timestamp = std::chrono::system_clock::now();
-	int                                         retval = OTELC_RET_ERROR;
+	va_list               ap;
+	otel_attributes       attr{};
+	otel_system_timestamp timestamp = std::chrono::system_clock::now();
+	int                   retval = OTELC_RET_ERROR;
 
 	OTELC_FUNC("%p, \"%s\", %p, \"%s\", %p, ...", span, OTELC_STR_ARG(name), ts_system, OTELC_STR_ARG(key), value);
 
@@ -1078,10 +1080,10 @@ static int otel_span_add_event_var(const struct otelc_span *span, const char *na
  */
 static int otel_span_add_event_kv_var(const struct otelc_span *span, const char *name, const struct timespec *ts_system, const struct otelc_kv *kv, ...)
 {
-	va_list                                     ap;
-	std::map<std::string, otel_attribute_value> attr{};
-	otel_system_timestamp                       timestamp = std::chrono::system_clock::now();
-	int                                         retval = OTELC_RET_ERROR;
+	va_list               ap;
+	otel_attributes       attr{};
+	otel_system_timestamp timestamp = std::chrono::system_clock::now();
+	int                   retval = OTELC_RET_ERROR;
 
 	OTELC_FUNC("%p, \"%s\", %p, %p, ...", span, OTELC_STR_ARG(name), ts_system, kv);
 
@@ -1138,9 +1140,9 @@ static int otel_span_add_event_kv_var(const struct otelc_span *span, const char 
  */
 static int otel_span_add_event_kv_n(const struct otelc_span *span, const char *name, const struct timespec *ts_system, const struct otelc_kv *kv, size_t kv_len)
 {
-	std::map<std::string, otel_attribute_value> attr{};
-	otel_system_timestamp                       timestamp = std::chrono::system_clock::now();
-	int                                         retval = OTELC_RET_ERROR;
+	otel_attributes       attr{};
+	otel_system_timestamp timestamp = std::chrono::system_clock::now();
+	int                   retval = OTELC_RET_ERROR;
 
 	OTELC_FUNC("%p, \"%s\", %p, %p, %zu", span, OTELC_STR_ARG(name), ts_system, kv, kv_len);
 
@@ -1152,6 +1154,12 @@ static int otel_span_add_event_kv_n(const struct otelc_span *span, const char *n
 		OTEL_SPAN_RETURN_INT("Invalid event key-value");
 	else if (kv_len == 0)
 		OTEL_SPAN_RETURN_INT("Invalid event key-value array size");
+
+	try {
+		OTEL_DBG_THROW();
+		attr.reserve(kv_len);
+	}
+	OTEL_CATCH_SIGNAL_RETURN( , OTEL_SPAN_RETURN_INT, "Unable to allocate event attributes")
 
 	OTEL_LOCK_SPAN_HANDLE(_INT, span);
 
@@ -1200,8 +1208,8 @@ static int otel_span_add_link(const struct otelc_span *span, const struct otelc_
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
 
 #if defined(OPENTELEMETRY_ABI_VERSION_NO) && (OPENTELEMETRY_ABI_VERSION_NO >= 2)
-	auto                                        target = otel_trace::SpanContext::GetInvalid();
-	std::map<std::string, otel_attribute_value> attribute{};
+	auto            target = otel_trace::SpanContext::GetInvalid();
+	otel_attributes attribute{};
 
 	if (!OTEL_NULL(link_span) && !OTEL_NULL(link_context))
 		OTEL_SPAN_RETURN_INT("Parameters link_span and link_context are mutually exclusive");
@@ -1209,9 +1217,16 @@ static int otel_span_add_link(const struct otelc_span *span, const struct otelc_
 	if (OTEL_NULL(link_span) && OTEL_NULL(link_context))
 		OTEL_SPAN_RETURN_INT("One of link_span or link_context must be specified");
 
-	if (!OTEL_NULL(kv) && (kv_len > 0))
+	if (!OTEL_NULL(kv) && (kv_len > 0)) {
+		try {
+			OTEL_DBG_THROW();
+			attribute.reserve(kv_len);
+		}
+		OTEL_CATCH_SIGNAL_RETURN( , OTEL_SPAN_RETURN_INT, "Unable to allocate link attributes")
+
 		for (size_t i = 0; i < kv_len; ++i)
-			OTEL_VALUE_ADD(_INT, attribute, emplace, kv[i].key, &(kv[i].value), &(span->tracer->err), "Unable to add link");
+			OTEL_VALUE_ADD(_INT, attribute, emplace_back, kv[i].key, &(kv[i].value), &(span->tracer->err), "Unable to add link");
+	}
 
 	/* Resolve the link target from either a span or a span context. */
 	if (!OTEL_NULL(link_span)) {
@@ -1272,8 +1287,8 @@ static int otel_span_add_link(const struct otelc_span *span, const struct otelc_
  */
 static int otel_span_record_exception(const struct otelc_span *span, const char *type, const char *message, const char *stacktrace, const struct timespec *ts_system, const struct otelc_kv *kv, size_t kv_len)
 {
-	std::map<std::string, otel_attribute_value> attr{};
-	otel_system_timestamp                       timestamp = std::chrono::system_clock::now();
+	otel_attributes       attr{};
+	otel_system_timestamp timestamp = std::chrono::system_clock::now();
 
 	OTELC_FUNC("%p, \"%s\", \"%s\", \"%s\", %p, %p, %zu", span, OTELC_STR_ARG(type), OTELC_STR_ARG(message), OTELC_STR_ARG(stacktrace), ts_system, kv, kv_len);
 
@@ -1289,7 +1304,7 @@ static int otel_span_record_exception(const struct otelc_span *span, const char 
 
 	try {
 		OTEL_DBG_THROW();
-		(void)attr.emplace("exception.type", otel_nostd::string_view{type});
+		(void)attr.emplace_back("exception.type", otel_nostd::string_view{type});
 	}
 	OTEL_CATCH_SIGNAL_RETURN( , OTEL_SPAN_RETURN_INT, "Unable to add exception type")
 
@@ -1297,7 +1312,7 @@ static int otel_span_record_exception(const struct otelc_span *span, const char 
 	if (OTELC_STR_IS_VALID(message))
 		try {
 			OTEL_DBG_THROW();
-			(void)attr.emplace("exception.message", otel_nostd::string_view{message});
+			(void)attr.emplace_back("exception.message", otel_nostd::string_view{message});
 		}
 		OTEL_CATCH_SIGNAL_RETURN( , OTEL_SPAN_RETURN_INT, "Unable to add exception message")
 
@@ -1305,14 +1320,14 @@ static int otel_span_record_exception(const struct otelc_span *span, const char 
 	if (OTELC_STR_IS_VALID(stacktrace))
 		try {
 			OTEL_DBG_THROW();
-			(void)attr.emplace("exception.stacktrace", otel_nostd::string_view{stacktrace});
+			(void)attr.emplace_back("exception.stacktrace", otel_nostd::string_view{stacktrace});
 		}
 		OTEL_CATCH_SIGNAL_RETURN( , OTEL_SPAN_RETURN_INT, "Unable to add exception stacktrace")
 
 	/* Add any extra user-supplied attributes to the exception event. */
 	if (!OTEL_NULL(kv) && (kv_len > 0))
 		for (size_t i = 0; i < kv_len; i++)
-			OTEL_VALUE_ADD(_INT, attr, emplace, kv[i].key, &(kv[i].value), &(span->tracer->err), "Unable to add exception attribute");
+			OTEL_VALUE_ADD(_INT, attr, emplace_back, kv[i].key, &(kv[i].value), &(span->tracer->err), "Unable to add exception attribute");
 
 	handle->span->AddEvent(otel_nostd::string_view{"exception"}, timestamp, attr);
 
