@@ -1,0 +1,194 @@
+      ---------------------------------------------------------------
+       Meter locking, attribute handling, and instrument lookup speed
+      ---------------------------------------------------------------
+
+
+1. Background
+------------------------------------------------------------------------------
+
+The speed test (test/speed.sh, signal context speed_test) drives the wrapper
+with worker threads that repeatedly start and end spans, propagate contexts,
+emit log records and update metric instruments, with every exporter writing to
+/dev/null so that the measured cost is the API path itself.  Sweeps taken with
+several OpenTelemetry instances showed the total throughput peaking around 32
+workers per instance and declining beyond that point, while the gain from 1 to
+32 workers within one instance stayed below a factor of two -- a serialization
+signature rather than CPU exhaustion.
+
+Sampling the stacks of a loaded run with gdb located the serialization point:
+worker threads spent most of their blocked time on the single per-meter map
+mutex, inside otel_meter_create_instrument, otel_meter_update_instrument and
+otel_meter_add_view, and the running workers spent a large share of their time
+allocating nodes and key strings for the std::map intermediates used on the
+attribute paths.  The span and span context handle maps were not a significant
+factor; see README-sharded_map for the earlier evaluation of that layer.
+
+The findings were addressed in stages, each covered by one commit and described
+in the sections below.
+
+
+2. Shared-mutex meter maps
+------------------------------------------------------------------------------
+
+Previously the instrument and view handle maps of a meter used a single shard
+whose std::mutex every meter operation acquired exclusively, and the update
+paths held it across the SDK Add()/Record() dispatch, so all the workers of
+an instance serialized on one lock.
+
+The otel_handle template now accepts a mutex-type parameter that defaults to
+std::mutex, which keeps the span and the span context maps unchanged, and the
+meter maps instantiate it with the otel_shared_mutex wrapper described at the
+end of this section.  The lock discipline is as follows:
+
+  * Shared (OTEL_LOCK_METER_SHARED): instrument updates, instrument lookup,
+    observable callback registration and removal.  These only read the map,
+    and the SDK instruments they dispatch to are thread-safe, so concurrent
+    callers no longer serialize.
+
+  * Exclusive (OTEL_LOCK_METER): instrument creation, view registration and
+    teardown (for_each_locked / clear_locked), which mutate the map.
+
+  * Double-checked creation: create_instrument and add_view first probe for
+    an existing entry under the shared lock and return its ID on a hit; on
+    a miss they take the per-meter create_mutex and re-probe under a shared
+    lock, so of a whole herd racing for the same name only the winner ever
+    acquires the exclusive map lock, and concurrent creators cannot register
+    duplicates.
+
+Holding only the shared lock during a dispatch is safe because the instrument
+handles are immutable after creation and are erased only during meter teardown,
+and the destroy lifetime contract documented in the public headers requires
+every concurrent meter operation to be drained before destroy is invoked.
+
+An earlier revision of this scheme let every thread that missed the probe queue
+directly for the exclusive lock.  On glibc the std::shared_mutex maps onto a
+reader-preferring POSIX rwlock, so with the hot path holding the lock shared
+almost continuously those queued writers never got in: in the sweeps that used
+hundreds of workers per instance, large parts of the worker population were
+still stuck inside create_instrument when the run ended, having completed one
+iteration in a whole minute.  Two measures remove the starvation.  The handle
+maps use otel_shared_mutex, a wrapper that diverts new shared acquisitions to
+the exclusive path while a writer is registered, which bounds the wait of the
+writer to only the readers that are already in flight.  And the per-meter mutex
+create_mutex serializes creation itself, so that the startup herd drains through
+a plain mutex wake chain with one shared re-probe each, and never enters the
+writer queue at all.
+
+
+3. Flat attribute vectors
+------------------------------------------------------------------------------
+
+The kv-array and variadic attribute paths (span events, span links, links at
+span creation, recorded exceptions, metric updates with attributes) collected
+attributes into a std::map keyed by std::string before handing them over to
+the SDK.  Every entry allocated a tree node and copied its key into a fresh
+string.
+
+These intermediates now use the otel_attributes alias, a flat vector of pairs
+of string_view and AttributeValue accepted by the SDK through the very same
+KeyValueIterable overloads.  Keys and values are borrowed from the storage of
+the caller for the duration of the call, which is safe because the SDK copies
+attributes into its recordables during the call, and paths whose final size is
+the given attribute count reserve the vector capacity in advance, reducing the
+whole collection to a single allocation; record_exception, whose vector also
+carries the fixed exception attributes, lets the vector grow instead.
+
+Behavioral note: a duplicate key within a single call is now resolved by the
+SDK attribute map, where the last value wins, instead of by the intermediate
+map, where the first value won.  Attribute semantics for unique keys are not
+affected.
+
+
+4. Case-folded instrument index
+------------------------------------------------------------------------------
+
+Resolving an existing instrument previously scanned the whole instrument map
+and compared every entry's name case-insensitively, so the cost of a lookup
+grew with the registry size, and the scan ran on every create_instrument call
+because that function doubles as the lookup path for registered instruments.
+
+Each meter now keeps an instrument_index, an unordered map from a case-folded
+key to the instrument ID.  The key is produced by otel_meter_instrument_key()
+from the lowercased instrument name, a '/' separator and the decimal type of
+the instrument, so the instruments sharing a name but differing in type keep
+distinct entries, and the folding preserves the case-insensitive matching that
+the OpenTelemetry specification mandates.  The index is guarded by the same
+mutex as the instrument map: probes run under the shared lock, and the entry
+is registered under the exclusive lock only after the handle emplace and the
+observable-callback registration have succeeded, so a failed creation rolls
+back without ever leaving a stale index entry behind.  The lookup is constant
+time instead of linear in the registry size.
+
+
+5. Benchmark results
+------------------------------------------------------------------------------
+
+All figures are the total iterations per second reported by the test program
+test/otel-c-wrapper-test with the speed_test context, /dev/null exporters, a
+15 second runtime and a fixed random seed, measured on a Linux system, kernel
+6.17.0-122035-tuxedo, processor AMD Ryzen 7 8845HS (8 cores, 16 hardware
+threads).  Each column adds one stage on top of the previous one.
+
+Single instance:
+
+    Workers   Baseline   Shared mutex   Flat vectors   Name index
+  ----------------------------------------------------------------
+          1      41637          40932          43467        43350
+         16     164085         296861         308813       307789
+         64     153492         303034         313342       312565
+
+The single-worker cost is unchanged by the locking work and improves slightly
+with the flat vectors.  The contention wall between 16 and 64 workers is gone:
+the baseline declines past 16 workers whereas the patched library holds its
+throughput.  The name index shows no measurable change here because the test
+registers only a small number of instruments; its benefit applies to meters
+carrying a large registry.
+
+Multiple instances (workers are per instance):
+
+    Instances   Workers   Baseline   Patched
+  --------------------------------------------
+            4         4     206837    215186
+            4        16     243514    230544
+
+At 4 instances with 4 workers each the total worker count matches the hardware
+threads and the patched library wins.  At 4 instances with 16 workers each the
+machine runs fourfold oversubscribed with CPU-bound threads; in that regime
+the patched library measures below the baseline (see section 6).
+
+
+6. Oversubscription caveat and future work
+------------------------------------------------------------------------------
+
+Under heavy oversubscription the shared-mutex read path acquires and releases
+a reader count with atomic read-modify-write operations on a cache line that
+all workers of an instance share.  Those operations burn CPU that the blocked
+threads of the old design used to cede to the exporter, processor and reader
+service threads, which shows up as the regression in the last table row.  The
+effect is limited to running clearly more CPU-bound worker threads than there
+are hardware threads; sizing the workers to the machine, as the surrounding
+application does, stays on the winning side.
+
+The most extreme worker counts additionally trade away total throughput for
+fairness: since no worker remains parked on a starving lock anymore, the whole
+population runs, and the added scheduler pressure lowers the total figures below
+the plain-mutex baseline, while the per-worker progress becomes considerably
+more even than either of the earlier designs delivered.
+
+If the oversubscribed regime ever matters, the follow-up is to make the read
+path free of shared write traffic entirely: publish the instrument index as an
+immutable snapshot behind an atomic shared pointer that lookups load without
+any read-modify-write, and rebuild the snapshot under the exclusive lock on
+the rare registration.  Sharding the instrument map by ID would be a simpler
+alternative that spreads, but does not remove, the reader traffic.
+
+
+7. Conclusion
+------------------------------------------------------------------------------
+
+The meter path no longer serializes the workers of one instance: the metric
+updates run concurrently under a shared lock, attribute collection no longer
+allocates per entry, and instrument lookup no longer scans the registry.  In
+the speed test this roughly doubles the sustainable per-instance throughput
+at realistic worker counts while leaving the single-threaded cost and all of
+the documented lifetime contracts intact.

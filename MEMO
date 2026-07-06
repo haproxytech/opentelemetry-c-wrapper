@@ -785,10 +785,12 @@ Per-operation locking strategy:
     not yet released the shard lock.
 
   Duplicate-instrument detection:
-    Instrument handles live in a single shard and creation runs under the
-    OTEL_LOCK_METER mutex; a plain std::find_if over that shard detects an
-    already-registered instrument by case-insensitive name and type before a
-    new one is created.
+    Instrument handles live in a single shard.  create_instrument probes the
+    case-folded instrument_index under the shared lock and returns the ID of
+    an already-registered instrument on a hit; on a miss it takes the meter's
+    create_mutex and re-probes under the shared lock, so only the creation
+    winner ever acquires the exclusive map lock and two concurrent creators
+    cannot register duplicates.
 
   ID generation:
     New handle IDs come from an atomic increment of the id counter in both
@@ -1328,15 +1330,18 @@ Instrument creation (otel_meter_create_instrument):
     1. Validate name, description, unit (optionally via
        InstrumentMetaDataValidator when OTELC_USE_INSTRUMENT_VALIDATOR
        is defined).
-    2. Duplicate detection: case-insensitive name + type match via std::find_if
-       with InstrumentDescriptorUtil::CaseInsensitiveAsciiEquals.  Returns
-       existing ID if found.
+    2. Duplicate detection: probe of the case-folded instrument_index (name
+       folded to lower case, '/' separator, decimal type), first under the
+       shared lock, then again under the meter's create_mutex with a shared
+       re-probe.  Returns existing ID if found.
     3. Dispatch to the appropriate meter_ptr->Create*() call based on type.
-    4. Wrap result in otel_instrument_handle, emplace into the otel_instrument
-       handle map.
+    4. Wrap result in otel_instrument_handle and emplace into the
+       otel_instrument handle map.
     5. For observable instruments, automatically register the callback via
        otel_nolock_meter_add_instrument_callback.
-    6. On any failure after emplacement, roll back by erasing from the map and
+    6. Register the instrument_index entry last, so a failed creation never
+       leaves a stale index entry.
+    7. On any failure after emplacement, roll back by erasing from the map and
        deleting the handle.
 
 Value recording:
@@ -1876,15 +1881,21 @@ Threading models:
   OTEL_HANDLE_SHARED is false.
 
   Meter handles (otel_instrument, otel_view) are always global (not thread-local)
-  and always locked via OTEL_LOCK_METER(type) which locks shard[0].mutex --
-  single shard, single lock.  This is correct because instruments are long-lived,
-  created once at startup, so creation contention is negligible.
+  and live in a single shard whose mutex is an otel_shared_mutex, a wrapper
+  around std::shared_mutex that adds writer preference.  Lookups and instrument
+  updates take it shared via OTEL_LOCK_METER_SHARED(type) and run in parallel;
+  creation is serialized on the meter's create_mutex and takes the map lock
+  exclusively only for the final insert, and teardown locks exclusively via
+  OTEL_LOCK_METER(type).  Instruments are long-lived and created once at
+  startup, so the exclusive path is cold.
 
-Handle structure (otel_handle<T, shared>):
+Handle structure (otel_handle<T, shared, M>):
 
   Each handle contains a vector of shards, where each shard holds an
-  unordered_map and a std::mutex.  The constructor validates that num_shards
-  is a power of two (required for the bitmask in get_shard_index).
+  unordered_map and a mutex of the type selected by the M template parameter
+  (std::mutex by default, otel_shared_mutex for the meter maps).  The
+  constructor validates that num_shards is a power of two (required for the
+  bitmask in get_shard_index).
 
   Atomic members (id, peak_size, alloc_fail_cnt, erase_cnt, destroy_cnt) use
   std::atomic and require no lock.  The id counter uses operator++ which is
@@ -1923,11 +1934,18 @@ Guard variable naming:
 
 Meter locking:
 
-  All meter operations lock shard[0].mutex via OTEL_LOCK_METER(instrument) or
-  OTEL_LOCK_METER(view).  Since instruments and views are separate handle
-  structures, guard_instrument and guard_view are different mutex instances.
-  otel_meter_create_instrument holds the instrument lock for the entire
-  creation + optional callback registration path.
+  Meter operations lock shard[0].mutex, an otel_shared_mutex (a wrapper around
+  std::shared_mutex that adds writer preference): lookups, updates of the
+  instruments and observable callback registration take it shared through
+  OTEL_LOCK_METER_SHARED(instrument), while map mutation and teardown take it
+  exclusively via OTEL_LOCK_METER(instrument) or OTEL_LOCK_METER(view).  Since
+  instruments and views are separate handle structures, guard_instrument and
+  guard_view are different mutex instances.
+  otel_meter_create_instrument probes the instrument_index under the shared
+  lock, serializes on the meter's create_mutex, re-probes under the shared
+  lock and only then, as the single creation winner, performs the SDK creation
+  and takes the exclusive lock for the map and index insert and the optional
+  callback registration.
   otel_nolock_meter_add_instrument_callback is called while the instrument lock
   is already held (hence "nolock" in the name).
 

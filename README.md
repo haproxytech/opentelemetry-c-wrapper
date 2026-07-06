@@ -447,6 +447,8 @@ for details.
   context propagation, and memory management.
 - [`README-sharded_map`](README-sharded_map) -- analysis of span handle
   management strategies.
+- [`README-meter_performance`](README-meter_performance) -- meter locking,
+  attribute handling, and instrument lookup performance analysis.
 - [`README-naming_convention`](README-naming_convention) -- function naming
   patterns for variadic, key-value, and array-based argument styles.
 - [`README-configuration`](README-configuration) -- compile-time configuration
