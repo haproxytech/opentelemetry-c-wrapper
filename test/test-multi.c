@@ -16,6 +16,157 @@
 #include "test-util.h"
 
 
+#define MULTI_TRACES_A    "__multi_traces_a"
+#define MULTI_TRACES_B    "__multi_traces_b"
+#define MULTI_METRICS_A   "__multi_metrics_a"
+#define MULTI_METRICS_B   "__multi_metrics_b"
+#define MULTI_LOGS_A      "__multi_logs_a"
+#define MULTI_LOGS_B      "__multi_logs_b"
+#ifdef USE_THREADS
+#  define MULTI_THREADS   4
+#  define MULTI_UPDATES   20000
+#endif
+
+
+/***
+ * NAME
+ *   test_file_read - reads a whole file into an allocated buffer
+ *
+ * SYNOPSIS
+ *   static char *test_file_read(const char *path)
+ *
+ * ARGUMENTS
+ *   path - name of the file to read
+ *
+ * DESCRIPTION
+ *   Reads the complete contents of the named file into a newly allocated,
+ *   NUL-terminated buffer.  The tests use this to inspect the files written
+ *   by the per-instance ostream exporters after an instance has been
+ *   destroyed, at which point the file is flushed and closed.  The caller
+ *   owns the returned buffer and releases it with OTELC_FREE().
+ *
+ * RETURN VALUE
+ *   Returns the allocated buffer with the file contents, or NULL if the file
+ *   cannot be read or memory cannot be allocated.
+ */
+static char *test_file_read(const char *path)
+{
+	char *retptr = NULL;
+	FILE *file;
+	long  size;
+
+	file = fopen(path, "rb");
+	if (_NULL(file))
+		return NULL;
+
+	if ((fseek(file, 0, SEEK_END) == 0) && ((size = ftell(file)) >= 0) && (fseek(file, 0, SEEK_SET) == 0)) {
+		retptr = OTELC_MALLOC(__func__, __LINE__, (size_t)size + 1);
+		if (_nNULL(retptr)) {
+			if (fread(retptr, 1, (size_t)size, file) == (size_t)size) {
+				retptr[size] = '\0';
+			} else {
+				OTELC_FREE(__func__, __LINE__, retptr);
+
+				retptr = NULL;
+			}
+		}
+	}
+
+	(void)fclose(file);
+
+	return retptr;
+}
+
+
+/***
+ * NAME
+ *   test_file_contains - checks whether a file contains a string
+ *
+ * SYNOPSIS
+ *   static int test_file_contains(const char *path, const char *needle)
+ *
+ * ARGUMENTS
+ *   path   - name of the file to search
+ *   needle - string to look for
+ *
+ * DESCRIPTION
+ *   Reads the named file and searches its contents for the given string.
+ *   A file that cannot be read is treated as not containing the string.
+ *
+ * RETURN VALUE
+ *   Returns 1 if the file contains the string, 0 otherwise.
+ */
+static int test_file_contains(const char *path, const char *needle)
+{
+	char *content;
+	int   retval = 0;
+
+	content = test_file_read(path);
+	if (_nNULL(content)) {
+		retval = _nNULL(strstr(content, needle));
+
+		OTELC_FREE(__func__, __LINE__, content);
+	}
+
+	return retval;
+}
+
+
+/***
+ * NAME
+ *   test_metric_value - extracts an exported counter value from a file
+ *
+ * SYNOPSIS
+ *   static int64_t test_metric_value(const char *path, const char *instrument)
+ *
+ * ARGUMENTS
+ *   path       - name of the file written by the ostream metric exporter
+ *   instrument - name of the instrument whose value is extracted
+ *
+ * DESCRIPTION
+ *   Scans the output of the ostream metric exporter for the named instrument
+ *   and returns the number found on the next "value" line.  When the file
+ *   holds several exports of the same instrument, the value of the last one
+ *   wins, which for a cumulative counter is the final total.
+ *
+ * RETURN VALUE
+ *   Returns the extracted value, or -1 if the file cannot be read or the
+ *   instrument does not appear in it.
+ */
+static int64_t test_metric_value(const char *path, const char *instrument)
+{
+	char       *content, *line, *next;
+	const char *sep;
+	int64_t     retval = -1;
+	int         in_block = 0;
+
+	content = test_file_read(path);
+	if (_NULL(content))
+		return retval;
+
+	for (line = content; _nNULL(line); line = next) {
+		next = strchr(line, '\n');
+		if (_nNULL(next))
+			*next++ = '\0';
+
+		if (_nNULL(strstr(line, "instrument name"))) {
+			in_block = (strstr(line, instrument) != NULL);
+		}
+		else if ((in_block != 0) && _nNULL(strstr(line, "value"))) {
+			sep = strchr(line, ':');
+			if (_nNULL(sep))
+				retval = (int64_t)strtoll(sep + 1, NULL, 10);
+
+			in_block = 0;
+		}
+	}
+
+	OTELC_FREE(__func__, __LINE__, content);
+
+	return retval;
+}
+
+
 /***
  * NAME
  *   test_two_tracers_coexist - tests that two tracer instances coexist
@@ -350,6 +501,471 @@ static void test_two_meters_distinct_instrument_maps(const struct otelc_ctx *ctx
 
 /***
  * NAME
+ *   test_tracers_span_isolation - tests per-instance span export isolation
+ *
+ * SYNOPSIS
+ *   static void test_tracers_span_isolation(const struct otelc_ctx *ctx_a, const struct otelc_ctx *ctx_b)
+ *
+ * ARGUMENTS
+ *   ctx_a - library context exporting traces to the file MULTI_TRACES_A
+ *   ctx_b - library context exporting traces to the file MULTI_TRACES_B
+ *
+ * DESCRIPTION
+ *   Creates a tracer on each context, emits a span with a distinctive name on
+ *   each, and destroys both tracers so the simple processors export the spans
+ *   and the exporter files are flushed and closed.  Each file must contain
+ *   the span emitted by its own instance and must not contain the span of the
+ *   other instance, which proves that spans never leak across instances.
+ *
+ * RETURN VALUE
+ *   This function does not return a value.
+ */
+static void test_tracers_span_isolation(const struct otelc_ctx *ctx_a, const struct otelc_ctx *ctx_b)
+{
+	struct otelc_tracer *tracer_a = NULL, *tracer_b = NULL;
+	struct otelc_span   *span_a = NULL, *span_b = NULL;
+	char                *err_a = NULL, *err_b = NULL;
+	int                  result = TEST_FAIL;
+
+	tracer_a = otelc_tracer_create(ctx_a, &err_a);
+	tracer_b = otelc_tracer_create(ctx_b, &err_b);
+
+	if (_nNULL(tracer_a) && _nNULL(tracer_b)
+	    && (OTELC_OPS(tracer_a, start) == OTELC_RET_OK)
+	    && (OTELC_OPS(tracer_b, start) == OTELC_RET_OK)) {
+		span_a = OTELC_OPS(tracer_a, start_span, "multi-span-alpha");
+		span_b = OTELC_OPS(tracer_b, start_span, "multi-span-bravo");
+
+		if (_nNULL(span_a) && _nNULL(span_b)) {
+			OTELC_OPSR(span_a, end);
+			OTELC_OPSR(span_b, end);
+
+			result = TEST_PASS;
+		}
+	}
+
+	otelc_deinit(NULL, &tracer_a, NULL, NULL);
+	otelc_deinit(NULL, &tracer_b, NULL, NULL);
+
+	if ((result == TEST_PASS)
+	    && (test_file_contains(MULTI_TRACES_A, "multi-span-alpha") == 1)
+	    && (test_file_contains(MULTI_TRACES_A, "multi-span-bravo") == 0)
+	    && (test_file_contains(MULTI_TRACES_B, "multi-span-bravo") == 1)
+	    && (test_file_contains(MULTI_TRACES_B, "multi-span-alpha") == 0))
+		result = TEST_PASS;
+	else
+		result = TEST_FAIL;
+
+	OTELC_SFREE(err_a);
+	OTELC_SFREE(err_b);
+
+	test_report("spans are exported only by their own instance", result);
+}
+
+
+/***
+ * NAME
+ *   test_loggers_record_isolation - tests per-instance log export isolation
+ *
+ * SYNOPSIS
+ *   static void test_loggers_record_isolation(const struct otelc_ctx *ctx_a, const struct otelc_ctx *ctx_b)
+ *
+ * ARGUMENTS
+ *   ctx_a - library context exporting logs to the file MULTI_LOGS_A
+ *   ctx_b - library context exporting logs to the file MULTI_LOGS_B
+ *
+ * DESCRIPTION
+ *   Creates a logger on each context, emits a record with a distinctive body
+ *   on each, and destroys both loggers so the simple processors export the
+ *   records and the exporter files are flushed and closed.  Each file must
+ *   contain the record emitted by its own instance and must not contain the
+ *   record of the other instance.
+ *
+ * RETURN VALUE
+ *   This function does not return a value.
+ */
+static void test_loggers_record_isolation(const struct otelc_ctx *ctx_a, const struct otelc_ctx *ctx_b)
+{
+	struct otelc_logger *logger_a = NULL, *logger_b = NULL;
+	char                *err_a = NULL, *err_b = NULL;
+	int                  result = TEST_FAIL;
+
+	logger_a = otelc_logger_create(ctx_a, &err_a);
+	logger_b = otelc_logger_create(ctx_b, &err_b);
+
+	if (_nNULL(logger_a) && _nNULL(logger_b)
+	    && (OTELC_OPS(logger_a, start) == OTELC_RET_OK)
+	    && (OTELC_OPS(logger_b, start) == OTELC_RET_OK)
+	    && (OTELC_OPS(logger_a, log, OTELC_LOG_SEVERITY_INFO, 0, NULL, NULL, 0, NULL, 0, 0, NULL, NULL, NULL, 0, "multi-log-alpha") >= 0)
+	    && (OTELC_OPS(logger_b, log, OTELC_LOG_SEVERITY_INFO, 0, NULL, NULL, 0, NULL, 0, 0, NULL, NULL, NULL, 0, "multi-log-bravo") >= 0))
+		result = TEST_PASS;
+
+	otelc_deinit(NULL, NULL, NULL, &logger_a);
+	otelc_deinit(NULL, NULL, NULL, &logger_b);
+
+	if ((result == TEST_PASS)
+	    && (test_file_contains(MULTI_LOGS_A, "multi-log-alpha") == 1)
+	    && (test_file_contains(MULTI_LOGS_A, "multi-log-bravo") == 0)
+	    && (test_file_contains(MULTI_LOGS_B, "multi-log-bravo") == 1)
+	    && (test_file_contains(MULTI_LOGS_B, "multi-log-alpha") == 0))
+		result = TEST_PASS;
+	else
+		result = TEST_FAIL;
+
+	OTELC_SFREE(err_a);
+	OTELC_SFREE(err_b);
+
+	test_report("log records are exported only by their own instance", result);
+}
+
+
+/***
+ * NAME
+ *   test_meters_value_isolation - tests per-instance metric value isolation
+ *
+ * SYNOPSIS
+ *   static void test_meters_value_isolation(const struct otelc_ctx *ctx_a, const struct otelc_ctx *ctx_b)
+ *
+ * ARGUMENTS
+ *   ctx_a - library context exporting metrics to the file MULTI_METRICS_A
+ *   ctx_b - library context exporting metrics to the file MULTI_METRICS_B
+ *
+ * DESCRIPTION
+ *   Creates a meter on each context and on both of them a counter with the
+ *   same name, plus one counter that exists only on the first meter.  Each
+ *   counter is updated with a value unique to its instance, and the meters
+ *   are destroyed, which force-flushes the readers and closes the exporter
+ *   files.  The exported files must show exactly the per-instance totals for
+ *   the shared name, the first-instance-only counter must not appear in the
+ *   second file, and no value may leak from one instance to the other.
+ *
+ * RETURN VALUE
+ *   This function does not return a value.
+ */
+static void test_meters_value_isolation(const struct otelc_ctx *ctx_a, const struct otelc_ctx *ctx_b)
+{
+	struct otelc_meter *meter_a = NULL, *meter_b = NULL;
+	struct otelc_value  value;
+	char               *err_a = NULL, *err_b = NULL;
+	int64_t             id_a, id_a2, id_b;
+	int                 result = TEST_FAIL;
+
+	value.u_type = OTELC_VALUE_UINT64;
+
+	meter_a = otelc_meter_create(ctx_a, &err_a);
+	meter_b = otelc_meter_create(ctx_b, &err_b);
+
+	if (_nNULL(meter_a) && _nNULL(meter_b)
+	    && (OTELC_OPS(meter_a, start) == OTELC_RET_OK)
+	    && (OTELC_OPS(meter_b, start) == OTELC_RET_OK)) {
+		id_a  = OTELC_OPS(meter_a, create_instrument, "multi_counter",  "shared name", "1", OTELC_METRIC_INSTRUMENT_COUNTER_UINT64, NULL);
+		id_a2 = OTELC_OPS(meter_a, create_instrument, "only_a_counter", "only on A",   "1", OTELC_METRIC_INSTRUMENT_COUNTER_UINT64, NULL);
+		id_b  = OTELC_OPS(meter_b, create_instrument, "multi_counter",  "shared name", "1", OTELC_METRIC_INSTRUMENT_COUNTER_UINT64, NULL);
+
+		if ((id_a != OTELC_RET_ERROR) && (id_a2 != OTELC_RET_ERROR) && (id_b != OTELC_RET_ERROR)) {
+			value.u.value_uint64 = 31415;
+			if (OTELC_OPS(meter_a, update_instrument, id_a, &value) != OTELC_RET_ERROR) {
+				value.u.value_uint64 = 111;
+				if (OTELC_OPS(meter_a, update_instrument, id_a2, &value) != OTELC_RET_ERROR) {
+					value.u.value_uint64 = 27182;
+					if (OTELC_OPS(meter_b, update_instrument, id_b, &value) != OTELC_RET_ERROR)
+						result = TEST_PASS;
+				}
+			}
+		}
+	}
+
+	otelc_deinit(NULL, NULL, &meter_a, NULL);
+	otelc_deinit(NULL, NULL, &meter_b, NULL);
+
+	if ((result == TEST_PASS)
+	    && (test_metric_value(MULTI_METRICS_A, "multi_counter") == 31415)
+	    && (test_metric_value(MULTI_METRICS_A, "only_a_counter") == 111)
+	    && (test_metric_value(MULTI_METRICS_B, "multi_counter") == 27182)
+	    && (test_file_contains(MULTI_METRICS_B, "only_a_counter") == 0))
+		result = TEST_PASS;
+	else
+		result = TEST_FAIL;
+
+	OTELC_SFREE(err_a);
+	OTELC_SFREE(err_b);
+
+	test_report("same-name counters keep per-instance values", result);
+}
+
+
+/***
+ * NAME
+ *   test_meters_instrument_id_spaces - tests per-instance instrument ID spaces
+ *
+ * SYNOPSIS
+ *   static void test_meters_instrument_id_spaces(const struct otelc_ctx *ctx_a, const struct otelc_ctx *ctx_b)
+ *
+ * ARGUMENTS
+ *   ctx_a - first library context
+ *   ctx_b - second library context
+ *
+ * DESCRIPTION
+ *   Creates two meters and registers a different number of instruments on
+ *   each, so that an instrument ID valid on the first meter has no meaning on
+ *   the second one.  Updating the second meter with the foreign ID must fail,
+ *   updating the first meter with it must succeed, and get_instrument() must
+ *   resolve each name only on the meter that owns it.
+ *
+ * RETURN VALUE
+ *   This function does not return a value.
+ */
+static void test_meters_instrument_id_spaces(const struct otelc_ctx *ctx_a, const struct otelc_ctx *ctx_b)
+{
+	struct otelc_meter *meter_a = NULL, *meter_b = NULL;
+	struct otelc_value  value;
+	char               *err_a = NULL, *err_b = NULL;
+	int64_t             id_alpha, id_beta, id_gamma;
+	int                 result = TEST_FAIL;
+
+	value.u_type         = OTELC_VALUE_UINT64;
+	value.u.value_uint64 = 1;
+
+	meter_a = otelc_meter_create(ctx_a, &err_a);
+	meter_b = otelc_meter_create(ctx_b, &err_b);
+
+	if (_nNULL(meter_a) && _nNULL(meter_b)
+	    && (OTELC_OPS(meter_a, start) == OTELC_RET_OK)
+	    && (OTELC_OPS(meter_b, start) == OTELC_RET_OK)) {
+		id_alpha = OTELC_OPS(meter_a, create_instrument, "alpha_counter", "A first",  "1", OTELC_METRIC_INSTRUMENT_COUNTER_UINT64, NULL);
+		id_beta  = OTELC_OPS(meter_a, create_instrument, "beta_counter",  "A second", "1", OTELC_METRIC_INSTRUMENT_COUNTER_UINT64, NULL);
+		id_gamma = OTELC_OPS(meter_b, create_instrument, "gamma_counter", "B first",  "1", OTELC_METRIC_INSTRUMENT_COUNTER_UINT64, NULL);
+
+		if ((id_alpha != OTELC_RET_ERROR) && (id_beta != OTELC_RET_ERROR) && (id_gamma != OTELC_RET_ERROR)
+		    && (id_beta != id_gamma)
+		    && (OTELC_OPS(meter_a, get_instrument, "beta_counter",  OTELC_METRIC_INSTRUMENT_COUNTER_UINT64) == id_beta)
+		    && (OTELC_OPS(meter_b, get_instrument, "gamma_counter", OTELC_METRIC_INSTRUMENT_COUNTER_UINT64) == id_gamma)
+		    && (OTELC_OPS(meter_b, get_instrument, "beta_counter",  OTELC_METRIC_INSTRUMENT_COUNTER_UINT64) == OTELC_RET_ERROR)
+		    && (OTELC_OPS(meter_b, update_instrument, id_beta, &value) == OTELC_RET_ERROR)
+		    && (OTELC_OPS(meter_a, update_instrument, id_beta, &value) != OTELC_RET_ERROR))
+			result = TEST_PASS;
+	}
+
+	otelc_deinit(NULL, NULL, &meter_a, NULL);
+	otelc_deinit(NULL, NULL, &meter_b, NULL);
+
+	OTELC_SFREE(err_a);
+	OTELC_SFREE(err_b);
+
+	test_report("instrument ids are meaningless on a foreign meter", result);
+}
+
+
+/***
+ * NAME
+ *   test_meter_destroy_order - tests destroying meters in either order
+ *
+ * SYNOPSIS
+ *   static void test_meter_destroy_order(const struct otelc_ctx *ctx_a, const struct otelc_ctx *ctx_b)
+ *
+ * ARGUMENTS
+ *   ctx_a - first library context
+ *   ctx_b - second library context
+ *
+ * DESCRIPTION
+ *   Creates two meters, updates a counter on each, then destroys the FIRST
+ *   meter while the second is still in use.  After the first destroy the
+ *   second meter must still create instruments, record values and flush.
+ *   The exported file of the second instance must show the totals recorded
+ *   both before and after the first destroy.
+ *
+ * RETURN VALUE
+ *   This function does not return a value.
+ */
+static void test_meter_destroy_order(const struct otelc_ctx *ctx_a, const struct otelc_ctx *ctx_b)
+{
+	struct otelc_meter *meter_a = NULL, *meter_b = NULL;
+	struct otelc_value  value;
+	char               *err_a = NULL, *err_b = NULL;
+	int64_t             id_a, id_b, id_b2;
+	int                 result = TEST_FAIL;
+
+	value.u_type = OTELC_VALUE_UINT64;
+
+	meter_a = otelc_meter_create(ctx_a, &err_a);
+	meter_b = otelc_meter_create(ctx_b, &err_b);
+
+	if (_nNULL(meter_a) && _nNULL(meter_b)
+	    && (OTELC_OPS(meter_a, start) == OTELC_RET_OK)
+	    && (OTELC_OPS(meter_b, start) == OTELC_RET_OK)) {
+		id_a = OTELC_OPS(meter_a, create_instrument, "doomed_counter",   "on A", "1", OTELC_METRIC_INSTRUMENT_COUNTER_UINT64, NULL);
+		id_b = OTELC_OPS(meter_b, create_instrument, "survivor_counter", "on B", "1", OTELC_METRIC_INSTRUMENT_COUNTER_UINT64, NULL);
+
+		if ((id_a != OTELC_RET_ERROR) && (id_b != OTELC_RET_ERROR)) {
+			value.u.value_uint64 = 5;
+			if ((OTELC_OPS(meter_a, update_instrument, id_a, &value) != OTELC_RET_ERROR)
+			    && (OTELC_OPS(meter_b, update_instrument, id_b, &value) != OTELC_RET_ERROR)) {
+				/* Destroy the FIRST meter while the second is still alive. */
+				otelc_deinit(NULL, NULL, &meter_a, NULL);
+
+				/* Second meter must still record, register and flush. */
+				id_b2 = OTELC_OPS(meter_b, create_instrument, "late_counter", "after destroy", "1", OTELC_METRIC_INSTRUMENT_COUNTER_UINT64, NULL);
+
+				value.u.value_uint64 = 7;
+				if ((id_b2 != OTELC_RET_ERROR)
+				    && (OTELC_OPS(meter_b, update_instrument, id_b, &value) != OTELC_RET_ERROR)
+				    && (OTELC_OPS(meter_b, update_instrument, id_b2, &value) != OTELC_RET_ERROR)
+				    && (OTELC_OPS(meter_b, force_flush, NULL) == OTELC_RET_OK))
+					result = TEST_PASS;
+			}
+		}
+	}
+
+	otelc_deinit(NULL, NULL, &meter_a, NULL);
+	otelc_deinit(NULL, NULL, &meter_b, NULL);
+
+	if ((result == TEST_PASS)
+	    && (test_metric_value(MULTI_METRICS_B, "survivor_counter") == 12)
+	    && (test_metric_value(MULTI_METRICS_B, "late_counter") == 7))
+		result = TEST_PASS;
+	else
+		result = TEST_FAIL;
+
+	OTELC_SFREE(err_a);
+	OTELC_SFREE(err_b);
+
+	test_report("first meter destroy keeps second alive", result);
+}
+
+
+#ifdef USE_THREADS
+
+/* Work order and result of one concurrent metric-update worker. */
+struct multi_update_worker {
+	struct otelc_meter *meter;  /* Meter that receives the updates. */
+	pthread_t           thread; /* Thread executing the worker. */
+	uint64_t            add;    /* Value added by every update. */
+	int                 rc;     /* Worker result: TEST_PASS or TEST_FAIL. */
+};
+
+
+/***
+ * NAME
+ *   test_multi_update_worker - concurrently registers and updates a counter
+ *
+ * SYNOPSIS
+ *   static void *test_multi_update_worker(void *data)
+ *
+ * ARGUMENTS
+ *   data - pointer to the worker's multi_update_worker structure
+ *
+ * DESCRIPTION
+ *   Calls create_instrument() for the shared counter name, so all workers of
+ *   a meter race the creation path and all but one resolve the existing
+ *   instrument, then applies MULTI_UPDATES updates of the worker's value.
+ *   Any failed call marks the worker as failed.
+ *
+ * RETURN VALUE
+ *   This function always returns NULL; the outcome is stored in the rc
+ *   member of the worker structure.
+ */
+static void *test_multi_update_worker(void *data)
+{
+	struct multi_update_worker *worker = data;
+	struct otelc_value          value;
+	int64_t                     id;
+	int                         i;
+
+	worker->rc = TEST_FAIL;
+
+	value.u_type         = OTELC_VALUE_UINT64;
+	value.u.value_uint64 = worker->add;
+
+	id = OTELC_OPS(worker->meter, create_instrument, "herd_counter", "herd", "1", OTELC_METRIC_INSTRUMENT_COUNTER_UINT64, NULL);
+	if (id == OTELC_RET_ERROR)
+		return NULL;
+
+	for (i = 0; i < MULTI_UPDATES; i++)
+		if (OTELC_OPS(worker->meter, update_instrument, id, &value) == OTELC_RET_ERROR)
+			return NULL;
+
+	worker->rc = TEST_PASS;
+
+	return NULL;
+}
+
+
+/***
+ * NAME
+ *   test_meters_concurrent_updates - tests concurrent updates on two meters
+ *
+ * SYNOPSIS
+ *   static void test_meters_concurrent_updates(const struct otelc_ctx *ctx_a, const struct otelc_ctx *ctx_b)
+ *
+ * ARGUMENTS
+ *   ctx_a - library context exporting metrics to the file MULTI_METRICS_A
+ *   ctx_b - library context exporting metrics to the file MULTI_METRICS_B
+ *
+ * DESCRIPTION
+ *   Starts MULTI_THREADS workers on each of two meters.  Every worker first
+ *   races create_instrument() for the same counter name and then applies
+ *   MULTI_UPDATES updates, with all workers of the first meter adding 1 and
+ *   all workers of the second meter adding 2.  After the workers join and
+ *   the meters are destroyed, each exported file must show exactly the total
+ *   of its own meter, which proves that no update was lost, that the racing
+ *   registrations resolved to a single instrument per meter, and that no
+ *   value crossed between the instances.
+ *
+ * RETURN VALUE
+ *   This function does not return a value.
+ */
+static void test_meters_concurrent_updates(const struct otelc_ctx *ctx_a, const struct otelc_ctx *ctx_b)
+{
+	struct multi_update_worker  worker[2 * MULTI_THREADS];
+	struct otelc_meter         *meter_a = NULL, *meter_b = NULL;
+	char                       *err_a = NULL, *err_b = NULL;
+	int                         i, started = 0, result = TEST_FAIL;
+
+	meter_a = otelc_meter_create(ctx_a, &err_a);
+	meter_b = otelc_meter_create(ctx_b, &err_b);
+
+	if (_nNULL(meter_a) && _nNULL(meter_b)
+	    && (OTELC_OPS(meter_a, start) == OTELC_RET_OK)
+	    && (OTELC_OPS(meter_b, start) == OTELC_RET_OK)) {
+		for (i = 0; i < (2 * MULTI_THREADS); i++) {
+			worker[i].meter = ((i % 2) == 0) ? meter_a : meter_b;
+			worker[i].add   = ((i % 2) == 0) ? 1 : 2;
+			worker[i].rc    = TEST_FAIL;
+
+			if (pthread_create(&(worker[i].thread), NULL, test_multi_update_worker, worker + i) != 0)
+				break;
+
+			started++;
+		}
+
+		result = (started == (2 * MULTI_THREADS)) ? TEST_PASS : TEST_FAIL;
+
+		for (i = 0; i < started; i++)
+			if ((pthread_join(worker[i].thread, NULL) != 0) || (worker[i].rc != TEST_PASS))
+				result = TEST_FAIL;
+	}
+
+	otelc_deinit(NULL, NULL, &meter_a, NULL);
+	otelc_deinit(NULL, NULL, &meter_b, NULL);
+
+	if ((result == TEST_PASS)
+	    && (test_metric_value(MULTI_METRICS_A, "herd_counter") == (int64_t)(MULTI_THREADS * MULTI_UPDATES))
+	    && (test_metric_value(MULTI_METRICS_B, "herd_counter") == (int64_t)(2 * MULTI_THREADS * MULTI_UPDATES)))
+		result = TEST_PASS;
+	else
+		result = TEST_FAIL;
+
+	OTELC_SFREE(err_a);
+	OTELC_SFREE(err_b);
+
+	test_report("concurrent updates keep exact per-instance totals", result);
+}
+
+#endif /* USE_THREADS */
+
+
+/***
+ * NAME
  *   main - program entry point
  *
  * SYNOPSIS
@@ -362,7 +978,10 @@ static void test_two_meters_distinct_instrument_maps(const struct otelc_ctx *ctx
  * DESCRIPTION
  *   Loads the configuration file, opens two library contexts ("default" and
  *   "secondary"), runs the multi-instance tracer, meter and logger tests
- *   against them, releases the contexts, and reports the results.
+ *   against them, and then opens the "multi_a" and "multi_b" contexts, whose
+ *   ostream exporters write to per-instance files, and runs the isolation
+ *   tests that verify the exported data against those files.  Finally the
+ *   contexts are released and the results are reported.
  *
  * RETURN VALUE
  *   Returns EX_OK if all tests pass, or EX_SOFTWARE if any test fails.
@@ -370,6 +989,7 @@ static void test_two_meters_distinct_instrument_maps(const struct otelc_ctx *ctx
 int main(int argc, char **argv)
 {
 	struct otelc_ctx *ctx[2] = { NULL, NULL };
+	struct otelc_ctx *ctx_multi[2] = { NULL, NULL };
 	const char       *cfg_file;
 	char             *otel_err = NULL;
 	int               retval;
@@ -395,6 +1015,25 @@ int main(int argc, char **argv)
 
 		return test_done(EX_SOFTWARE, otel_err);
 	}
+	ctx_multi[0] = otelc_init(cfg_file, "multi_a", &otel_err);
+	if (_NULL(ctx_multi[0])) {
+		OTELC_LOG(stderr, "ERROR: %s", _NULL(otel_err) ? "Unable to init library" : otel_err);
+
+		otelc_deinit(&(ctx[0]), NULL, NULL, NULL);
+		otelc_deinit(&(ctx[1]), NULL, NULL, NULL);
+
+		return test_done(EX_SOFTWARE, otel_err);
+	}
+	ctx_multi[1] = otelc_init(cfg_file, "multi_b", &otel_err);
+	if (_NULL(ctx_multi[1])) {
+		OTELC_LOG(stderr, "ERROR: %s", _NULL(otel_err) ? "Unable to init library" : otel_err);
+
+		otelc_deinit(&(ctx[0]), NULL, NULL, NULL);
+		otelc_deinit(&(ctx[1]), NULL, NULL, NULL);
+		otelc_deinit(&(ctx_multi[0]), NULL, NULL, NULL);
+
+		return test_done(EX_SOFTWARE, otel_err);
+	}
 
 	OTELC_LOG(stdout, "[multi-tracer]");
 	test_two_tracers_coexist(ctx[0], ctx[1]);
@@ -407,8 +1046,20 @@ int main(int argc, char **argv)
 	OTELC_LOG(stdout, "[multi-logger]");
 	test_two_loggers_coexist(ctx[0], ctx[1]);
 
+	OTELC_LOG(stdout, "[multi-isolation]");
+	test_tracers_span_isolation(ctx_multi[0], ctx_multi[1]);
+	test_loggers_record_isolation(ctx_multi[0], ctx_multi[1]);
+	test_meters_value_isolation(ctx_multi[0], ctx_multi[1]);
+	test_meters_instrument_id_spaces(ctx_multi[0], ctx_multi[1]);
+	test_meter_destroy_order(ctx_multi[0], ctx_multi[1]);
+#ifdef USE_THREADS
+	test_meters_concurrent_updates(ctx_multi[0], ctx_multi[1]);
+#endif
+
 	otelc_deinit(&(ctx[0]), NULL, NULL, NULL);
 	otelc_deinit(&(ctx[1]), NULL, NULL, NULL);
+	otelc_deinit(&(ctx_multi[0]), NULL, NULL, NULL);
+	otelc_deinit(&(ctx_multi[1]), NULL, NULL, NULL);
 
 	return test_done(retval, otel_err);
 }

@@ -72,6 +72,14 @@ exporters:
     type:        memory
     buffer_size: 256
 
+  exporter_traces_multi_a:
+    type:     ostream
+    filename: __multi_traces_a
+
+  exporter_traces_multi_b:
+    type:     ostream
+    filename: __multi_traces_b
+
   exporter_traces_zipkin:
     type:           zipkin
     endpoint:       "http://localhost:9411/api/v2/spans"
@@ -125,6 +133,14 @@ exporters:
     type:        memory
     buffer_size: 256
 
+  exporter_metrics_multi_a:
+    type:     ostream
+    filename: __multi_metrics_a
+
+  exporter_metrics_multi_b:
+    type:     ostream
+    filename: __multi_metrics_b
+
   exporter_logs_otlp_file:
     type:           otlp_file
     thread_name:    "OTLP/file logs"
@@ -166,6 +182,14 @@ exporters:
     type:     ostream
     filename: __logs
 
+  exporter_logs_multi_a:
+    type:     ostream
+    filename: __multi_logs_a
+
+  exporter_logs_multi_b:
+    type:     ostream
+    filename: __multi_logs_b
+
   exporter_logs_elasticsearch:
     type:             elasticsearch
     host:             localhost
@@ -194,6 +218,12 @@ readers:
     thread_name:     "reader metr"
 #   cpu_id:          -1
     export_interval: 10000
+    export_timeout:  5000
+
+  reader_metrics_multi:
+    thread_name:     "reader multi"
+#   cpu_id:          -1
+    export_interval: 60000
     export_timeout:  5000
 
 samplers:
@@ -301,6 +331,20 @@ signals:
       processors: processor_traces_single
       providers:  provider_traces
 
+    multi_a:
+      scope_name: "OTEL C wrapper - traces multi A"
+      exporters:  exporter_traces_multi_a
+      samplers:   sampler_traces
+      processors: processor_traces_single
+      providers:  provider_traces
+
+    multi_b:
+      scope_name: "OTEL C wrapper - traces multi B"
+      exporters:  exporter_traces_multi_b
+      samplers:   sampler_traces
+      processors: processor_traces_single
+      providers:  provider_traces
+
   metrics:
     default:
       scope_name: "OTEL C wrapper - metrics"
@@ -322,6 +366,18 @@ signals:
       scope_name: "OTEL C wrapper - metrics secondary"
       exporters:  exporter_metrics_memory
       readers:    reader_metrics
+      providers:  provider_metrics
+
+    multi_a:
+      scope_name: "OTEL C wrapper - metrics multi A"
+      exporters:  exporter_metrics_multi_a
+      readers:    reader_metrics_multi
+      providers:  provider_metrics
+
+    multi_b:
+      scope_name: "OTEL C wrapper - metrics multi B"
+      exporters:  exporter_metrics_multi_b
+      readers:    reader_metrics_multi
       providers:  provider_metrics
 
   logs:
@@ -347,4 +403,16 @@ signals:
         - exporter_logs_otlp_file
       processors:
         - processor_logs_single
+      providers:  provider_logs
+
+    multi_a:
+      scope_name: "OTEL C wrapper - logs multi A"
+      exporters:  exporter_logs_multi_a
+      processors: processor_logs_single
+      providers:  provider_logs
+
+    multi_b:
+      scope_name: "OTEL C wrapper - logs multi B"
+      exporters:  exporter_logs_multi_b
+      processors: processor_logs_single
       providers:  provider_logs
