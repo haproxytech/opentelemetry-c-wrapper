@@ -126,39 +126,75 @@ static int64_t otel_meter_get_view_id(struct otelc_meter *meter, const char *nam
 
 /***
  * NAME
- *   otel_nolock_meter_find_instrument - looks up an instrument by name and type
+ *   otel_meter_instrument_key - builds the case-folded instrument index key
  *
  * SYNOPSIS
- *   static int64_t otel_nolock_meter_find_instrument(struct otelc_meter *meter, const char *name, otelc_metric_instrument_t type)
+ *   static std::string otel_meter_instrument_key(const char *name, otelc_metric_instrument_t type)
+ *
+ * ARGUMENTS
+ *   name - name of the instrument
+ *   type - instrument type
+ *
+ * DESCRIPTION
+ *   Builds the key under which an instrument is registered in the meter's
+ *   instrument_index: the instrument name with the ASCII letters folded to
+ *   lower case, followed by a '/' separator and the decimal instrument type.
+ *   The folding matches the case-insensitive name comparison mandated by the
+ *   OpenTelemetry specification, and the appended type keeps instruments that
+ *   share a name but differ in type under distinct keys.
+ *
+ * RETURN VALUE
+ *   Returns the index key, or an empty string if memory allocation failed.
+ */
+static std::string otel_meter_instrument_key(const char *name, otelc_metric_instrument_t type)
+{
+	std::string retval;
+
+	try {
+		retval.reserve(strlen(name) + 4);
+
+		for (const char *ptr = name; *ptr != '\0'; ptr++)
+			retval.push_back(((*ptr >= 'A') && (*ptr <= 'Z')) ? OTEL_CAST_STATIC(char, *ptr + ('a' - 'A')) : *ptr);
+
+		retval.push_back('/');
+		retval.append(std::to_string(OTEL_CAST_STATIC(int, type)));
+	}
+	catch (...) {
+		retval.clear();
+	}
+
+	return retval;
+}
+
+
+/***
+ * NAME
+ *   otel_nolock_meter_find_instrument - looks up an instrument by its index key
+ *
+ * SYNOPSIS
+ *   static int64_t otel_nolock_meter_find_instrument(struct otelc_meter *meter, const std::string &key)
  *
  * ARGUMENTS
  *   meter - meter instance
- *   name  - name of the instrument to look up (case-insensitive)
- *   type  - instrument type to match
+ *   key   - index key built by otel_meter_instrument_key()
  *
  * DESCRIPTION
- *   Searches the internal instrument registry for an instrument with the given
- *   name and type.  The name comparison is case-insensitive, consistent with
- *   the OpenTelemetry specification.  The caller must hold the instrument map
- *   mutex, either shared or exclusive, before calling this function.
+ *   Searches the meter's instrument_index for the given key, which encodes
+ *   the case-folded instrument name together with the instrument type.  The
+ *   caller must hold the instrument map mutex, either shared or exclusive,
+ *   before calling this function.
  *
  * RETURN VALUE
  *   Returns the instrument ID on success, or OTELC_RET_ERROR on failure.
  */
-static int64_t otel_nolock_meter_find_instrument(struct otelc_meter *meter, const char *name, otelc_metric_instrument_t type)
+static int64_t otel_nolock_meter_find_instrument(struct otelc_meter *meter, const std::string &key)
 {
-	const auto instrument = std::find_if(
-		OTEL_METER_IMPL(meter)->instrument.shards[0].map.begin(),
-		OTEL_METER_IMPL(meter)->instrument.shards[0].map.end(),
-		[&](const auto &it) {
-			return otel_sdk_metrics::InstrumentDescriptorUtil::CaseInsensitiveAsciiEquals(it.second->name, name) && (it.second->type == type);
-		}
-	);
+	const auto instrument = OTEL_METER_IMPL(meter)->instrument_index.find(key);
 
-	if (instrument != OTEL_METER_IMPL(meter)->instrument.shards[0].map.end()) {
-		OTELC_DBG(OTEL, "instrument found: %" PRId64, instrument->first);
+	if (instrument != OTEL_METER_IMPL(meter)->instrument_index.end()) {
+		OTELC_DBG(OTEL, "instrument found: %" PRId64, instrument->second);
 
-		return instrument->first;
+		return instrument->second;
 	}
 
 	return OTELC_RET_ERROR;
@@ -413,10 +449,14 @@ static int64_t otel_meter_get_instrument(struct otelc_meter *meter, const char *
 	else if (OTEL_NULL(name))
 		OTEL_METER_RETURN_INT("Invalid instrument name");
 
+	const std::string instrument_key = otel_meter_instrument_key(name, type);
+	if (instrument_key.empty())
+		OTEL_METER_RETURN_INT(OTEL_ERROR_MSG_ENOMEM("instrument key"));
+
 	OTEL_LOCK_METER_SHARED(instrument);
 
 	/* Search for an existing instrument by name and type. */
-	if ((instrument_id = otel_nolock_meter_find_instrument(meter, name, type)) != OTELC_RET_ERROR)
+	if ((instrument_id = otel_nolock_meter_find_instrument(meter, instrument_key)) != OTELC_RET_ERROR)
 		OTELC_RETURN_INT(instrument_id);
 
 	OTEL_METER_RETURN_EX(_INT, OTELC_RET_ERROR, "Instrument not found: \"%s\" type %d", name, type);
@@ -614,6 +654,10 @@ static int64_t otel_meter_create_instrument(struct otelc_meter *meter, const cha
 
 	auto *meter_ptr = meter_shared.get();
 
+	const std::string instrument_key = otel_meter_instrument_key(name, type);
+	if (instrument_key.empty())
+		OTEL_METER_RETURN_INT(OTEL_ERROR_MSG_ENOMEM("instrument key"));
+
 	/***
 	 * Returns the instrument ID if the instrument already exists.  The
 	 * lookup is based on both the instrument name and type, with the name
@@ -623,7 +667,7 @@ static int64_t otel_meter_create_instrument(struct otelc_meter *meter, const cha
 	 */
 	OTEL_LOCK_METER_SHARED(instrument, rdguard_instrument);
 
-	if ((instrument_id = otel_nolock_meter_find_instrument(meter, name, type)) != OTELC_RET_ERROR)
+	if ((instrument_id = otel_nolock_meter_find_instrument(meter, instrument_key)) != OTELC_RET_ERROR)
 		OTELC_RETURN_INT(instrument_id);
 
 	rdguard_instrument.unlock();
@@ -642,7 +686,7 @@ static int64_t otel_meter_create_instrument(struct otelc_meter *meter, const cha
 	 * Re-check under the creation mutex: another thread may have created
 	 * the instrument after the shared-lock probe above was released.
 	 */
-	if ((instrument_id = otel_nolock_meter_find_instrument(meter, name, type)) != OTELC_RET_ERROR)
+	if ((instrument_id = otel_nolock_meter_find_instrument(meter, instrument_key)) != OTELC_RET_ERROR)
 		OTELC_RETURN_INT(instrument_id);
 
 	rdguard_instrument_recheck.unlock();
@@ -714,6 +758,13 @@ static int64_t otel_meter_create_instrument(struct otelc_meter *meter, const cha
 
 			OTEL_METER_RETURN_INT("Unable to register instrument callback");
 		}
+
+		/***
+		 * Register the index entry last: if the emplace throws, the
+		 * catch block below removes the map entry, so the index and
+		 * the map stay consistent.
+		 */
+		(void)OTEL_METER_IMPL(meter)->instrument_index.emplace(instrument_key, OTEL_METER_IMPL(meter)->instrument.id.load());
 
 		OTELC_DBG(OTEL, "Instrument added");
 	}

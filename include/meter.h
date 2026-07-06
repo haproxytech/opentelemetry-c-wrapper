@@ -257,7 +257,9 @@ struct T {
  * instance, so multiple meters can coexist without sharing process-wide state.
  * The handle maps use otel_shared_mutex so lookups and instrument updates
  * (OTEL_LOCK_METER_SHARED) can run concurrently, while registration and
- * teardown (OTEL_LOCK_METER) remain exclusive.
+ * teardown (OTEL_LOCK_METER) remain exclusive.  The instrument_index maps the
+ * case-folded instrument key built by otel_meter_instrument_key() to the
+ * instrument ID and is guarded by the same mutex as the instrument map.
  *
  * The create_mutex serializes instrument and view creation.  A thread that
  * misses the shared-lock probe first takes create_mutex and re-probes under
@@ -272,6 +274,7 @@ struct otel_meter_impl {
 	std::ofstream                                                                logfile;
 	struct otel_handle<struct otel_instrument_handle *, true, otel_shared_mutex> instrument{1};
 	struct otel_handle<struct otel_view_handle *, true, otel_shared_mutex>       view{1};
+	std::unordered_map<std::string, int64_t>                                     instrument_index;
 	std::mutex                                                                   create_mutex;
 
 	otel_meter_impl();
