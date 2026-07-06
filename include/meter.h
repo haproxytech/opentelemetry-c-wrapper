@@ -163,8 +163,15 @@ struct T {
 };
 #undef T
 
+/***
+ * Takes the instrument map mutex shared, which is sufficient because the
+ * looked-up handle is immutable after creation and the SDK instruments it
+ * carries are thread-safe.  Handles are only erased under the exclusive
+ * lock during meter teardown, and the documented destroy contract requires
+ * all concurrent meter operations to be drained before destroy is invoked.
+ */
 #define OTEL_LOCK_INSTRUMENT_HANDLE(arg_type, arg_idx)           \
-	OTEL_LOCK_METER(instrument);                             \
+	OTEL_LOCK_METER_SHARED(instrument);                      \
 	                                                         \
 	const auto instrument = OTEL_INSTRUMENT_HANDLE(arg_idx); \
 	if (OTEL_NULL(instrument))                               \
@@ -248,13 +255,27 @@ struct T {
  * the SDK Meter obtained from it, the instrument and view handle maps used by
  * this meter, and the ostream exporter logfile.  All members are owned by the
  * instance, so multiple meters can coexist without sharing process-wide state.
+ * The handle maps use otel_shared_mutex so lookups and instrument updates
+ * (OTEL_LOCK_METER_SHARED) can run concurrently, while registration and
+ * teardown (OTEL_LOCK_METER) remain exclusive.
+ *
+ * The create_mutex serializes instrument and view creation.  A thread that
+ * misses the shared-lock probe first takes create_mutex and re-probes under
+ * the shared lock, so of a whole startup herd racing for the same name only
+ * the winner ever acquires the exclusive map lock; every other thread leaves
+ * through the shared re-probe.  Lock order: create_mutex first, then the
+ * handle map mutex; never the other way around.
  */
 struct otel_meter_impl {
-	otel_nostd::shared_ptr<otel_metrics::MeterProvider> provider;
-	otel_nostd::shared_ptr<otel_metrics::Meter>         meter;
-	std::ofstream                                       logfile;
-	struct otel_handle<struct otel_instrument_handle *> instrument{1};
-	struct otel_handle<struct otel_view_handle *>       view{1};
+	otel_nostd::shared_ptr<otel_metrics::MeterProvider>                          provider;
+	otel_nostd::shared_ptr<otel_metrics::Meter>                                  meter;
+	std::ofstream                                                                logfile;
+	struct otel_handle<struct otel_instrument_handle *, true, otel_shared_mutex> instrument{1};
+	struct otel_handle<struct otel_view_handle *, true, otel_shared_mutex>       view{1};
+	std::mutex                                                                   create_mutex;
+
+	otel_meter_impl();
+	~otel_meter_impl();
 };
 
 #endif /* _OPENTELEMETRY_C_WRAPPER_METER_H_ */

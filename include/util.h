@@ -81,12 +81,84 @@ extern std::atomic<size_t> otel_handle_map_shards;
 #define OTEL_HANDLE_DEMANGLED_NAME   (typeid(T).name() + 3)
 
 /***
+ * NAME
+ *   otel_shared_mutex - writer-preferring shared mutex
+ *
+ * DESCRIPTION
+ *   A std::shared_mutex wrapper that adds writer preference.  On glibc the
+ *   std::shared_mutex maps to a reader-preferring POSIX rwlock: as long as
+ *   new readers keep arriving, a queued writer never acquires the lock.  The
+ *   meter hot path holds the lock shared almost continuously, so a thread
+ *   that misses the double-checked creation probe and queues for the
+ *   exclusive lock could starve for as long as the readers keep coming (in
+ *   the speed test, workers were observed to be parked in
+ *   otel_meter_create_instrument for an entire run).
+ *
+ *   While at least one writer is registered in writers_pending_, new shared
+ *   acquisitions divert through the exclusive path and queue behind the
+ *   writer, so the writer only waits for the readers that were already in
+ *   flight.  Once no writer is pending, shared acquisitions take the fast
+ *   path again and run concurrently.  The interface provides the subset of
+ *   the SharedMutex requirements used by std::lock_guard and
+ *   std::shared_lock.
+ */
+class otel_shared_mutex {
+public:
+	void lock()
+	{
+		(void)writers_pending_.fetch_add(1);
+		mutex_.lock();
+	}
+
+	void unlock()
+	{
+		mutex_.unlock();
+		(void)writers_pending_.fetch_sub(1);
+	}
+
+	void lock_shared()
+	{
+		while (1) {
+			if (writers_pending_.load() == 0) {
+				mutex_.lock_shared();
+
+				return;
+			}
+
+			/* A writer is pending: queue behind it on the exclusive path. */
+			mutex_.lock();
+			mutex_.unlock();
+		}
+	}
+
+	void unlock_shared()
+	{
+		mutex_.unlock_shared();
+	}
+
+private:
+	std::shared_mutex mutex_;              /* Underlying reader-writer lock. */
+	std::atomic<int>  writers_pending_{0}; /* Number of writers waiting for or holding the lock. */
+};
+
+/***
  * OTEL_LOCK_METER always expands to a single statement that creates a local
- * lock_guard whose scope is the enclosing block.  OTEL_LOCK_TRACER does the
- * same in the shared-handle build and expands to while (0) in the thread-local
- * build.  Use them at function scope or inside a brace-enclosed block; placing
- * them as the body of a single-statement if/while/for changes the lifetime of
- * the lock_guard so the lock is released before the next statement runs.
+ * lock guard whose scope is the enclosing block.  The meter handle maps are
+ * protected by an otel_shared_mutex: OTEL_LOCK_METER takes it exclusively and
+ * is required for operations that insert into or erase from the map, while
+ * OTEL_LOCK_METER_SHARED takes it shared and is sufficient for lookups and
+ * for dispatching to the thread-safe SDK instruments, so concurrent metric
+ * updates no longer serialize on the map mutex.  The one-argument form of
+ * OTEL_LOCK_METER_SHARED creates the const guard guard_<a>; the two-argument
+ * form names the guard explicitly and leaves it non-const, so the lock can be
+ * released early with unlock() and several guards of the same map can coexist
+ * within one function.  OTEL_LOCK_METER_CREATE takes the per-meter creation
+ * mutex that serializes create_instrument and add_view.  OTEL_LOCK_TRACER
+ * creates a lock_guard in the shared-handle build and expands to while (0) in
+ * the thread-local build.  Use them at function scope or inside a
+ * brace-enclosed block; placing them as the body of a single-statement
+ * if/while/for changes the lifetime of the lock guard so the lock is released
+ * before the next statement runs.
  *
  * Correct:
  *   OTEL_LOCK_TRACER(span, idx);
@@ -101,7 +173,11 @@ extern std::atomic<size_t> otel_handle_map_shards;
  * The same scoping rule applies to the while (0) form for consistency with the
  * shared-handle build.
  */
-#define OTEL_LOCK_METER(a)           const std::lock_guard<std::mutex> guard_##a(OTEL_METER_IMPL(meter)->a.get_shard(0).mutex)
+#define OTEL_LOCK_METER(a)             const std::lock_guard<otel_shared_mutex> guard_##a(OTEL_METER_IMPL(meter)->a.get_shard(0).mutex)
+#define OTEL_LOCK_METER_CREATE()       const std::lock_guard<std::mutex> guard_create(OTEL_METER_IMPL(meter)->create_mutex)
+#define OTEL_LOCK_METER_SHARED_1(a)    const std::shared_lock<otel_shared_mutex> guard_##a(OTEL_METER_IMPL(meter)->a.get_shard(0).mutex)
+#define OTEL_LOCK_METER_SHARED_2(a,n)  std::shared_lock<otel_shared_mutex> n(OTEL_METER_IMPL(meter)->a.get_shard(0).mutex)
+#define OTEL_LOCK_METER_SHARED(...)    OTEL_12(__VA_ARGS__, OTEL_LOCK_METER_SHARED_2, OTEL_LOCK_METER_SHARED_1)(__VA_ARGS__)
 #ifdef OTELC_USE_THREAD_SHARED_HANDLE
 #  define OTEL_LOCK_TRACER(a,n)      const std::lock_guard<std::mutex> guard_##a(OTEL_HANDLE(otel_##a, get_shard(n).mutex))
 #  define THREAD_LOCAL
@@ -213,9 +289,12 @@ class otel_key_eq {
  *   otel_handle - generic handle manager
  *
  * DESCRIPTION
- *   A generic handle manager for OpenTelemetry C wrapper objects.
+ *   A generic handle manager for OpenTelemetry C wrapper objects.  The M
+ *   template parameter selects the per-shard mutex type: the default
+ *   std::mutex is used by the span and span context maps, while the meter
+ *   maps use otel_shared_mutex so that lookups can run concurrently.
  */
-template<typename T, bool shared = true>
+template<typename T, bool shared = true, typename M = std::mutex>
 struct otel_handle {
 	struct shard {
 		std::unordered_map<
@@ -224,7 +303,7 @@ struct otel_handle {
 			otel_hash_function, /* Custom hash function for keys.       (class Hash = std::hash<Key>) */
 			otel_key_eq         /* Custom key equality comparator.      (class KeyEqual = std::equal_to<Key>) */
 		> map;                      /* Map storing active handles indexed by ID. */
-		std::mutex mutex;           /* Mutex protecting concurrent access to the handle map. */
+		M mutex;                    /* Mutex protecting concurrent access to the handle map. */
 	};
 
 	std::atomic<int64_t>      id;             /* Unique identifier generator (current handle ID). */
@@ -353,7 +432,7 @@ struct otel_handle {
 	{
 		for (auto &it_shard : shards) {
 			if constexpr (shared) {
-				const std::lock_guard<std::mutex> guard(it_shard.mutex);
+				const std::lock_guard<M> guard(it_shard.mutex);
 
 				for (auto &it : it_shard.map)
 					f(it.first, it.second);

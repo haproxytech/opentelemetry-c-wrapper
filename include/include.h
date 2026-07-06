@@ -43,6 +43,7 @@
 #include <atomic>
 #include <cinttypes>
 #include <fstream>
+#include <shared_mutex>
 #include <utility>
 #include <stdexcept>
 

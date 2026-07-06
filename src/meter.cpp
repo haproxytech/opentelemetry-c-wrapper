@@ -21,6 +21,10 @@
 static const otel_sdk_metrics::InstrumentMetaDataValidator  otel_instrument_validator;
 #endif
 
+/* Defined out of line to keep the large implicit special members uninlined. */
+otel_meter_impl::otel_meter_impl() = default;
+otel_meter_impl::~otel_meter_impl() = default;
+
 
 /***
  * NAME
@@ -122,6 +126,47 @@ static int64_t otel_meter_get_view_id(struct otelc_meter *meter, const char *nam
 
 /***
  * NAME
+ *   otel_nolock_meter_find_instrument - looks up an instrument by name and type
+ *
+ * SYNOPSIS
+ *   static int64_t otel_nolock_meter_find_instrument(struct otelc_meter *meter, const char *name, otelc_metric_instrument_t type)
+ *
+ * ARGUMENTS
+ *   meter - meter instance
+ *   name  - name of the instrument to look up (case-insensitive)
+ *   type  - instrument type to match
+ *
+ * DESCRIPTION
+ *   Searches the internal instrument registry for an instrument with the given
+ *   name and type.  The name comparison is case-insensitive, consistent with
+ *   the OpenTelemetry specification.  The caller must hold the instrument map
+ *   mutex, either shared or exclusive, before calling this function.
+ *
+ * RETURN VALUE
+ *   Returns the instrument ID on success, or OTELC_RET_ERROR on failure.
+ */
+static int64_t otel_nolock_meter_find_instrument(struct otelc_meter *meter, const char *name, otelc_metric_instrument_t type)
+{
+	const auto instrument = std::find_if(
+		OTEL_METER_IMPL(meter)->instrument.shards[0].map.begin(),
+		OTEL_METER_IMPL(meter)->instrument.shards[0].map.end(),
+		[&](const auto &it) {
+			return otel_sdk_metrics::InstrumentDescriptorUtil::CaseInsensitiveAsciiEquals(it.second->name, name) && (it.second->type == type);
+		}
+	);
+
+	if (instrument != OTEL_METER_IMPL(meter)->instrument.shards[0].map.end()) {
+		OTELC_DBG(OTEL, "instrument found: %" PRId64, instrument->first);
+
+		return instrument->first;
+	}
+
+	return OTELC_RET_ERROR;
+}
+
+
+/***
+ * NAME
  *   otel_meter_add_view - adds a metrics view to a meter
  *
  * SYNOPSIS
@@ -177,11 +222,32 @@ static int64_t otel_meter_add_view(struct otelc_meter *meter, const char *view_n
 	OTEL_ARG_DEFAULT(view_desc, "");
 	OTEL_ARG_DEFAULT(instrument_unit, "");
 
-	OTEL_LOCK_METER(view);
+	OTEL_LOCK_METER_SHARED(view, rdguard_view);
 
 	/* If a view with the same name already exists, it will not be added. */
 	if ((view_id = otel_meter_get_view_id(meter, view_name)) != OTELC_RET_ERROR)
 		OTELC_RETURN_EX(view_id, int64_t, "%" PRId64);
+
+	rdguard_view.unlock();
+
+	/***
+	 * Serialize creation on create_mutex: of a whole herd racing for the
+	 * same view name only the winner performs the registration, and every
+	 * other thread leaves through the shared re-probe below without
+	 * touching the exclusive map lock at all.
+	 */
+	OTEL_LOCK_METER_CREATE();
+
+	OTEL_LOCK_METER_SHARED(view, rdguard_view_recheck);
+
+	/***
+	 * Re-check under the creation mutex: another thread may have added
+	 * the view after the shared-lock probe above was released.
+	 */
+	if ((view_id = otel_meter_get_view_id(meter, view_name)) != OTELC_RET_ERROR)
+		OTELC_RETURN_EX(view_id, int64_t, "%" PRId64);
+
+	rdguard_view_recheck.unlock();
 
 #define OTELC_METRIC_INSTRUMENT_DEF(a,b)   otel_sdk_metrics::InstrumentType::b,
 	static constexpr otel_sdk_metrics::InstrumentType instrument_type_map[] = { OTELC_METRIC_INSTRUMENT_DEFINES };
@@ -274,6 +340,9 @@ static int64_t otel_meter_add_view(struct otelc_meter *meter, const char *view_n
 	/* Copy the provider so it cannot be released mid-call. */
 	auto       provider_shared = impl->provider;
 	const auto provider_sdk    = OTEL_METER_PROVIDER(provider_shared);
+
+	OTEL_LOCK_METER(view);
+
 	if (!OTEL_NULL(provider_sdk)) {
 		std::pair<std::unordered_map<int64_t, struct otel_view_handle *>::iterator, bool> emplace_status{};
 
@@ -335,6 +404,8 @@ static int64_t otel_meter_add_view(struct otelc_meter *meter, const char *view_n
  */
 static int64_t otel_meter_get_instrument(struct otelc_meter *meter, const char *name, otelc_metric_instrument_t type)
 {
+	int64_t instrument_id;
+
 	OTELC_FUNC("%p, \"%s\", %d", meter, OTELC_STR_ARG(name), type);
 
 	if (OTEL_NULL(meter))
@@ -342,22 +413,11 @@ static int64_t otel_meter_get_instrument(struct otelc_meter *meter, const char *
 	else if (OTEL_NULL(name))
 		OTEL_METER_RETURN_INT("Invalid instrument name");
 
-	OTEL_LOCK_METER(instrument);
+	OTEL_LOCK_METER_SHARED(instrument);
 
 	/* Search for an existing instrument by name and type. */
-	const auto instrument = std::find_if(
-		OTEL_METER_IMPL(meter)->instrument.shards[0].map.begin(),
-		OTEL_METER_IMPL(meter)->instrument.shards[0].map.end(),
-		[&](const auto &it) {
-			return otel_sdk_metrics::InstrumentDescriptorUtil::CaseInsensitiveAsciiEquals(it.second->name, name) && (it.second->type == type);
-		}
-	);
-
-	if (instrument != OTEL_METER_IMPL(meter)->instrument.shards[0].map.end()) {
-		OTELC_DBG(OTEL, "instrument found: %" PRId64, instrument->first);
-
-		OTELC_RETURN_INT(instrument->first);
-	}
+	if ((instrument_id = otel_nolock_meter_find_instrument(meter, name, type)) != OTELC_RET_ERROR)
+		OTELC_RETURN_INT(instrument_id);
 
 	OTEL_METER_RETURN_EX(_INT, OTELC_RET_ERROR, "Instrument not found: \"%s\" type %d", name, type);
 }
@@ -431,7 +491,7 @@ static int otel_meter_add_instrument_callback(struct otelc_meter *meter, int idx
 	else if (OTEL_NULL(data))
 		OTEL_METER_RETURN_INT("Invalid observable callback descriptor");
 
-	OTEL_LOCK_METER(instrument);
+	OTEL_LOCK_METER_SHARED(instrument);
 
 	OTELC_RETURN_INT(otel_nolock_meter_add_instrument_callback(meter, OTEL_INSTRUMENT_HANDLE(idx), data));
 }
@@ -514,6 +574,8 @@ static int otel_meter_remove_instrument_callback(struct otelc_meter *meter, int 
  */
 static int64_t otel_meter_create_instrument(struct otelc_meter *meter, const char *name, const char *desc, const char *unit, otelc_metric_instrument_t type, struct otelc_metric_observable_cb *data)
 {
+	int64_t instrument_id;
+
 	OTELC_FUNC("%p, \"%s\", \"%s\", \"%s\", %d, %p", meter, OTELC_STR_ARG(name), OTELC_STR_ARG(desc), OTELC_STR_ARG(unit), type, data);
 
 	if (OTEL_NULL(meter))
@@ -552,35 +614,38 @@ static int64_t otel_meter_create_instrument(struct otelc_meter *meter, const cha
 
 	auto *meter_ptr = meter_shared.get();
 
-	OTEL_LOCK_METER(instrument);
-
 	/***
 	 * Returns the instrument ID if the instrument already exists.  The
 	 * lookup is based on both the instrument name and type, with the name
-	 * compared case-insensitively.
+	 * compared case-insensitively.  The probe runs under the shared lock so
+	 * concurrent callers looking up an existing instrument do not serialize
+	 * on the map mutex.
 	 */
-#if 0
-	for (const auto &it : OTEL_METER_IMPL(meter)->instrument.shards[0].map)
-		if (otel_sdk_metrics::InstrumentDescriptorUtil::CaseInsensitiveAsciiEquals(it.second->name, name) && (it.second->type == type)) {
-			OTELC_DBG(OTEL, "instrument found: %" PRId64, it.first);
+	OTEL_LOCK_METER_SHARED(instrument, rdguard_instrument);
 
-			OTELC_RETURN_INT(it.first);
-		}
-#endif
+	if ((instrument_id = otel_nolock_meter_find_instrument(meter, name, type)) != OTELC_RET_ERROR)
+		OTELC_RETURN_INT(instrument_id);
 
-	const auto instrument = std::find_if(
-		OTEL_METER_IMPL(meter)->instrument.shards[0].map.begin(),
-		OTEL_METER_IMPL(meter)->instrument.shards[0].map.end(),
-		[&](const auto &it) {
-			return otel_sdk_metrics::InstrumentDescriptorUtil::CaseInsensitiveAsciiEquals(it.second->name, name) && (it.second->type == type);
-		}
-	);
+	rdguard_instrument.unlock();
 
-	if (instrument != OTEL_METER_IMPL(meter)->instrument.shards[0].map.end()) {
-		OTELC_DBG(OTEL, "instrument found: %" PRId64, instrument->first);
+	/***
+	 * Serialize creation on create_mutex: of a whole herd racing for the
+	 * same name only the winner performs the creation, and every other
+	 * thread leaves through the shared re-probe below without touching
+	 * the exclusive map lock at all.
+	 */
+	OTEL_LOCK_METER_CREATE();
 
-		OTELC_RETURN_INT(instrument->first);
-	}
+	OTEL_LOCK_METER_SHARED(instrument, rdguard_instrument_recheck);
+
+	/***
+	 * Re-check under the creation mutex: another thread may have created
+	 * the instrument after the shared-lock probe above was released.
+	 */
+	if ((instrument_id = otel_nolock_meter_find_instrument(meter, name, type)) != OTELC_RET_ERROR)
+		OTELC_RETURN_INT(instrument_id);
+
+	rdguard_instrument_recheck.unlock();
 
 	struct otel_instrument_handle *instrument_handle = nullptr;
 
@@ -625,6 +690,8 @@ static int64_t otel_meter_create_instrument(struct otelc_meter *meter, const cha
 
 		OTEL_METER_RETURN_INT("Unable to create OpenTelemetry instrument of type %d", type);
 	}
+
+	OTEL_LOCK_METER(instrument);
 
 	/* Store the instrument handle in the internal map. */
 	std::pair<std::unordered_map<int64_t, struct otel_instrument_handle *>::iterator, bool> emplace_status{};
@@ -1202,13 +1269,13 @@ static void otel_meter_destroy(struct otelc_meter **meter)
 
 /* The meter operations vtable. */
 const static struct otelc_meter_ops otel_meter_ops = {
-	.create_instrument          = otel_meter_create_instrument,          /* lock otel_instrument */
-	.update_instrument          = otel_meter_update_instrument,          /* lock otel_instrument */
-	.update_instrument_kv_n     = otel_meter_update_instrument_kv_n,     /* lock otel_instrument */
-	.add_instrument_callback    = otel_meter_add_instrument_callback,    /* lock otel_instrument */
-	.remove_instrument_callback = otel_meter_remove_instrument_callback, /* lock otel_instrument */
-	.add_view                   = otel_meter_add_view,                   /* lock otel_view */
-	.get_instrument             = otel_meter_get_instrument,             /* lock otel_instrument */
+	.create_instrument          = otel_meter_create_instrument,          /* lock otel_instrument (shared probe, create_mutex + exclusive insert) */
+	.update_instrument          = otel_meter_update_instrument,          /* lock otel_instrument (shared) */
+	.update_instrument_kv_n     = otel_meter_update_instrument_kv_n,     /* lock otel_instrument (shared) */
+	.add_instrument_callback    = otel_meter_add_instrument_callback,    /* lock otel_instrument (shared) */
+	.remove_instrument_callback = otel_meter_remove_instrument_callback, /* lock otel_instrument (shared) */
+	.add_view                   = otel_meter_add_view,                   /* lock otel_view (shared probe, create_mutex + exclusive insert) */
+	.get_instrument             = otel_meter_get_instrument,             /* lock otel_instrument (shared) */
 	.enabled                    = otel_meter_enabled,                    /* Locking not required. */
 	.set_enabled                = otel_meter_set_enabled,                /* Locking not required. */
 	.force_flush                = otel_meter_force_flush,                /* Locking not required. */
