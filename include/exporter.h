@@ -47,6 +47,12 @@
 #define OTEL_LOGGER_EXPORTER_OTLP_GRPC_ENDPOINT   "http://localhost:4317/v1/logs"
 #define OTEL_LOGGER_EXPORTER_OTLP_HTTP_ENDPOINT   "http://localhost:4318/v1/logs"
 
+#define OTEL_ERROR_MSG_EXPORTER_DESC              "Exporter description not specified"
+#define OTEL_ERROR_MSG_EXPORTER_PATH              "Exporter path not specified"
+#define OTEL_ERROR_MSG_EXPORTER_ENDPOINT          "Exporter endpoint not specified"
+#define OTEL_ERROR_MSG_INVALID_EXPORTER           "Invalid exporter type: '%s'"
+#define OTEL_ERROR_MSG_ADD_HTTP_HEADER            "Unable to add HTTP header"
+
 /***
  * Exporter dispatch macros for shared backends.  Each macro expands to an
  * else-if branch that creates the corresponding exporter.  The ifdef-guarded

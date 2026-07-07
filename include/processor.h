@@ -16,6 +16,9 @@
 #ifndef _OPENTELEMETRY_C_WRAPPER_PROCESSOR_H_
 #define _OPENTELEMETRY_C_WRAPPER_PROCESSOR_H_
 
+#define OTEL_ERROR_MSG_ADD_PROCESSOR      "Unable to add processor"
+#define OTEL_ERROR_MSG_QUEUE_BATCH_SIZE   "Maximum buffer/queue size must be greater than or equal to maximum batch size: %" PRId64 " < %" PRId64
+
 /***
  * Exporter wrapper that tracks how many span records the batch processor has
  * exported, enabling the delegating processor to compute queue depth.

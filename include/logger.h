@@ -18,6 +18,9 @@
 
 #define OTEL_YAML_LOGGER_PREFIX             "/signals/logs"
 
+#define OTEL_ERROR_MSG_INVALID_LOGGER        "Invalid logger"
+#define OTEL_ERROR_MSG_INVALID_SEVERITY      "Invalid log severity level: %d"
+
 #define OTEL_LOGGER_ERROR(f, ...)            OTEL_SIGNAL_ERROR(logger->err, f, ##__VA_ARGS__)
 #define OTEL_LOGGER_RETURN(f, ...)           OTEL_RETURN(logger, f, ##__VA_ARGS__)
 #define OTEL_LOGGER_RETURN_EX(t,r,f, ...)    OTEL_RETURN_EX(logger, t, (r), f, ##__VA_ARGS__)

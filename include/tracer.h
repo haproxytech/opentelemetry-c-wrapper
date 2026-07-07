@@ -22,6 +22,9 @@
 #define OTEL_YAML_PROCESSORS                 "/processors"
 #define OTEL_YAML_EXPORTERS                  "/exporters"
 
+#define OTEL_ERROR_MSG_INVALID_TRACER        "Invalid tracer"
+#define OTEL_ERROR_MSG_PARENT_SPAN_CTX       "Unable to get parent span context"
+
 #define OTEL_TRACER_ERROR(f, ...)            OTEL_SIGNAL_ERROR(tracer->err, f, ##__VA_ARGS__)
 #define OTEL_TRACER_RETURN(f, ...)           OTEL_RETURN(tracer, f, ##__VA_ARGS__)
 #define OTEL_TRACER_RETURN_EX(t,r,f, ...)    OTEL_RETURN_EX(tracer, t, (r), f, ##__VA_ARGS__)

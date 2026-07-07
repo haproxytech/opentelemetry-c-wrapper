@@ -677,7 +677,7 @@ int otel_tracer_processor_create(struct otelc_tracer *tracer, std::unique_ptr<ot
 		otel_sdk_trace::BatchSpanProcessorRuntimeOptions rt_options{};
 
 		if (max_queue_size < max_export_batch_size)
-			OTEL_TRACER_RETURN_INT("Maximum buffer/queue size must be greater than or equal to maximum batch size: %" PRId64 " < %" PRId64, max_queue_size, max_export_batch_size);
+			OTEL_TRACER_RETURN_INT(OTEL_ERROR_MSG_QUEUE_BATCH_SIZE, max_queue_size, max_export_batch_size);
 
 		/***
 		 * Configuration parameters are set here.
@@ -795,7 +795,7 @@ int otel_logger_processor_create(struct otelc_logger *logger, std::unique_ptr<ot
 		otel_sdk_logs::BatchLogRecordProcessorRuntimeOptions rt_options{};
 
 		if (max_queue_size < max_export_batch_size)
-			OTEL_LOGGER_RETURN_INT("Maximum buffer/queue size must be greater than or equal to maximum batch size: %" PRId64 " < %" PRId64, max_queue_size, max_export_batch_size);
+			OTEL_LOGGER_RETURN_INT(OTEL_ERROR_MSG_QUEUE_BATCH_SIZE, max_queue_size, max_export_batch_size);
 
 		/***
 		 * Configuration parameters are set here.

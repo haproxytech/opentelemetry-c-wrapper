@@ -28,6 +28,23 @@
 #define OTEL_DBG_SPAN()                    OTEL_DBG_HANDLE(OTEL, "otel_span", otel_span)
 #define OTEL_DBG_SPAN_CONTEXT()            OTEL_DBG_HANDLE(OTEL, "otel_span_context", otel_span_context)
 
+#define OTEL_ERROR_MSG_INVALID_SPAN            "Invalid span"
+#define OTEL_ERROR_MSG_INVALID_SPAN_CTX        "Invalid span context"
+#define OTEL_ERROR_MSG_INVALID_LINKED_CTX      "Invalid linked span context"
+#define OTEL_ERROR_MSG_INVALID_OP_NAME         "Invalid operation name"
+#define OTEL_ERROR_MSG_INVALID_EVENT_NAME      "Invalid event name"
+#define OTEL_ERROR_MSG_INVALID_EVENT_KV        "Invalid event key-value"
+#define OTEL_ERROR_MSG_INVALID_BAGGAGE_NAME    "Invalid baggage name"
+#define OTEL_ERROR_MSG_INVALID_BAGGAGE_VALUE   "Invalid baggage value"
+#define OTEL_ERROR_MSG_INVALID_BAGGAGE_KV      "Invalid baggage key-value"
+#define OTEL_ERROR_MSG_INVALID_ATTR_KV         "Invalid attribute key-value"
+#define OTEL_ERROR_MSG_INVALID_VALUE_TYPE      "Invalid value data type"
+#define OTEL_ERROR_MSG_SET_SPAN_ATTR           "Unable to set span attribute"
+#define OTEL_ERROR_MSG_SET_EVENT_ATTR          "Unable to set span event attribute"
+#define OTEL_ERROR_MSG_ADD_SPAN                "Unable to add span"
+#define OTEL_ERROR_MSG_ADD_SPAN_CTX            "Unable to add span context"
+#define OTEL_ERROR_MSG_LINK_ATTRS              "Unable to allocate link attributes"
+
 #define T   otel_span_handle
 struct T {
 	/* otel_nostd::shared_ptr has no use_count() member. */
@@ -95,7 +112,7 @@ struct T {
 #undef T
 
 #define OTEL_LOCK_SPAN_HANDLE(...)         OTEL_23(__VA_ARGS__, OTEL_LOCK_SPAN_HANDLE_3, OTEL_LOCK_SPAN_HANDLE_2)(__VA_ARGS__)
-#define OTEL_LOCK_SPAN_HANDLE_2(t,h)       OTEL_LOCK_SPAN_HANDLE_3(t, (h), "Invalid span")
+#define OTEL_LOCK_SPAN_HANDLE_2(t,h)       OTEL_LOCK_SPAN_HANDLE_3(t, (h), OTEL_ERROR_MSG_INVALID_SPAN)
 #define OTEL_LOCK_SPAN_HANDLE_3(arg_type, arg_handle, arg_msg)                        \
 	OTEL_LOCK_TRACER(span, (arg_handle)->idx);                                    \
 	                                                                              \

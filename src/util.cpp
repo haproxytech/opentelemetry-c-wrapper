@@ -644,13 +644,13 @@ bool otelc_strtoi(const char *str, char **endptr, bool flag_end, int base, int *
 	if ((*str == '\0') || (flag_end && (**endptr != '\0')))
 		(void)otelc_sprintf(err, "Not a number: '%s'", str);
 	else if (((value == LONG_MIN) || (value == LONG_MAX)) && (errno == ERANGE))
-		(void)otelc_sprintf(err, "Value out of range: '%s'", str);
+		(void)otelc_sprintf(err, OTEL_ERROR_MSG_OUT_OF_RANGE, str);
 	else if ((val_min <= val_max) && !OTELC_IN_RANGE(value, val_min, val_max))
 		(void)otelc_sprintf(err, "Value out of range [%d, %d]: '%s'", val_min, val_max, str);
 	else if ((value == 0) && (errno == EINVAL))
 		(void)otelc_sprintf(err, "Invalid value: '%s'", str);
 	else if ((value < INT_MIN) || (value > INT_MAX))
-		(void)otelc_sprintf(err, "Value out of range: '%s'", str);
+		(void)otelc_sprintf(err, OTEL_ERROR_MSG_OUT_OF_RANGE, str);
 	else {
 		*retval = value;
 

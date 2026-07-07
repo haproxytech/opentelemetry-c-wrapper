@@ -68,7 +68,7 @@ static otel_logs::Severity otel_logger_severity(struct otelc_logger *logger, ote
 	 * The logger parameter is assumed to be valid; no checks are performed
 	 * because this function is for internal use only.
 	 */
-	OTEL_LOGGER_ERROR("Invalid log severity level: %d", severity);
+	OTEL_LOGGER_ERROR(OTEL_ERROR_MSG_INVALID_SEVERITY, severity);
 
 	return otel_logs::Severity::kInvalid;
 }
@@ -106,12 +106,12 @@ static int otel_logger_enabled(struct otelc_logger *logger, otelc_log_severity_t
 
 	auto *impl = OTEL_IMPL(logger, logger);
 	if (OTEL_NULL(impl))
-		OTEL_LOGGER_RETURN_INT("Invalid logger");
+		OTEL_LOGGER_RETURN_INT(OTEL_ERROR_MSG_INVALID_LOGGER);
 
 	/* Copy the SDK Logger handle so it cannot be released mid-call. */
 	auto logger_shared = impl->logger;
 	if (OTEL_NULL(logger_shared))
-		OTEL_LOGGER_RETURN_INT("Invalid logger");
+		OTEL_LOGGER_RETURN_INT(OTEL_ERROR_MSG_INVALID_LOGGER);
 
 	if (!logger->enabled)
 		OTELC_RETURN_INT(false);
@@ -120,7 +120,7 @@ static int otel_logger_enabled(struct otelc_logger *logger, otelc_log_severity_t
 
 	const auto log_severity = otel_logger_severity(logger, severity);
 	if (log_severity == otel_logs::Severity::kInvalid)
-		OTEL_LOGGER_RETURN_INT("Invalid log severity level: %d", severity);
+		OTEL_LOGGER_RETURN_INT(OTEL_ERROR_MSG_INVALID_SEVERITY, severity);
 
 	OTELC_RETURN_INT(logger_ptr->Enabled(log_severity));
 }
@@ -188,18 +188,18 @@ static int otel_logger_set_min_severity(struct otelc_logger *logger, otelc_log_s
 
 	auto *impl = OTEL_IMPL(logger, logger);
 	if (OTEL_NULL(impl))
-		OTEL_LOGGER_RETURN_INT("Invalid logger");
+		OTEL_LOGGER_RETURN_INT(OTEL_ERROR_MSG_INVALID_LOGGER);
 
 	/* Copy the SDK Logger handle so it cannot be released mid-call. */
 	auto logger_shared = impl->logger;
 	if (OTEL_NULL(logger_shared))
-		OTEL_LOGGER_RETURN_INT("Invalid logger");
+		OTEL_LOGGER_RETURN_INT(OTEL_ERROR_MSG_INVALID_LOGGER);
 
 	auto *logger_ptr = logger_shared.get();
 
 	const auto log_severity = otel_logger_severity(logger, severity);
 	if (log_severity == otel_logs::Severity::kInvalid)
-		OTEL_LOGGER_RETURN_INT("Invalid log severity level: %d", severity);
+		OTEL_LOGGER_RETURN_INT(OTEL_ERROR_MSG_INVALID_SEVERITY, severity);
 
 	OTEL_CAST_STATIC(otel_logs_logger *, logger_ptr)->SetMinimumSeverity(OTEL_CAST_STATIC(uint8_t, log_severity));
 
@@ -259,11 +259,11 @@ static int otel_logger_record_create(struct otelc_logger *logger, otel_logs::Log
 	OTELC_FUNC("%p, %p, %hhu, %" PRId64 ", \"%s\", %p, %zu, %p, %zu, 0x%02hhx, %p, %p, %p, %zu", logger, logger_ptr, severity, event_id, OTELC_STR_ARG(event_name), span_id, span_id_size, trace_id, trace_id_size, trace_flags, ts, ts_obs, attr, attr_len);
 
 	if (OTEL_NULL(logger_ptr))
-		OTEL_LOGGER_RETURN_INT("Invalid logger");
+		OTEL_LOGGER_RETURN_INT(OTEL_ERROR_MSG_INVALID_LOGGER);
 
 	const auto log_severity = otel_logger_severity(logger, severity);
 	if (log_severity == otel_logs::Severity::kInvalid)
-		OTEL_LOGGER_RETURN_INT("Invalid log severity level: %d", severity);
+		OTEL_LOGGER_RETURN_INT(OTEL_ERROR_MSG_INVALID_SEVERITY, severity);
 
 	if (!logger_ptr->Enabled(log_severity))
 		OTELC_RETURN_INT(0);
@@ -356,12 +356,12 @@ static int otel_logger_log_v(struct otelc_logger *logger, otelc_log_severity_t s
 
 	auto *impl = OTEL_IMPL(logger, logger);
 	if (OTEL_NULL(impl))
-		OTEL_LOGGER_RETURN_INT("Invalid logger");
+		OTEL_LOGGER_RETURN_INT(OTEL_ERROR_MSG_INVALID_LOGGER);
 
 	/* Copy the SDK Logger handle so it cannot be released mid-call. */
 	auto logger_shared = impl->logger;
 	if (OTEL_NULL(logger_shared))
-		OTEL_LOGGER_RETURN_INT("Invalid logger");
+		OTEL_LOGGER_RETURN_INT(OTEL_ERROR_MSG_INVALID_LOGGER);
 
 	auto *logger_ptr = logger_shared.get();
 
@@ -571,12 +571,12 @@ static int otel_logger_log_body(struct otelc_logger *logger, otelc_log_severity_
 
 	auto *impl = OTEL_IMPL(logger, logger);
 	if (OTEL_NULL(impl))
-		OTEL_LOGGER_RETURN_INT("Invalid logger");
+		OTEL_LOGGER_RETURN_INT(OTEL_ERROR_MSG_INVALID_LOGGER);
 
 	/* Copy the SDK Logger handle so it cannot be released mid-call. */
 	auto logger_shared = impl->logger;
 	if (OTEL_NULL(logger_shared))
-		OTEL_LOGGER_RETURN_INT("Invalid logger");
+		OTEL_LOGGER_RETURN_INT(OTEL_ERROR_MSG_INVALID_LOGGER);
 
 	auto *logger_ptr = logger_shared.get();
 
@@ -790,7 +790,7 @@ static int otel_logger_start(struct otelc_logger *logger)
 				OTEL_DBG_THROW();
 				processors.push_back(std::move(processor));
 			}
-			OTEL_CATCH_SIGNAL_RETURN( , OTEL_LOGGER_RETURN_INT, "Unable to add processor")
+			OTEL_CATCH_SIGNAL_RETURN( , OTEL_LOGGER_RETURN_INT, OTEL_ERROR_MSG_ADD_PROCESSOR)
 		}
 	} else {
 		std::unique_ptr<otel_sdk_logs::LogRecordExporter>  exporter;
@@ -806,7 +806,7 @@ static int otel_logger_start(struct otelc_logger *logger)
 			OTEL_DBG_THROW();
 			processors.push_back(std::move(processor));
 		}
-		OTEL_CATCH_SIGNAL_RETURN( , OTEL_LOGGER_RETURN_INT, "Unable to add processor")
+		OTEL_CATCH_SIGNAL_RETURN( , OTEL_LOGGER_RETURN_INT, OTEL_ERROR_MSG_ADD_PROCESSOR)
 	}
 
 	/* Create the provider and logger, then install them on the instance. */
@@ -981,7 +981,7 @@ struct otelc_logger *otelc_logger_create(const struct otelc_ctx *ctx, char **err
 	OTELC_FUNC("%p, %p:%p", ctx, OTELC_DPTR_ARGS(err));
 
 	if (OTEL_NULL(ctx))
-		OTEL_ERR_RETURN_PTR("Invalid context");
+		OTEL_ERR_RETURN_PTR(OTEL_ERROR_MSG_INVALID_CTX);
 
 	if (OTEL_NULL(retptr = otel_logger_new()))
 		OTEL_ERR_RETURN_PTR(OTEL_ERROR_MSG_ENOMEM("logger"));

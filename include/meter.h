@@ -19,6 +19,14 @@
 #define OTEL_YAML_METER_PREFIX              "/signals/metrics"
 #define OTEL_YAML_READERS                   "/readers"
 
+#define OTEL_ERROR_MSG_INVALID_METER        "Invalid meter"
+#define OTEL_ERROR_MSG_INVALID_INSTRUMENT   "Invalid instrument name"
+#define OTEL_ERROR_MSG_INVALID_CALLBACK     "Invalid observable callback descriptor"
+#define OTEL_ERROR_MSG_INVALID_VALUE        "Invalid value"
+#define OTEL_ERROR_MSG_INSTRUMENT_TYPE      "Invalid OpenTelemetry meter instrument type: %d"
+#define OTEL_ERROR_MSG_METER_PROVIDER       "Unable to get meter provider"
+#define OTEL_ERROR_MSG_ADD_METRIC_READER    "Unable to add metric reader"
+
 #define OTEL_METER_ERROR(f, ...)            OTEL_SIGNAL_ERROR(meter->err, f, ##__VA_ARGS__)
 #define OTEL_METER_RETURN(f, ...)           OTEL_RETURN(meter, f, ##__VA_ARGS__)
 #define OTEL_METER_RETURN_EX(t,r,f, ...)    OTEL_RETURN_EX(meter, t, (r), f, ##__VA_ARGS__)
@@ -247,7 +255,7 @@ struct T {
 		(arg_instr)->observable->arg_meth(otel_meter_observable_double_cb, OTEL_CAST_REINTERPRET(void *, (arg_state))); \
 	OTEL_METER_OBSERVABLE_DISPATCH_GAUGE(arg_instr)                                                                         \
 	else                                                                                                                    \
-		OTEL_METER_RETURN_INT("Invalid OpenTelemetry meter instrument type: %d", (arg_instr)->type)
+		OTEL_METER_RETURN_INT(OTEL_ERROR_MSG_INSTRUMENT_TYPE, (arg_instr)->type)
 
 
 /***

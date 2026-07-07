@@ -16,6 +16,8 @@
 #ifndef _OPENTELEMETRY_C_WRAPPER_UTIL_H_
 #define _OPENTELEMETRY_C_WRAPPER_UTIL_H_
 
+#define OTEL_ERROR_MSG_OUT_OF_RANGE  "Value out of range: '%s'"
+
 /***
  * Sets the number of buckets to the number needed to accomodate at least 8192
  * elements without exceeding maximum load factor and rehashes the container.

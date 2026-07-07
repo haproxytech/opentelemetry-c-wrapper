@@ -142,18 +142,18 @@ static struct otelc_span *otel_tracer_start_span_with_options(struct otelc_trace
 	else if (!tracer->enabled)
 		OTELC_RETURN_PTR(nullptr);
 	else if (!OTELC_STR_IS_VALID(operation_name))
-		OTEL_TRACER_RETURN_PTR("Invalid operation name");
+		OTEL_TRACER_RETURN_PTR(OTEL_ERROR_MSG_INVALID_OP_NAME);
 	else if (!OTEL_NULL(parent_span) && !OTEL_NULL(parent_context))
 		OTEL_TRACER_RETURN_PTR("Parameters parent_span and parent_context are mutually exclusive");
 
 	auto *impl = OTEL_IMPL(tracer, tracer);
 	if (OTEL_NULL(impl))
-		OTEL_TRACER_RETURN_PTR("Invalid tracer");
+		OTEL_TRACER_RETURN_PTR(OTEL_ERROR_MSG_INVALID_TRACER);
 
 	/* Copy the SDK Tracer handle so it cannot be released mid-call. */
 	auto tracer_shared = impl->tracer;
 	if (OTEL_NULL(tracer_shared))
-		OTEL_TRACER_RETURN_PTR("Invalid tracer");
+		OTEL_TRACER_RETURN_PTR(OTEL_ERROR_MSG_INVALID_TRACER);
 
 	auto *tracer_ptr = tracer_shared.get();
 
@@ -196,7 +196,7 @@ static struct otelc_span *otel_tracer_start_span_with_options(struct otelc_trace
 
 		parent_maybe = handle->context;
 		if (OTEL_NULL(parent_maybe))
-			OTEL_TRACER_RETURN_PTR("Unable to get parent span context");
+			OTEL_TRACER_RETURN_PTR(OTEL_ERROR_MSG_PARENT_SPAN_CTX);
 	}
 	else if (!OTEL_NULL(parent_context)) {
 		OTEL_LOCK_TRACER(span_context, parent_context->idx);
@@ -207,7 +207,7 @@ static struct otelc_span *otel_tracer_start_span_with_options(struct otelc_trace
 
 		parent_maybe = handle->context;
 		if (OTEL_NULL(parent_maybe))
-			OTEL_TRACER_RETURN_PTR("Unable to get parent span context");
+			OTEL_TRACER_RETURN_PTR(OTEL_ERROR_MSG_PARENT_SPAN_CTX);
 	} else {
 #ifdef OTELC_USE_RUNTIME_CONTEXT
 		parent_maybe = otel::make_shared_nothrow<otel_context::Context>(otel_context::RuntimeContext::GetCurrent());
@@ -268,7 +268,7 @@ static struct otelc_span *otel_tracer_start_span_with_options(struct otelc_trace
 					OTEL_DBG_THROW();
 					link_attr.reserve(links[i].kv_len);
 				}
-				OTEL_CATCH_SIGNAL_RETURN( , OTEL_TRACER_RETURN_PTR, "Unable to allocate link attributes")
+				OTEL_CATCH_SIGNAL_RETURN( , OTEL_TRACER_RETURN_PTR, OTEL_ERROR_MSG_LINK_ATTRS)
 
 				for (size_t j = 0; j < links[i].kv_len; j++)
 					OTEL_VALUE_ADD(_PTR, link_attr, emplace_back, links[i].kv[j].key, &(links[i].kv[j].value), &(tracer->err), "Unable to add link attribute");
@@ -352,7 +352,7 @@ static struct otelc_span *otel_tracer_start_span_with_options(struct otelc_trace
 		/* Register the span handle in the shared map. */
 		OTEL_HANDLE_EMPLACE(otel_span, retptr->idx, span_handle,
 			{ span_handle->span->End(otel_trace::EndSpanOptions{}); delete span_handle; otel_nolock_span_destroy(&retptr); },
-			OTEL_TRACER_RETURN_PTR, "Unable to add span: duplicate id", "Unable to add span"
+			OTEL_TRACER_RETURN_PTR, OTEL_ERROR_MSG_ADD_SPAN ": duplicate id", OTEL_ERROR_MSG_ADD_SPAN
 		);
 	}
 
@@ -417,7 +417,7 @@ static int otel_span_context_add(struct otelc_tracer *tracer, struct otelc_span_
 	if (OTEL_NULL(tracer))
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
 	else if (OTEL_NULL(span_context))
-		OTEL_TRACER_RETURN_INT("Invalid span context");
+		OTEL_TRACER_RETURN_INT(OTEL_ERROR_MSG_INVALID_SPAN_CTX);
 
 	if (OTEL_NULL(*span_context = otel_span_context_new()))
 		OTEL_TRACER_RETURN_INT(OTEL_ERROR_MSG_ENOMEM("span context"));
@@ -436,7 +436,7 @@ static int otel_span_context_add(struct otelc_tracer *tracer, struct otelc_span_
 	/* Register the span context handle in the shared map. */
 	OTEL_HANDLE_EMPLACE(otel_span_context, (*span_context)->idx, span_context_handle,
 		{ delete span_context_handle; otel_nolock_span_context_destroy(span_context); },
-		OTEL_TRACER_RETURN_INT, "Unable to add span context: duplicate id", "Unable to add span context"
+		OTEL_TRACER_RETURN_INT, OTEL_ERROR_MSG_ADD_SPAN_CTX ": duplicate id", OTEL_ERROR_MSG_ADD_SPAN_CTX
 	);
 
 	OTEL_DBG_SPAN_CONTEXT();
@@ -478,7 +478,7 @@ static int otel_tracer_extract_carrier_cb(void *arg, const char *key, const char
 		OTEL_DBG_THROW();
 		(void)data->emplace(key, value);
 	}
-	OTEL_CATCH_RETURN(OTELC_RETURN_INT, OTELC_RET_ERROR, "Unable to add carrier entry")
+	OTEL_CATCH_RETURN(OTELC_RETURN_INT, OTELC_RET_ERROR, OTEL_ERROR_MSG_ADD_CARRIER_ENTRY)
 
 	OTELC_RETURN_INT(OTELC_RET_OK);
 }
@@ -520,7 +520,7 @@ static struct otelc_span_context *otel_tracer_extract_carrier(struct otelc_trace
 	else if (!tracer->enabled)
 		OTELC_RETURN_PTR(nullptr);
 	else if (OTEL_NULL(carrier))
-		OTEL_TRACER_RETURN_PTR("Invalid carrier");
+		OTEL_TRACER_RETURN_PTR(OTEL_ERROR_MSG_INVALID_CARRIER);
 
 #if !defined(OTELC_USE_THREAD_SHARED_HANDLE) && !defined(OTELC_USE_STATIC_HANDLE)
 	if (otel_tracer_handle_init() == OTELC_RET_ERROR)
@@ -540,7 +540,7 @@ static struct otelc_span_context *otel_tracer_extract_carrier(struct otelc_trace
 				OTEL_DBG_THROW();
 				(void)carrier_data.emplace(carrier->text_map.key[i], carrier->text_map.value[i]);
 			}
-			OTEL_CATCH_SIGNAL_RETURN( , OTEL_TRACER_RETURN_PTR, "Unable to add carrier entry")
+			OTEL_CATCH_SIGNAL_RETURN( , OTEL_TRACER_RETURN_PTR, OTEL_ERROR_MSG_ADD_CARRIER_ENTRY)
 	} else {
 		const int rc = carrier->foreach_key(OTEL_CAST_TYPEOF(carrier, carrier), otel_tracer_extract_carrier_cb, &carrier_data);
 		if (rc == OTELC_RET_ERROR)
@@ -556,12 +556,12 @@ static struct otelc_span_context *otel_tracer_extract_carrier(struct otelc_trace
 #endif
 	auto *impl = OTEL_IMPL(tracer, tracer);
 	if (OTEL_NULL(impl))
-		OTEL_TRACER_RETURN_PTR("Tracer propagator not configured");
+		OTEL_TRACER_RETURN_PTR(OTEL_ERROR_MSG_NO_PROPAGATOR);
 
 	/* Copy the propagator so it cannot be released mid-call. */
 	auto propagator = impl->propagator;
 	if (OTEL_NULL(propagator))
-		OTEL_TRACER_RETURN_PTR("Tracer propagator not configured");
+		OTEL_TRACER_RETURN_PTR(OTEL_ERROR_MSG_NO_PROPAGATOR);
 
 	auto context = otel::make_shared_nothrow<otel_context::Context>(propagator->Extract(map_carrier, rt_context));
 	if (OTEL_NULL(context))
@@ -671,12 +671,12 @@ static int otel_tracer_enabled(struct otelc_tracer *tracer)
 
 	auto *impl = OTEL_IMPL(tracer, tracer);
 	if (OTEL_NULL(impl))
-		OTEL_TRACER_RETURN_INT("Invalid tracer");
+		OTEL_TRACER_RETURN_INT(OTEL_ERROR_MSG_INVALID_TRACER);
 
 	/* Copy the SDK Tracer handle so it cannot be released mid-call. */
 	auto tracer_shared = impl->tracer;
 	if (OTEL_NULL(tracer_shared))
-		OTEL_TRACER_RETURN_INT("Invalid tracer");
+		OTEL_TRACER_RETURN_INT(OTEL_ERROR_MSG_INVALID_TRACER);
 
 	if (!tracer->enabled)
 		OTELC_RETURN_INT(false);
@@ -869,7 +869,7 @@ static int otel_tracer_start(struct otelc_tracer *tracer)
 				OTEL_DBG_THROW();
 				processors.push_back(std::move(processor));
 			}
-			OTEL_CATCH_SIGNAL_RETURN( , OTEL_TRACER_RETURN_INT, "Unable to add processor")
+			OTEL_CATCH_SIGNAL_RETURN( , OTEL_TRACER_RETURN_INT, OTEL_ERROR_MSG_ADD_PROCESSOR)
 		}
 	} else {
 		std::unique_ptr<otel_sdk_trace::SpanExporter>  exporter;
@@ -885,7 +885,7 @@ static int otel_tracer_start(struct otelc_tracer *tracer)
 			OTEL_DBG_THROW();
 			processors.push_back(std::move(processor));
 		}
-		OTEL_CATCH_SIGNAL_RETURN( , OTEL_TRACER_RETURN_INT, "Unable to add processor")
+		OTEL_CATCH_SIGNAL_RETURN( , OTEL_TRACER_RETURN_INT, OTEL_ERROR_MSG_ADD_PROCESSOR)
 	}
 
 	/* Create the provider, tracer, and propagator, then store on the instance. */
@@ -1167,7 +1167,7 @@ struct otelc_tracer *otelc_tracer_create(const struct otelc_ctx *ctx, char **err
 	OTELC_FUNC("%p, %p:%p", ctx, OTELC_DPTR_ARGS(err));
 
 	if (OTEL_NULL(ctx))
-		OTEL_ERR_RETURN_PTR("Invalid context");
+		OTEL_ERR_RETURN_PTR(OTEL_ERROR_MSG_INVALID_CTX);
 
 	if (OTEL_NULL(retptr = otel_tracer_new()))
 		OTEL_ERR_RETURN_PTR(OTEL_ERROR_MSG_ENOMEM("tracer"));

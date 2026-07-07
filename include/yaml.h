@@ -22,6 +22,26 @@
 
 #define OTEL_YAML_NAME_DEFAULT            "default"
 
+#define OTEL_ERROR_MSG_YAML_DUP_KEY        "Duplicate YAML key: \"%s\""
+#define OTEL_ERROR_MSG_YAML_FILE_NAME      "YAML file name not specified"
+#define OTEL_ERROR_MSG_YAML_OPEN_FILE      "'%s': unable to open YAML file"
+#define OTEL_ERROR_MSG_YAML_PARSE_CFG      "'%s': unable to parse OpenTelemetry configuration"
+#define OTEL_ERROR_MSG_YAML_DOC            "YAML document not specified"
+#define OTEL_ERROR_MSG_YAML_EMIT_DOC       "'%s': unable to emit YAML document"
+#define OTEL_ERROR_MSG_YAML_DOC_NAME       "YAML document name not specified"
+#define OTEL_ERROR_MSG_YAML_NODE_NAME      "YAML node name not specified"
+#define OTEL_ERROR_MSG_YAML_NODE_DESC      "YAML node description not specified"
+#define OTEL_ERROR_MSG_YAML_NODE_PATH      "YAML node path not specified"
+#define OTEL_ERROR_MSG_YAML_DATA_BUFFER    "Data buffer not specified or has zero size"
+#define OTEL_ERROR_MSG_YAML_NOT_SEQ        "'%s': not a YAML sequence"
+#define OTEL_ERROR_MSG_YAML_SEQ_ITER       "'%s[%d]': error while iterating YAML sequence"
+#define OTEL_ERROR_MSG_YAML_TEXT_MAP_KV    "Unable to add a key-value pair to a text map"
+#define OTEL_ERROR_MSG_YAML_NO_PATH        "'%s': path does not exist"
+#define OTEL_ERROR_MSG_YAML_IDX_BOUNDS     "'%s[%d]': index out of bounds"
+#define OTEL_ERROR_MSG_YAML_INVALID_VALUE  "'%s[%d]': invalid value"
+#define OTEL_ERROR_MSG_YAML_NOT_SPECIFIED  "%s %s not specified"
+#define OTEL_ERROR_MSG_YAML_INVALID_ARG    "'%s': invalid %s %s"
+
 /***
  * Builds a YAML lookup path of the form "<prefix><suffix>" into the supplied
  * buffer, which must be an array so that sizeof yields its size.

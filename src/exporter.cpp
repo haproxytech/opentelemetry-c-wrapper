@@ -64,9 +64,9 @@ static int otel_exporter_set_otlp_file_options(const struct otelc_ctx *ctx, cons
 	OTELC_FUNC("%p, \"%s\", \"%s\", <options>, %p:%p, \"%s\"", ctx, OTELC_STR_ARG(desc), OTELC_STR_ARG(path), OTELC_DPTR_ARGS(err), OTELC_STR_ARG(name));
 
 	if (OTEL_NULL(desc))
-		OTEL_ERR_RETURN_INT("Exporter description not specified");
+		OTEL_ERR_RETURN_INT(OTEL_ERROR_MSG_EXPORTER_DESC);
 	else if (OTEL_NULL(path))
-		OTEL_ERR_RETURN_INT("Exporter path not specified");
+		OTEL_ERR_RETURN_INT(OTEL_ERROR_MSG_EXPORTER_PATH);
 
 	rc = yaml_get_node(ctx->fyd, err, 1, desc, path, name,
 	                   OTEL_YAML_ARG_STR(0, EXPORTERS, thread_name),
@@ -158,11 +158,11 @@ static int otel_exporter_set_otlp_grpc_options(const struct otelc_ctx *ctx, cons
 	OTELC_FUNC("%p, \"%s\", \"%s\", \"%s\", <options>, %p:%p, \"%s\"", ctx, OTELC_STR_ARG(desc), OTELC_STR_ARG(path), OTELC_STR_ARG(endpoint), OTELC_DPTR_ARGS(err), OTELC_STR_ARG(name));
 
 	if (OTEL_NULL(desc))
-		OTEL_ERR_RETURN_INT("Exporter description not specified");
+		OTEL_ERR_RETURN_INT(OTEL_ERROR_MSG_EXPORTER_DESC);
 	else if (OTEL_NULL(path))
-		OTEL_ERR_RETURN_INT("Exporter path not specified");
+		OTEL_ERR_RETURN_INT(OTEL_ERROR_MSG_EXPORTER_PATH);
 	else if (OTEL_NULL(endpoint))
-		OTEL_ERR_RETURN_INT("Exporter endpoint not specified");
+		OTEL_ERR_RETURN_INT(OTEL_ERROR_MSG_EXPORTER_ENDPOINT);
 
 	rc = yaml_get_node(ctx->fyd, err, 1, desc, path, name,
 	                   OTEL_YAML_ARG_STR(0, EXPORTERS, thread_name),
@@ -268,11 +268,11 @@ static int otel_exporter_set_otlp_http_options(const struct otelc_ctx *ctx, cons
 	OTELC_FUNC("%p, \"%s\", \"%s\", \"%s\", <options>, %p, %p:%p, \"%s\"", ctx, OTELC_STR_ARG(desc), OTELC_STR_ARG(path), OTELC_STR_ARG(endpoint), thread_wait_time, OTELC_DPTR_ARGS(err), OTELC_STR_ARG(name));
 
 	if (OTEL_NULL(desc))
-		OTEL_ERR_RETURN_INT("Exporter description not specified");
+		OTEL_ERR_RETURN_INT(OTEL_ERROR_MSG_EXPORTER_DESC);
 	else if (OTEL_NULL(path))
-		OTEL_ERR_RETURN_INT("Exporter path not specified");
+		OTEL_ERR_RETURN_INT(OTEL_ERROR_MSG_EXPORTER_PATH);
 	else if (OTEL_NULL(endpoint))
-		OTEL_ERR_RETURN_INT("Exporter endpoint not specified");
+		OTEL_ERR_RETURN_INT(OTEL_ERROR_MSG_EXPORTER_ENDPOINT);
 
 	rc = yaml_get_node(ctx->fyd, err, 1, desc, path, name,
 	                   OTEL_YAML_ARG_STR(0, EXPORTERS, thread_name),
@@ -330,7 +330,7 @@ static int otel_exporter_set_otlp_http_options(const struct otelc_ctx *ctx, cons
 				OTEL_DBG_THROW();
 				otlp_http_headers.emplace(std::string{http_headers->key[i]}, std::string{http_headers->value[i]});
 			}
-			OTEL_CATCH_SIGNAL_RETURN( , OTEL_ERR_RETURN_INT, "Unable to add HTTP header")
+			OTEL_CATCH_SIGNAL_RETURN( , OTEL_ERR_RETURN_INT, OTEL_ERROR_MSG_ADD_HTTP_HEADER)
 		}
 
 	options.url                         = endpoint;
@@ -408,9 +408,9 @@ static int otel_exporter_set_ostream_options(const struct otelc_ctx *ctx, const 
 	OTELC_FUNC("%p, \"%s\", \"%s\", <stream>, <exporter>, %p:%p, \"%s\"", ctx, OTELC_STR_ARG(desc), OTELC_STR_ARG(path), OTELC_DPTR_ARGS(err), OTELC_STR_ARG(name));
 
 	if (OTEL_NULL(desc))
-		OTEL_ERR_RETURN_INT("Exporter description not specified");
+		OTEL_ERR_RETURN_INT(OTEL_ERROR_MSG_EXPORTER_DESC);
 	else if (OTEL_NULL(path))
-		OTEL_ERR_RETURN_INT("Exporter path not specified");
+		OTEL_ERR_RETURN_INT(OTEL_ERROR_MSG_EXPORTER_PATH);
 
 	rc = yaml_get_node(ctx->fyd, err, 1, desc, path, name, OTEL_YAML_ARG_STR(0, EXPORTERS, filename), OTEL_YAML_END);
 	if (rc == OTELC_RET_ERROR)
@@ -541,7 +541,7 @@ int otel_tracer_exporter_create(struct otelc_tracer *tracer, std::unique_ptr<ote
 #endif /* HAVE_OTEL_EXPORTER_ZIPKIN */
 	}
 	else {
-		OTEL_TRACER_ERROR("Invalid exporter type: '%s'", type);
+		OTEL_TRACER_ERROR(OTEL_ERROR_MSG_INVALID_EXPORTER, type);
 	}
 
 	if (OTEL_NULL(exporter_maybe))
@@ -624,7 +624,7 @@ int otel_meter_exporter_create(struct otelc_meter *meter, std::unique_ptr<otel_s
 		OTEL_METER_ERROR(OTEL_METER_EXPORTER_NOT_SUPPORTED("Zipkin"));
 	}
 	else {
-		OTEL_METER_ERROR("Invalid exporter type: '%s'", type);
+		OTEL_METER_ERROR(OTEL_ERROR_MSG_INVALID_EXPORTER, type);
 	}
 
 	if (OTEL_NULL(exporter_maybe))
@@ -706,7 +706,7 @@ int otel_logger_exporter_create(struct otelc_logger *logger, std::unique_ptr<ote
 					OTEL_DBG_THROW();
 					es_http_headers.emplace(std::string{http_headers->key[i]}, std::string{http_headers->value[i]});
 				}
-				OTEL_CATCH_SIGNAL_RETURN( , OTEL_LOGGER_RETURN_INT, "Unable to add HTTP header")
+				OTEL_CATCH_SIGNAL_RETURN( , OTEL_LOGGER_RETURN_INT, OTEL_ERROR_MSG_ADD_HTTP_HEADER)
 			}
 
 		options.host_             = host;
@@ -736,7 +736,7 @@ int otel_logger_exporter_create(struct otelc_logger *logger, std::unique_ptr<ote
 		OTEL_LOGGER_ERROR(OTEL_LOGGER_EXPORTER_NOT_SUPPORTED("Zipkin"));
 	}
 	else {
-		OTEL_LOGGER_ERROR("Invalid exporter type: '%s'", type);
+		OTEL_LOGGER_ERROR(OTEL_ERROR_MSG_INVALID_EXPORTER, type);
 	}
 
 	if (OTEL_NULL(exporter_maybe))

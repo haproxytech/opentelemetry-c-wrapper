@@ -16,6 +16,10 @@
 #ifndef _OPENTELEMETRY_C_WRAPPER_PROPAGATION_H_
 #define _OPENTELEMETRY_C_WRAPPER_PROPAGATION_H_
 
+#define OTEL_ERROR_MSG_INVALID_CARRIER      "Invalid carrier"
+#define OTEL_ERROR_MSG_ADD_CARRIER_ENTRY    "Unable to add carrier entry"
+#define OTEL_ERROR_MSG_NO_PROPAGATOR        "Tracer propagator not configured"
+
 /***
  * https://www.w3.org/TR/trace-context/
  *

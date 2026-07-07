@@ -138,7 +138,7 @@ int otel_resource_create(const struct otelc_ctx *ctx, const char *desc, const ch
 	OTELC_FUNC("%p, \"%s\", \"%s\", <resource>, %p:%p", ctx, OTELC_STR_ARG(desc), OTELC_STR_ARG(path), OTELC_DPTR_ARGS(err));
 
 	if (OTEL_NULL(ctx))
-		OTEL_ERR_RETURN_INT("Invalid context");
+		OTEL_ERR_RETURN_INT(OTEL_ERROR_MSG_INVALID_CTX);
 	else if (OTEL_NULL(desc))
 		OTEL_ERR_RETURN_INT("Resource description not specified");
 	else if (OTEL_NULL(path))
