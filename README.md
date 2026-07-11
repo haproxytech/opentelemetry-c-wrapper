@@ -332,8 +332,13 @@ The `signals` section groups its `traces`, `metrics`, and `logs` subtrees by
 name, so a single configuration can hold several independent definitions per
 signal type.  When the library context is created, the `name` argument given
 to `otelc_init()` selects the entry to load.  If no matching entry exists, the
-entry called `default` is used as a fallback; if neither is present, creating
-the corresponding signal fails.
+entry called `default` is used as a fallback.  When that is also absent but the
+subtree keeps its settings directly under `signals/<signal>` (the legacy layout
+without the naming level, recognized by the `scope_name` key), that subtree
+itself is used.  If no variant is present, creating the corresponding signal
+fails.  The outcome of the lookup is recorded per signal section and can be
+read back with `otelc_ctx_nstate_get()`; a section that is missing from the
+document altogether is recorded as absent.
 
 Minimal configuration exporting traces to stdout:
 

@@ -54,7 +54,15 @@ static const char temp_yaml_content[] =
 	"    bad_bool: maybe\n"
 	"    big_count: 999999\n"
 	"    big_ratio: 999.9\n"
-	"    empty_num: \"\"\n";
+	"    empty_num: \"\"\n"
+	"\n"
+	"flat:\n"
+	"  scope_name: legacy\n"
+	"  enabled: true\n"
+	"\n"
+	"signals:\n"
+	"  traces:\n"
+	"    scope_name: legacy\n";
 
 
 /***
@@ -1399,6 +1407,40 @@ static void test_yaml_resolve_prefix_fallback(OTEL_YAML_DOC *doc)
 
 /***
  * NAME
+ *   test_yaml_resolve_prefix_flat - falls back to the legacy flat layout
+ *
+ * SYNOPSIS
+ *   static void test_yaml_resolve_prefix_flat(OTEL_YAML_DOC *doc)
+ *
+ * ARGUMENTS
+ *   doc - parsed YAML document
+ *
+ * DESCRIPTION
+ *   Verifies that yaml_resolve_prefix() returns the base path itself when the
+ *   named and the fallback nodes are both absent but the base node keeps the
+ *   settings directly, which is recognized through the scope_name key.
+ *
+ * RETURN VALUE
+ *   This function does not return a value.
+ */
+static void test_yaml_resolve_prefix_flat(OTEL_YAML_DOC *doc)
+{
+	char *prefix = nullptr, *err = nullptr;
+	int   rc, result = TEST_FAIL;
+
+	rc = yaml_resolve_prefix(doc, &err, "/flat", "missing", "also_missing", &prefix);
+	if ((rc == OTELC_RET_OK) && (strcmp(prefix, "/flat") == 0))
+		result = TEST_PASS;
+
+	OTELC_SFREE(prefix);
+	OTELC_SFREE(err);
+
+	test_report("yaml_resolve_prefix flat layout", result);
+}
+
+
+/***
+ * NAME
  *   test_yaml_resolve_prefix_none - reports an error when neither candidate exists
  *
  * SYNOPSIS
@@ -1409,7 +1451,8 @@ static void test_yaml_resolve_prefix_fallback(OTEL_YAML_DOC *doc)
  *
  * DESCRIPTION
  *   Verifies that yaml_resolve_prefix() returns OTELC_RET_ERROR and sets an
- *   error message when neither the named nor the fallback node is present.
+ *   error message when neither the named nor the fallback node is present and
+ *   the base node does not carry the scope_name marker of the flat layout.
  *
  * RETURN VALUE
  *   This function does not return a value.
@@ -1602,6 +1645,110 @@ static void test_otelc_init_null_name(const char *cfg_file)
 	OTELC_SFREE(err);
 
 	test_report("otelc_init nullptr name", result);
+}
+
+
+/***
+ * NAME
+ *   nstates_are - compares the recorded name states of a context
+ *
+ * SYNOPSIS
+ *   static bool nstates_are(const struct otelc_ctx *ctx, otelc_ctx_name_t traces, otelc_ctx_name_t metrics, otelc_ctx_name_t logs)
+ *
+ * ARGUMENTS
+ *   ctx     - library context to examine
+ *   traces  - expected state of the traces signal section
+ *   metrics - expected state of the metrics signal section
+ *   logs    - expected state of the logs signal section
+ *
+ * DESCRIPTION
+ *   Compares the per-signal name resolution states reported by the exported
+ *   otelc_ctx_nstate_get() accessor for the given context against the expected
+ *   values.
+ *
+ * RETURN VALUE
+ *   Returns true when the context exists and all states match, false otherwise.
+ */
+static bool nstates_are(const struct otelc_ctx *ctx, otelc_ctx_name_t traces, otelc_ctx_name_t metrics, otelc_ctx_name_t logs)
+{
+	if (_NULL(ctx))
+		return false;
+
+	return (otelc_ctx_nstate_get(ctx, OTELC_SIGNAL_TRACES, nullptr, 0) == traces) && (otelc_ctx_nstate_get(ctx, OTELC_SIGNAL_METRICS, nullptr, 0) == metrics) && (otelc_ctx_nstate_get(ctx, OTELC_SIGNAL_LOGS, nullptr, 0) == logs);
+}
+
+
+/***
+ * NAME
+ *   test_otelc_init_nstate - tests the recorded per-signal name states
+ *
+ * SYNOPSIS
+ *   static void test_otelc_init_nstate(const char *cfg_file, const char *temp_file)
+ *
+ * ARGUMENTS
+ *   cfg_file  - path to the YAML configuration file with named entries
+ *   temp_file - path to the temporary YAML file with a flat traces section
+ *
+ * DESCRIPTION
+ *   Verifies that otelc_init() records the expected name resolution state for
+ *   each signal section: the 'default' entries serve an unset name, a named
+ *   entry is reported as found, a missing name falls back to 'default', and
+ *   the temporary file's flat traces section is reported as the flat layout
+ *   while its absent sections are reported as absent.  The states are read
+ *   through otelc_ctx_nstate_get(), whose rejection of a null context and an
+ *   out-of-range signal is checked as well, together with the messages the
+ *   accessor copies into the caller's buffer for a state and for both rejected
+ *   arguments.
+ *
+ * RETURN VALUE
+ *   This function does not return a value.
+ */
+static void test_otelc_init_nstate(const char *cfg_file, const char *temp_file)
+{
+#define OTELC_CTX_NAME_DEF(a,b)   b,
+	static const char *nstate_msg[] = { OTELC_CTX_NAME_DEFINES };
+#undef OTELC_CTX_NAME_DEF
+	struct otelc_ctx  *ctx;
+	char              *err = nullptr, msg[128];
+	int                result = TEST_PASS;
+
+	ctx = otelc_init(cfg_file, nullptr, &err);
+	if (!nstates_are(ctx, OTELC_CTX_NAME_UNSET_DEFAULT, OTELC_CTX_NAME_UNSET_DEFAULT, OTELC_CTX_NAME_UNSET_DEFAULT))
+		result = TEST_FAIL;
+	if ((otelc_ctx_nstate_get(ctx, OTELC_SIGNAL_TRACES, msg, sizeof(msg)) != OTELC_CTX_NAME_UNSET_DEFAULT) || (strcmp(msg, nstate_msg[OTELC_CTX_NAME_UNSET_DEFAULT]) != 0))
+		result = TEST_FAIL;
+	if ((otelc_ctx_nstate_get(nullptr, OTELC_SIGNAL_TRACES, msg, sizeof(msg)) != OTELC_RET_ERROR) || (strcmp(msg, OTEL_ERROR_MSG_INVALID_CTX) != 0))
+		result = TEST_FAIL;
+	if ((otelc_ctx_nstate_get(ctx, OTELC_SIGNAL_MAX, msg, sizeof(msg)) != OTELC_RET_ERROR) || (strcmp(msg, OTEL_ERROR_MSG_INVALID_SIG) != 0))
+		result = TEST_FAIL;
+	otelc_deinit(&ctx, nullptr, nullptr, nullptr);
+	OTELC_SFREE_CLEAR(err);
+
+	ctx = otelc_init(cfg_file, "speed_test", &err);
+	if (!nstates_are(ctx, OTELC_CTX_NAME_FOUND, OTELC_CTX_NAME_FOUND, OTELC_CTX_NAME_FOUND))
+		result = TEST_FAIL;
+	otelc_deinit(&ctx, nullptr, nullptr, nullptr);
+	OTELC_SFREE_CLEAR(err);
+
+	ctx = otelc_init(cfg_file, "missing", &err);
+	if (!nstates_are(ctx, OTELC_CTX_NAME_DEFAULT, OTELC_CTX_NAME_DEFAULT, OTELC_CTX_NAME_DEFAULT))
+		result = TEST_FAIL;
+	otelc_deinit(&ctx, nullptr, nullptr, nullptr);
+	OTELC_SFREE_CLEAR(err);
+
+	ctx = otelc_init(temp_file, "missing", &err);
+	if (!nstates_are(ctx, OTELC_CTX_NAME_FLAT, OTELC_CTX_NAME_ABSENT, OTELC_CTX_NAME_ABSENT))
+		result = TEST_FAIL;
+	otelc_deinit(&ctx, nullptr, nullptr, nullptr);
+	OTELC_SFREE_CLEAR(err);
+
+	ctx = otelc_init(temp_file, nullptr, &err);
+	if (!nstates_are(ctx, OTELC_CTX_NAME_UNSET_FLAT, OTELC_CTX_NAME_ABSENT, OTELC_CTX_NAME_ABSENT))
+		result = TEST_FAIL;
+	otelc_deinit(&ctx, nullptr, nullptr, nullptr);
+	OTELC_SFREE_CLEAR(err);
+
+	test_report("otelc_init name states", result);
 }
 
 
@@ -1812,6 +1959,7 @@ int main(int argc, char **argv)
 	OTELC_LOG(stdout, "[yaml_resolve_prefix]");
 	test_yaml_resolve_prefix_named(doc);
 	test_yaml_resolve_prefix_fallback(doc);
+	test_yaml_resolve_prefix_flat(doc);
 	test_yaml_resolve_prefix_none(doc);
 	test_yaml_resolve_prefix_null_name(doc);
 	test_yaml_resolve_prefix_invalid_args(doc);
@@ -1826,6 +1974,7 @@ int main(int argc, char **argv)
 	test_otelc_init_valid(cfg_file);
 	test_otelc_init_null_file();
 	test_otelc_init_null_name(cfg_file);
+	test_otelc_init_nstate(cfg_file, temp_path);
 	test_otelc_deinit_reinit(cfg_file);
 
 	(void)unlink(temp_path);

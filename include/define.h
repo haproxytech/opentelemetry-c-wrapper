@@ -103,6 +103,7 @@ template <typename T> otel_defer_struct<T>make_defer(T fn) { return { fn }; }
 
 #define OTEL_ERROR_MSG_ENOMEM(s)      "Unable to allocate memory for " s
 #define OTEL_ERROR_MSG_INVALID_CTX    "Invalid context"
+#define OTEL_ERROR_MSG_INVALID_SIG    "Invalid signal"
 
 #define OTEL_SIGNAL_ERROR(e,f, ...)           do { if (otelc_sprintf(&(e), f, ##__VA_ARGS__) > 0) OTELC_DBG(OTEL, "%s", (e)); } while (0)
 #define OTEL_SIGNAL_RETURN(e,f, ...)          do { OTEL_SIGNAL_ERROR((e), f, ##__VA_ARGS__); OTELC_RETURN(); } while (0)

@@ -173,6 +173,40 @@ struct otelc_logger;
  */
 struct otelc_ctx;
 
+/***
+ * Signal sections of the YAML configuration.
+ */
+#define OTELC_SIGNAL_DEFINES                 \
+	OTELC_SIGNAL_DEF(TRACES,  "traces")  \
+	OTELC_SIGNAL_DEF(METRICS, "metrics") \
+	OTELC_SIGNAL_DEF(LOGS,    "logs")
+
+#define OTELC_SIGNAL_DEF(a,b)   OTELC_SIGNAL_##a,
+typedef enum {
+	OTELC_SIGNAL_DEFINES
+	OTELC_SIGNAL_MAX,
+} otelc_signal_t;
+#undef OTELC_SIGNAL_DEF
+
+/***
+ * Resolution state of the context name against one signal section.
+ */
+#define OTELC_CTX_NAME_DEFINES                                                                          \
+	OTELC_CTX_NAME_DEF(UNSET_DEFAULT,   "Name not set; the 'default' entry serves")                 \
+	OTELC_CTX_NAME_DEF(FOUND,           "Name set; the named entry was found")                      \
+	OTELC_CTX_NAME_DEF(DEFAULT,         "Name set; entry absent, the 'default' entry serves")       \
+	OTELC_CTX_NAME_DEF(FLAT,            "Name set; no entry, no 'default'; the flat layout serves") \
+	OTELC_CTX_NAME_DEF(NOT_FOUND,       "Name set; nothing matches, signal creation fails")         \
+	OTELC_CTX_NAME_DEF(UNSET_FLAT,      "Name not set; no 'default'; the flat layout serves")       \
+	OTELC_CTX_NAME_DEF(UNSET_NOT_FOUND, "Name not set; nothing matches, signal creation fails")     \
+	OTELC_CTX_NAME_DEF(ABSENT,          "Signal section not present")
+
+#define OTELC_CTX_NAME_DEF(a,b)   OTELC_CTX_NAME_##a,
+typedef enum {
+	OTELC_CTX_NAME_DEFINES
+} otelc_ctx_name_t;
+#undef OTELC_CTX_NAME_DEF
+
 
 #ifdef OTELC_DBG_MEM
 typedef void *(*otelc_ext_malloc_t)(const char *, int, size_t);
@@ -218,6 +252,7 @@ int                    otelc_kv_add(struct otelc_kv **kv, size_t *kv_len, const 
 void                   otelc_kv_destroy(struct otelc_kv **kv, size_t n);
 
 struct otelc_ctx      *otelc_init(const char *cfgfile, const char *name, char **err);
+int                    otelc_ctx_nstate_get(const struct otelc_ctx *ctx, otelc_signal_t signal, char *errbuf, size_t errsize);
 void                   otelc_close_cfg(struct otelc_ctx *ctx);
 void                   otelc_deinit(struct otelc_ctx **ctx, struct otelc_tracer **tracer, struct otelc_meter **meter, struct otelc_logger **logger);
 void                   otelc_lib_shutdown(void);

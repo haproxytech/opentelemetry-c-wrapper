@@ -402,8 +402,12 @@ The typical usage follows this lifecycle:
 
 The 'name' argument to otelc_init() selects which named entry to read from each
 subtree of the 'signals' section in the YAML file.  When no entry with that name
-exists, the entry called 'default' is used as a fallback; if neither is present,
-creating the corresponding signal fails.  See section 6.7 for details.
+exists, the entry called 'default' is used as a fallback; when that is also
+absent, a configuration written in the legacy layout, with the settings placed
+directly under the signal subtree, is accepted as a last resort.  The outcome
+of the lookup is recorded per signal section at otelc_init() time and can be
+read back with otelc_ctx_nstate_get().  If no variant is present, creating the
+corresponding signal fails; see section 6.7 for the details.
 
 The otelc_deinit() function accepts pointers to the context and to all three
 signal types and destroys whichever ones are non-NULL:
@@ -992,8 +996,23 @@ signal definitions:
 The 'name' argument passed to otelc_init() selects which named entry is used.
 For each signal type the library probes signals/<sig>/<name> first; if that
 entry is absent it falls back to signals/<sig>/default.  When neither entry
-exists for a signal that is later created via otelc_*_create(), the call fails
-with an error.
+exists, the subtree itself is probed for the legacy layout that predates the
+naming level and keeps the settings directly under signals/<sig>; the layout is
+recognized through the mandatory scope_name key at that level and, when found,
+serves any requested name.  When no variant exists for a signal that is later
+created via otelc_*_create(), the call fails with an error.  A signal section
+missing from the document altogether is recorded as absent by the name-state
+probe, so a caller can skip such a signal instead of treating it as an error.
+
+Configurations in the legacy layout therefore keep working unchanged:
+
+  signals:
+    traces:
+      scope_name: "my-application"
+      exporters:  my_exporter
+      samplers:   my_sampler
+      processors: my_processor
+      providers:  my_provider
 
 Within each named entry, the keys reference the other top-level sections.
 When exporters and processors (or readers) are specified as YAML lists, each

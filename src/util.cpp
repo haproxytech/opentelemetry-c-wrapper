@@ -1850,7 +1850,9 @@ static int otelc_load_handle_map_shards(OTEL_YAML_DOC *fyd, char **err)
  *   the parsed YAML document and a duplicated copy of the supplied name.  The
  *   optional top-level handle_map_shards key is read here; the first
  *   otelc_init() call applies it to the span and span context handle maps,
- *   later calls validate but do not change the live setting.
+ *   later calls validate but do not change the live setting.  The resolution
+ *   state of the context name against each signal section is recorded in the
+ *   context and can be read back with otelc_ctx_nstate_get().
  *
  * RETURN VALUE
  *   Returns a pointer to a newly created library context on success,
@@ -1858,7 +1860,13 @@ static int otelc_load_handle_map_shards(OTEL_YAML_DOC *fyd, char **err)
  */
 struct otelc_ctx *otelc_init(const char *cfgfile, const char *name, char **err)
 {
+	static const char *signal_bases[OTELC_SIGNAL_MAX] = {
+		OTEL_YAML_TRACER_PREFIX, /* OTELC_SIGNAL_TRACES */
+		OTEL_YAML_METER_PREFIX,  /* OTELC_SIGNAL_METRICS */
+		OTEL_YAML_LOGGER_PREFIX, /* OTELC_SIGNAL_LOGS */
+	};
 	struct otelc_ctx *retptr = nullptr;
+	int               i;
 
 	OTELC_FUNC("\"%s\", \"%s\", %p:%p", OTELC_STR_ARG(cfgfile), OTELC_STR_ARG(name), OTELC_DPTR_ARGS(err));
 
@@ -1889,8 +1897,62 @@ struct otelc_ctx *otelc_init(const char *cfgfile, const char *name, char **err)
 		OTELC_SFREE(retptr->name);
 		OTELC_SFREE_CLEAR(retptr);
 	}
+	else {
+		for (i = 0; i < OTEL_CAST_STATIC(int, OTELC_TABLESIZE(signal_bases)); i++)
+			retptr->nstate[i] = yaml_probe_nstate(retptr->fyd, signal_bases[i], retptr->name, OTELC_STR_IS_VALID(name));
+	}
 
 	OTELC_RETURN_PTR(retptr);
+}
+
+
+/***
+ * NAME
+ *   otelc_ctx_nstate_get - returns the recorded name state of a signal
+ *
+ * SYNOPSIS
+ *   int otelc_ctx_nstate_get(const struct otelc_ctx *ctx, otelc_signal_t signal, char *errbuf, size_t errsize)
+ *
+ * ARGUMENTS
+ *   ctx     - library context to examine
+ *   signal  - signal section whose state is reported
+ *   errbuf  - buffer receiving the message describing the result, or NULL
+ *   errsize - size of the errbuf buffer
+ *
+ * DESCRIPTION
+ *   Reports the resolution state of the context name against the specified
+ *   signal section, as recorded by otelc_init() when the configuration file
+ *   was loaded.  The state tells whether a name was supplied and whether the
+ *   named entry, the 'default' entry or the flat legacy layout serves that
+ *   signal's configuration, or whether the signal section is absent from the
+ *   document altogether.  When errbuf is not NULL and errsize is not zero, a
+ *   message describing the reported state, or the rejected argument, is copied
+ *   into errbuf and truncated to fit when necessary.
+ *
+ * RETURN VALUE
+ *   Returns the otelc_ctx_name_t value recorded for the signal, or
+ *   OTELC_RET_ERROR when the context or signal argument is invalid.
+ */
+int otelc_ctx_nstate_get(const struct otelc_ctx *ctx, otelc_signal_t signal, char *errbuf, size_t errsize)
+{
+#define OTELC_CTX_NAME_DEF(a,b)   b,
+	static const char *nstate_msg[] = { OTELC_CTX_NAME_DEFINES };
+#undef OTELC_CTX_NAME_DEF
+	int retval;
+
+	OTELC_FUNC("%p, %d, %p, %zu", ctx, signal, errbuf, errsize);
+
+	if (OTEL_NULL(ctx) || !OTELC_IN_RANGE(signal, OTELC_SIGNAL_TRACES, OTELC_SIGNAL_LOGS)) {
+		(void)otelc_strlcpy(errbuf, errsize, OTEL_NULL(ctx) ? OTEL_ERROR_MSG_INVALID_CTX : OTEL_ERROR_MSG_INVALID_SIG, 0);
+
+		OTELC_RETURN_INT(OTELC_RET_ERROR);
+	}
+
+	retval = ctx->nstate[signal];
+
+	(void)otelc_strlcpy(errbuf, errsize, nstate_msg[retval], 0);
+
+	OTELC_RETURN_INT(retval);
 }
 
 

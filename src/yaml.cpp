@@ -335,6 +335,106 @@ void yaml_close(OTEL_YAML_DOC **fyd)
 
 /***
  * NAME
+ *   yaml_node_exists - checks whether a node exists at the given path
+ *
+ * SYNOPSIS
+ *   static bool yaml_node_exists(OTEL_YAML_DOC *fyd, const char *path)
+ *
+ * ARGUMENTS
+ *   fyd  - parsed YAML configuration document
+ *   path - slash-separated path of the node to probe
+ *
+ * DESCRIPTION
+ *   Probes the YAML document for a node at the specified path using whichever
+ *   backend is configured.  The node contents are not examined; the probe only
+ *   reports the presence of the node.
+ *
+ * RETURN VALUE
+ *   Returns true when the node exists, false otherwise.
+ */
+static bool yaml_node_exists(OTEL_YAML_DOC *fyd, const char *path)
+{
+#ifdef HAVE_LIBFYAML_H
+	return !OTEL_NULL(fy_node_by_path(fy_document_root(fyd), path, -1, FYNWF_DONT_FOLLOW));
+#else
+	return !ryml_get_node_by_path(fyd, path).invalid();
+#endif /* HAVE_LIBFYAML_H */
+}
+
+
+/***
+ * NAME
+ *   yaml_probe_nstate - determines the resolution state of a context name
+ *
+ * SYNOPSIS
+ *   otelc_ctx_name_t yaml_probe_nstate(OTEL_YAML_DOC *fyd, const char *base, const char *name, bool name_set)
+ *
+ * ARGUMENTS
+ *   fyd      - parsed YAML configuration document
+ *   base     - base path of the signal section (e.g., "/signals/traces")
+ *   name     - effective context name to look for under base
+ *   name_set - true when the caller supplied the name explicitly
+ *
+ * DESCRIPTION
+ *   Probes the signal section under base for the named entry, the 'default'
+ *   entry and the scope_name marker of the flat legacy layout, and reports
+ *   which of them would serve the configuration for the supplied context name.
+ *   The name_set argument separates a caller-provided name from the substitute
+ *   applied when no name was given, so the reported state also records whether
+ *   the name was set at all.  A signal section that does not exist at all is
+ *   reported as OTELC_CTX_NAME_ABSENT, which separates a signal that was left
+ *   out on purpose from a present section that matches nothing.  The document
+ *   is not modified and no error is reported; an unusable document or base
+ *   yields the corresponding not-found state.
+ *
+ * RETURN VALUE
+ *   Returns the otelc_ctx_name_t value describing the resolution state.
+ */
+otelc_ctx_name_t yaml_probe_nstate(OTEL_YAML_DOC *fyd, const char *base, const char *name, bool name_set)
+{
+	char path[OTEL_YAML_BUFSIZ];
+	bool has_name = false, has_default = false, has_flat = false;
+
+	OTELC_FUNC("%p, \"%s\", \"%s\", %hhu", fyd, OTELC_STR_ARG(base), OTELC_STR_ARG(name), name_set);
+
+	if (!OTEL_NULL(fyd) && OTELC_STR_IS_VALID(base)) {
+		if (!yaml_node_exists(fyd, base))
+			OTELC_RETURN_ENUM(OTELC_CTX_NAME_ABSENT);
+
+		if (name_set && OTELC_STR_IS_VALID(name)) {
+			(void)snprintf(path, sizeof(path), "%s/%s", base, name);
+			has_name = yaml_node_exists(fyd, path);
+		}
+
+		(void)snprintf(path, sizeof(path), "%s/%s", base, OTEL_YAML_NAME_DEFAULT);
+		has_default = yaml_node_exists(fyd, path);
+
+		(void)snprintf(path, sizeof(path), "%s/%s", base, OTEL_YAML_SCOPE_NAME);
+		has_flat = yaml_node_exists(fyd, path);
+	}
+
+	if (name_set) {
+		if (has_name)
+			OTELC_RETURN_ENUM(OTELC_CTX_NAME_FOUND);
+		else if (has_default)
+			OTELC_RETURN_ENUM(OTELC_CTX_NAME_DEFAULT);
+		else if (has_flat)
+			OTELC_RETURN_ENUM(OTELC_CTX_NAME_FLAT);
+
+		OTELC_RETURN_ENUM(OTELC_CTX_NAME_NOT_FOUND);
+	}
+
+	if (has_default)
+		OTELC_RETURN_ENUM(OTELC_CTX_NAME_UNSET_DEFAULT);
+	else if (has_flat)
+		OTELC_RETURN_ENUM(OTELC_CTX_NAME_UNSET_FLAT);
+
+	OTELC_RETURN_ENUM(OTELC_CTX_NAME_UNSET_NOT_FOUND);
+}
+
+
+/***
+ * NAME
  *   yaml_resolve_prefix - resolves the per-instance signal configuration prefix
  *
  * SYNOPSIS
@@ -353,10 +453,14 @@ void yaml_close(OTEL_YAML_DOC **fyd)
  *   exists, OTELC_RET_OK is returned with the composed string allocated and
  *   stored in *prefix.  Otherwise the function composes "<base>/<fallback>"
  *   and probes for that node; on success the fallback prefix is allocated and
- *   stored in *prefix.  If neither node is present, an error message is set
- *   and OTELC_RET_ERROR is returned; after a failed lookup *prefix is NULL.
- *   Either name or fallback may be NULL or empty to skip that context.  The
- *   caller is responsible for freeing *prefix.
+ *   stored in *prefix.  When neither node is present, the base node itself is
+ *   probed for the legacy flat layout that predates the naming level and keeps
+ *   the settings directly under base; the layout is recognized through the
+ *   mandatory scope_name key; on success a copy of base is stored in *prefix.
+ *   If no candidate is present, an error message is set and OTELC_RET_ERROR is
+ *   returned; after a failed lookup *prefix is NULL.  Either name or fallback
+ *   may be NULL or empty to skip that context.  The caller is responsible for
+ *   freeing *prefix.
  *
  * RETURN VALUE
  *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR on failure.
@@ -365,6 +469,7 @@ int yaml_resolve_prefix(OTEL_YAML_DOC *fyd, char **err, const char *base, const 
 {
 	const char *contexts[2] = { name, fallback };
 	int         len, i;
+	bool        found;
 
 	OTELC_FUNC("%p, %p:%p, \"%s\", \"%s\", \"%s\", %p:%p", fyd, OTELC_DPTR_ARGS(err), OTELC_STR_ARG(base), OTELC_STR_ARG(name), OTELC_STR_ARG(fallback), OTELC_DPTR_ARGS(prefix));
 
@@ -405,6 +510,37 @@ int yaml_resolve_prefix(OTEL_YAML_DOC *fyd, char **err, const char *base, const 
 #endif /* HAVE_LIBFYAML_H */
 
 		OTELC_SFREE_CLEAR(*prefix);
+	}
+
+	/***
+	 * Neither context matched.  Before giving up, probe the base node
+	 * itself for the legacy flat layout that predates the naming level,
+	 * in which the settings live directly under the base path.  The
+	 * mandatory scope_name key is used as the layout marker.
+	 */
+	len = snprintf(NULL, 0, "%s/%s", base, OTEL_YAML_SCOPE_NAME);
+	if (len > 0) {
+		*prefix = OTEL_CAST_TYPEOF(*prefix, OTELC_MALLOC(__func__, __LINE__, len + 1));
+		if (OTEL_NULL(*prefix))
+			OTEL_ERR_RETURN_INT(OTEL_ERROR_MSG_ENOMEM("resolved prefix"));
+		else
+			(void)snprintf(*prefix, len + 1, "%s/%s", base, OTEL_YAML_SCOPE_NAME);
+	} else {
+		OTEL_ERR_RETURN_INT("Failed to compute prefix path length");
+	}
+
+	found = yaml_node_exists(fyd, *prefix);
+
+	OTELC_SFREE_CLEAR(*prefix);
+
+	if (found) {
+		OTELC_DBG(DEBUG, "'%s': using the legacy layout without a naming level", base);
+
+		*prefix = OTELC_STRDUP(__func__, __LINE__, base);
+		if (OTEL_NULL(*prefix))
+			OTEL_ERR_RETURN_INT(OTEL_ERROR_MSG_ENOMEM("resolved prefix"));
+
+		OTELC_RETURN_INT(OTELC_RET_OK);
 	}
 
 	if (OTELC_STR_IS_VALID(contexts[0]) && OTELC_STR_IS_VALID(contexts[1]))

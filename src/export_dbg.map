@@ -19,6 +19,7 @@ global:
 	otelc_strhex;
 	otelc_version;
 	otelc_init;
+	otelc_ctx_nstate_get;
 	otelc_deinit;
 	otelc_lib_shutdown;
 	otelc_close_cfg;

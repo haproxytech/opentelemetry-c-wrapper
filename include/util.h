@@ -488,8 +488,9 @@ struct otel_handle {
  * process, each loaded from a distinct configuration file.
  */
 struct otelc_ctx {
-	OTEL_YAML_DOC *fyd;  /* Parsed YAML configuration document. */
-	char          *name; /* Caller-provided name identifying the context. */
+	OTEL_YAML_DOC    *fyd;  /* Parsed YAML configuration document. */
+	char             *name; /* Caller-provided name identifying the context. */
+	otelc_ctx_name_t  nstate[OTELC_SIGNAL_MAX]; /* Per-signal resolution state of the context name. */
 };
 
 

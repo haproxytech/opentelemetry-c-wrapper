@@ -22,6 +22,12 @@
 
 #define OTEL_YAML_NAME_DEFAULT            "default"
 
+/***
+ * Mandatory per-entry signal configuration key.  Its presence directly under
+ * a signal base path marks the legacy layout without the naming level.
+ */
+#define OTEL_YAML_SCOPE_NAME              "scope_name"
+
 #define OTEL_ERROR_MSG_YAML_DUP_KEY        "Duplicate YAML key: \"%s\""
 #define OTEL_ERROR_MSG_YAML_FILE_NAME      "YAML file name not specified"
 #define OTEL_ERROR_MSG_YAML_OPEN_FILE      "'%s': unable to open YAML file"
@@ -82,6 +88,7 @@ bool           yaml_is_sequence(OTEL_YAML_DOC *fyd, const char *path);
 int            yaml_get_sequence_value(OTEL_YAML_DOC *fyd, char **err, const char *path, int index, char *data, size_t data_size);
 int            yaml_find_sequence(OTEL_YAML_DOC *fyd, char **err, bool is_mandatory, const char *path, const char *sequence, struct otelc_text_map **map);
 int            yaml_get_node(OTEL_YAML_DOC *fyd, char **err, bool is_mandatory, const char *desc, const char *path, const char *name, int type, ...);
+otelc_ctx_name_t yaml_probe_nstate(OTEL_YAML_DOC *fyd, const char *base, const char *name, bool name_set);
 
 #endif /* _OPENTELEMETRY_C_WRAPPER_YAML_H_ */
 
