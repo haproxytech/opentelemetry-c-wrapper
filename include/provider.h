@@ -33,9 +33,12 @@
 /***
  * Generates a provider operation function (either ForceFlush or Shutdown) that
  * forwards the call to the per-instance OpenTelemetry SDK provider held in the
- * instance's implementation state.  The shared_ptr is copied to a local before
- * the SDK pointer is obtained, so a concurrent destroy that resets the impl
- * member cannot release the SDK provider mid-call.
+ * instance's implementation state.  The shared_ptr is copied to a local as a
+ * defensive measure only: copying is not synchronized with the destroy path,
+ * so the documented destroy contract still requires every concurrent operation
+ * on the instance to be drained before destroy is invoked.  The start path
+ * replaces the same impl members without synchronizing with these copies, so
+ * the drain requirement applies equally to a start or restart.
  */
 #define OTEL_PROVIDER_OP(arg_signal, arg_ptr, arg_operation, arg_msg)                                                     \
 	OTELC_FUNC("%p, %p", (arg_ptr), timeout);                                                                         \
@@ -47,7 +50,7 @@
 	if (OTEL_NULL(impl))                                                                                              \
 		OTEL_##arg_signal##_RETURN_INT(arg_msg);                                                                  \
 	                                                                                                                  \
-	/* Copy the provider so it cannot be released mid-call. */                                                        \
+	/* Snapshot the provider reference for the duration of the call. */                                               \
 	auto       provider_shared = impl->provider;                                                                      \
 	const auto provider_sdk    = OTEL_##arg_signal##_PROVIDER(provider_shared);                                       \
 	if (!OTEL_NULL(provider_sdk)) {                                                                                   \

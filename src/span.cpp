@@ -165,7 +165,8 @@ static int otel_span_set_status(const struct otelc_span *span, otelc_span_status
  * DESCRIPTION
  *   Used to store context information in a carrier used to propagate traces
  *   between services.  This template consolidates the common logic for text
- *   map and HTTP headers injection.
+ *   map and HTTP headers injection.  Any content left in the writer's text
+ *   map by a previous inject is released before the new content is stored.
  *
  * RETURN VALUE
  *   Returns OTELC_RET_OK if the context is injected into the carrier,
@@ -216,7 +217,11 @@ static int otel_span_inject_carrier(const struct otelc_span *span, W *carrier, c
 
 	if (otel_carrier.data().empty())
 		OTEL_SPAN_RETURN_INT("No injected data");
-	else if (OTEL_NULL(OTELC_TEXT_MAP_NEW(&(carrier->text_map), otel_carrier.data().size())))
+
+	/* Release the content a previous inject left in the writer's map. */
+	otelc_text_map_free(&(carrier->text_map));
+
+	if (OTEL_NULL(OTELC_TEXT_MAP_NEW(&(carrier->text_map), otel_carrier.data().size())))
 		OTEL_SPAN_RETURN_INT("Unable to allocate memory for %s carrier", carrier_name);
 
 	/* Copy injected data from the internal carrier to the caller's carrier. */

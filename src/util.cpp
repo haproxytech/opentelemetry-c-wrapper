@@ -18,6 +18,7 @@
 
 
 static std::atomic<int> otelc_tid = 0;
+static std::mutex       otelc_sprintf_mutex;
 otelc_ext_malloc_t      otelc_ext_malloc = OTELC_DBG_IFDEF(otelc_dbg_malloc, malloc);
 otelc_ext_free_t        otelc_ext_free   = OTELC_DBG_IFDEF(otelc_dbg_free,   free);
 
@@ -488,8 +489,8 @@ void otelc_nsleep(time_t sec, long nsec)
  *   copied data.  The trailing null byte ensures that the result can be safely
  *   used as a C string if the source data is textual.
  *
- *   If s is a null pointer or size is 0, no allocation is performed and a null
- *   pointer is returned.
+ *   If s is a null pointer, if size is 0, or if size + 1 would overflow, no
+ *   allocation is performed and a null pointer is returned.
  *
  * RETURN VALUE
  *   Returns a pointer to the newly allocated memory block, or a null pointer
@@ -499,7 +500,7 @@ void *otelc_memdup(const void *s, size_t size)
 {
 	void *retptr = nullptr;
 
-	if (OTEL_NULL(s) || (size == 0))
+	if (OTEL_NULL(s) || (size == 0) || (size == SIZE_MAX))
 		return retptr;
 
 	retptr = OTELC_MALLOC(__func__, __LINE__, size + 1);
@@ -528,7 +529,11 @@ void *otelc_memdup(const void *s, size_t size)
  *   Formats a string according to the provided format specifier and arguments,
  *   allocates sufficient memory for the result, and stores the pointer to the
  *   new string in *ret.  If *ret already points to a previously allocated
- *   string, that memory is freed before the new string is assigned.
+ *   string, that memory is freed before the new string is assigned.  On entry,
+ *   *ret must therefore be a null pointer or a pointer to a string allocated
+ *   by a previous call.  The stored string is released with OTELC_SFREE().
+ *   Replacement of *ret is serialized internally, so concurrent calls that
+ *   target the same pointer cannot double-free the previously stored string.
  *
  * RETURN VALUE
  *   Returns the number of bytes written to *ret, not including the terminating
@@ -547,12 +552,20 @@ int otelc_sprintf(char **ret, const char *format, ...)
 	retval = vasprintf(&ptr, format, ap);
 	va_end(ap);
 
-	OTELC_SFREE_CLEAR(*ret);
-	if (retval != -1) {
+	if (retval != -1)
 		OTELC_DBG_MEM_TRACKING(ptr, retval);
 
+	/***
+	 * The replacement of *ret is serialized because concurrent error paths
+	 * may signal an error on the same target (e.g. meter->err); without it
+	 * two racing calls would both free the previous string (double free)
+	 * and one of the two new strings would leak.
+	 */
+	const std::lock_guard<std::mutex> guard(otelc_sprintf_mutex);
+
+	OTELC_SFREE_CLEAR(*ret);
+	if (retval != -1)
 		*ret = ptr;
-	}
 
 	return retval;
 }
@@ -623,6 +636,8 @@ ssize_t otelc_strlcpy(char *dst, size_t dst_size, const char *src, size_t src_si
  *   valid number format, range limits, and ensures the entire string is
  *   consumed if flag_end is set.  If val_min is less than or equal to val_max,
  *   the value is checked against this range.
+ *   An error message stored in *err is allocated by the library and must be
+ *   released with OTELC_SFREE().
  *
  * RETURN VALUE
  *   Returns true on success, false if an error occurs.
@@ -1001,18 +1016,36 @@ struct otelc_text_map *otelc_text_map_new(OTELC_DBG_IFDEF(OTELC_ARGS(const char 
 	if (OTEL_NULL(retptr))
 		OTELC_RETURN_PTR(retptr);
 
+	/***
+	 * Also clear the array pointers: a caller-provided structure may hold
+	 * indeterminate values, which otelc_text_map_free() would otherwise
+	 * try to release on a partial allocation failure below.
+	 */
+	retptr->flags      = nullptr;
+	retptr->key        = nullptr;
+	retptr->value      = nullptr;
 	retptr->count      = 0;
 	retptr->size       = size;
 	retptr->is_dynamic = OTEL_NULL(text_map);
 
-	if (size == 0)
-		/* Do nothing. */;
-	else if (OTEL_NULL(retptr->flags = OTEL_CAST_TYPEOF(retptr->flags, OTELC_CALLOC(func, line, size, sizeof(*(retptr->flags))))))
+	if (size == 0) {
+		/* Do nothing. */
+	}
+	else if (OTEL_NULL(retptr->flags = OTEL_CAST_TYPEOF(retptr->flags, OTELC_CALLOC(func, line, size, sizeof(*(retptr->flags)))))) {
 		otelc_text_map_destroy(&retptr);
-	else if (OTEL_NULL(retptr->key = OTEL_CAST_TYPEOF(retptr->key, OTELC_CALLOC(func, line, size, sizeof(*(retptr->key))))))
+
+		retptr = nullptr;
+	}
+	else if (OTEL_NULL(retptr->key = OTEL_CAST_TYPEOF(retptr->key, OTELC_CALLOC(func, line, size, sizeof(*(retptr->key)))))) {
 		otelc_text_map_destroy(&retptr);
-	else if (OTEL_NULL(retptr->value = OTEL_CAST_TYPEOF(retptr->value, OTELC_CALLOC(func, line, size, sizeof(*(retptr->value))))))
+
+		retptr = nullptr;
+	}
+	else if (OTEL_NULL(retptr->value = OTEL_CAST_TYPEOF(retptr->value, OTELC_CALLOC(func, line, size, sizeof(*(retptr->value)))))) {
 		otelc_text_map_destroy(&retptr);
+
+		retptr = nullptr;
+	}
 
 	OTELC_RETURN_PTR(retptr);
 }
@@ -1050,12 +1083,16 @@ struct otelc_text_map *otelc_text_map_new(OTELC_DBG_IFDEF(OTELC_ARGS(const char 
  *   text map is destroyed.  These flags are typically used when ownership of
  *   dynamically allocated memory is transferred to the text map.
  *
+ *   On failure the text map takes no ownership of the supplied data: only the
+ *   duplicates it created itself are released, while pointers stored directly
+ *   remain owned by the caller regardless of the FREE flags.
+ *
  *   When debugging is enabled, the calling function name and line number are
  *   recorded for diagnostic purposes.
  *
  * RETURN VALUE
- *   Returns the current number of entries in the text map after the new
- *   key-value pair has been added on success, or OTELC_RET_ERROR on failure.
+ *   Returns the zero-based index assigned to the newly added key-value pair
+ *   on success, or OTELC_RET_ERROR on failure.
  */
 int otelc_text_map_add(OTELC_DBG_IFDEF(OTELC_ARGS(const char *func, int line, ), ) struct otelc_text_map *text_map, const char *key, size_t key_len, const char *value, size_t value_len, otelc_text_map_flags_t flags)
 {
@@ -1104,10 +1141,20 @@ int otelc_text_map_add(OTELC_DBG_IFDEF(OTELC_ARGS(const char *func, int line, ),
 	if (!OTEL_NULL(text_map->key[text_map->count]) && !OTEL_NULL(text_map->value[text_map->count])) {
 		retval = text_map->count++;
 	} else {
-		if ((text_map->flags[text_map->count] & OTELC_TEXT_MAP_FREE_KEY) != 0)
+		/***
+		 * On failure the text map takes no ownership: only the
+		 * duplicates created above are released, while a pointer
+		 * stored directly (no DUP flag) stays with the caller even
+		 * when its FREE flag is set, consistently with the realloc
+		 * failures above.
+		 */
+		if ((flags & OTELC_TEXT_MAP_DUP_KEY) != 0)
 			OTELC_SFREE(text_map->key[text_map->count]);
-		if ((text_map->flags[text_map->count] & OTELC_TEXT_MAP_FREE_VALUE) != 0)
+		if ((flags & OTELC_TEXT_MAP_DUP_VALUE) != 0)
 			OTELC_SFREE(text_map->value[text_map->count]);
+
+		text_map->key[text_map->count]   = nullptr;
+		text_map->value[text_map->count] = nullptr;
 	}
 
 	OTELC_RETURN_INT(retval);
@@ -1126,9 +1173,10 @@ int otelc_text_map_add(OTELC_DBG_IFDEF(OTELC_ARGS(const char *func, int line, ),
  *
  * DESCRIPTION
  *   Releases all resources associated with the entries stored in the specified
- *   text map, including all key-value pairs.  For each entry, the key and/or
- *   value data is released according to the ownership flags specified when the
- *   entry was added.
+ *   text map, including all key-value pairs.  For each entry, key or value
+ *   data is released when its DUP flag (the map owns the duplicate it made) or
+ *   its FREE flag (ownership was transferred to the map) was specified when
+ *   the entry was added.
  *
  *   After this function returns, the text map is completely empty and may be
  *   reused to store new entries.
@@ -1147,12 +1195,12 @@ void otelc_text_map_free(struct otelc_text_map *text_map)
 
 	if (!OTEL_NULL(text_map->flags) && !OTEL_NULL(text_map->key))
 		for (size_t i = 0; i < text_map->count; i++)
-			if ((text_map->flags[i] & OTELC_TEXT_MAP_FREE_KEY) != 0)
+			if ((text_map->flags[i] & (OTELC_TEXT_MAP_DUP_KEY | OTELC_TEXT_MAP_FREE_KEY)) != 0)
 				OTELC_SFREE(text_map->key[i]);
 
 	if (!OTEL_NULL(text_map->flags) && !OTEL_NULL(text_map->value))
 		for (size_t i = 0; i < text_map->count; i++)
-			if ((text_map->flags[i] & OTELC_TEXT_MAP_FREE_VALUE) != 0)
+			if ((text_map->flags[i] & (OTELC_TEXT_MAP_DUP_VALUE | OTELC_TEXT_MAP_FREE_VALUE)) != 0)
 				OTELC_SFREE(text_map->value[i]);
 
 	OTELC_SFREE_CLEAR(text_map->flags);
@@ -1853,6 +1901,8 @@ static int otelc_load_handle_map_shards(OTEL_YAML_DOC *fyd, char **err)
  *   later calls validate but do not change the live setting.  The resolution
  *   state of the context name against each signal section is recorded in the
  *   context and can be read back with otelc_ctx_nstate_get().
+ *   An error message stored in *err is allocated by the library and must be
+ *   released with OTELC_SFREE().
  *
  * RETURN VALUE
  *   Returns a pointer to a newly created library context on success,

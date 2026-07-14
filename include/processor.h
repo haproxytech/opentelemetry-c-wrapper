@@ -93,6 +93,7 @@ private:
 	std::unique_ptr<otel_sdk_trace::BatchSpanProcessor> inner_;
 	static std::atomic<uint64_t>                        dropped_count_;
 	static std::atomic<otel_counting_span_processor *>  instance_;
+	static std::mutex                                   instance_mutex_;
 };
 
 
@@ -167,6 +168,7 @@ private:
 	std::unique_ptr<otel_sdk_logs::BatchLogRecordProcessor> inner_;
 	static std::atomic<uint64_t>                            dropped_count_;
 	static std::atomic<otel_counting_log_processor *>       instance_;
+	static std::mutex                                       instance_mutex_;
 };
 
 

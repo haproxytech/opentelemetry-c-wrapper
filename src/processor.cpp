@@ -35,6 +35,9 @@ std::atomic<int64_t>  otel_counting_metric_exporter::last_export_ms_{0};
 std::atomic<otel_counting_span_processor *> otel_counting_span_processor::instance_{nullptr};
 std::atomic<otel_counting_log_processor *>  otel_counting_log_processor::instance_{nullptr};
 
+std::mutex otel_counting_span_processor::instance_mutex_;
+std::mutex otel_counting_log_processor::instance_mutex_;
+
 
 /***
  * NAME
@@ -155,17 +158,24 @@ bool otel_counting_span_exporter::Shutdown(std::chrono::microseconds timeout) no
  *   The drop counter is shared across all otel_counting_span_processor
  *   instances and can be queried via the static dropped_count() method or
  *   the C-linkage function otelc_pipeline_status_get().
+ *
+ *   The instance_mutex_ serializes instance_ registration and deregistration
+ *   against the static status readers, so queue_depth() and queue_capacity()
+ *   can never dereference a processor that a concurrent destroy has freed.
  */
 otel_counting_span_processor::otel_counting_span_processor(std::unique_ptr<otel_sdk_trace::BatchSpanProcessor> &&inner, std::shared_ptr<std::atomic<uint64_t>> consumed, size_t max_queue_size)
 	: consumed_(std::move(consumed)), max_queue_size_(max_queue_size), inner_(std::move(inner))
 {
+	const std::lock_guard<std::mutex> guard(instance_mutex_);
+
 	instance_.store(this, std::memory_order_release);
 }
 
 
 otel_counting_span_processor::~otel_counting_span_processor()
 {
-	otel_counting_span_processor *self = this;
+	otel_counting_span_processor     *self = this;
+	const std::lock_guard<std::mutex> guard(instance_mutex_);
 
 	instance_.compare_exchange_strong(self, nullptr, std::memory_order_acq_rel);
 }
@@ -186,8 +196,9 @@ otel_counting_span_processor::~otel_counting_span_processor()
  */
 int64_t otel_counting_span_processor::queue_depth() noexcept
 {
-	otel_counting_span_processor *p = instance_.load(std::memory_order_acquire);
-	uint64_t                      prod, cons;
+	const std::lock_guard<std::mutex> guard(instance_mutex_);
+	otel_counting_span_processor     *p = instance_.load(std::memory_order_acquire);
+	uint64_t                          prod, cons;
 
 	if (p == nullptr)
 		return 0;
@@ -212,7 +223,8 @@ int64_t otel_counting_span_processor::queue_depth() noexcept
  */
 int64_t otel_counting_span_processor::queue_capacity() noexcept
 {
-	otel_counting_span_processor *p = instance_.load(std::memory_order_acquire);
+	const std::lock_guard<std::mutex> guard(instance_mutex_);
+	otel_counting_span_processor     *p = instance_.load(std::memory_order_acquire);
 
 	return (p == nullptr) ? 0 : OTEL_CAST_STATIC(int64_t, p->max_queue_size_);
 }
@@ -362,18 +374,25 @@ bool otel_counting_log_exporter::Shutdown(std::chrono::microseconds timeout) noe
  *   The drop counter is shared across all otel_counting_log_processor instances
  *   and can be queried via the static dropped_count() method or the C-linkage
  *   function otelc_pipeline_status_get().
+ *
+ *   The instance_mutex_ serializes instance_ registration and deregistration
+ *   against the static status readers, so queue_depth() and queue_capacity()
+ *   can never dereference a processor that a concurrent destroy has freed.
  */
 
 otel_counting_log_processor::otel_counting_log_processor(std::unique_ptr<otel_sdk_logs::BatchLogRecordProcessor> &&inner, std::shared_ptr<std::atomic<uint64_t>> consumed, size_t max_queue_size)
 	: consumed_(std::move(consumed)), max_queue_size_(max_queue_size), inner_(std::move(inner))
 {
+	const std::lock_guard<std::mutex> guard(instance_mutex_);
+
 	instance_.store(this, std::memory_order_release);
 }
 
 
 otel_counting_log_processor::~otel_counting_log_processor()
 {
-	otel_counting_log_processor *self = this;
+	otel_counting_log_processor      *self = this;
+	const std::lock_guard<std::mutex> guard(instance_mutex_);
 
 	instance_.compare_exchange_strong(self, nullptr, std::memory_order_acq_rel);
 }
@@ -394,8 +413,9 @@ otel_counting_log_processor::~otel_counting_log_processor()
  */
 int64_t otel_counting_log_processor::queue_depth() noexcept
 {
-	otel_counting_log_processor *p = instance_.load(std::memory_order_acquire);
-	uint64_t                     prod, cons;
+	const std::lock_guard<std::mutex> guard(instance_mutex_);
+	otel_counting_log_processor      *p = instance_.load(std::memory_order_acquire);
+	uint64_t                          prod, cons;
 
 	if (p == nullptr)
 		return 0;
@@ -420,7 +440,8 @@ int64_t otel_counting_log_processor::queue_depth() noexcept
  */
 int64_t otel_counting_log_processor::queue_capacity() noexcept
 {
-	otel_counting_log_processor *p = instance_.load(std::memory_order_acquire);
+	const std::lock_guard<std::mutex> guard(instance_mutex_);
+	otel_counting_log_processor      *p = instance_.load(std::memory_order_acquire);
 
 	return (p == nullptr) ? 0 : OTEL_CAST_STATIC(int64_t, p->max_queue_size_);
 }

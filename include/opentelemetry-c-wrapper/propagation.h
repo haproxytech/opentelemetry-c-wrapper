@@ -32,11 +32,16 @@ __CPLUSPLUS_DECL_BEGIN
  * Used to set information into a span context for propagation, entries are
  * strings in a map of string pointers.
  *
+ * The writer structure must be zero-initialized before its first use.  Each
+ * inject releases the content left in the text map by a previous inject before
+ * storing the newly injected entries; the caller releases the final content
+ * with otelc_text_map_free().
+ *
  * Set and get implementations should use the same convention for naming the
  * keys they manipulate.
  */
 struct otelc_text_map_writer {
-	struct otelc_text_map text_map;
+	struct otelc_text_map text_map; /* Injected content; released with otelc_text_map_free(). */
 
 	/***
 	 * NAME
@@ -98,9 +103,14 @@ struct otelc_text_map_reader {
 
 /***
  * Used to set HTTP headers.
+ *
+ * The writer structure must be zero-initialized before its first use.  Each
+ * inject releases the content left in the text map by a previous inject before
+ * storing the newly injected entries; the caller releases the final content
+ * with otelc_text_map_free().
  */
 struct otelc_http_headers_writer {
-	struct otelc_text_map text_map;
+	struct otelc_text_map text_map; /* Injected content; released with otelc_text_map_free(). */
 
 	/***
 	 * NAME

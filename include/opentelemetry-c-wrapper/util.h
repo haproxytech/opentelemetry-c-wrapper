@@ -37,10 +37,10 @@ __CPLUSPLUS_DECL_BEGIN
 #define OTELC_TEXT_MAP_ADD(t,k,K,v,V,f)   otelc_text_map_add(OTELC_DBG_ARGS (t), (k), (K), (v), (V), (f))
 
 typedef enum {
-	OTELC_TEXT_MAP_DUP_KEY    = 0x01, /* Duplicate the key data. */
-	OTELC_TEXT_MAP_DUP_VALUE  = 0x02, /* Duplicate the value data. */
-	OTELC_TEXT_MAP_FREE_KEY   = 0x04, /* Release the key data. */
-	OTELC_TEXT_MAP_FREE_VALUE = 0x08, /* Release the value data. */
+	OTELC_TEXT_MAP_DUP_KEY    = 0x01, /* Duplicate the key data; the map releases the duplicate. */
+	OTELC_TEXT_MAP_DUP_VALUE  = 0x02, /* Duplicate the value data; the map releases the duplicate. */
+	OTELC_TEXT_MAP_FREE_KEY   = 0x04, /* Release the caller-supplied key data (ownership transfer). */
+	OTELC_TEXT_MAP_FREE_VALUE = 0x08, /* Release the caller-supplied value data (ownership transfer). */
 
 	OTELC_TEXT_MAP_DUP        = OTELC_TEXT_MAP_DUP_KEY | OTELC_TEXT_MAP_DUP_VALUE,
 	OTELC_TEXT_MAP_FREE       = OTELC_TEXT_MAP_FREE_KEY | OTELC_TEXT_MAP_FREE_VALUE,

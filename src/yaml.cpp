@@ -564,8 +564,8 @@ int yaml_resolve_prefix(OTEL_YAML_DOC *fyd, char **err, const char *base, const 
  * DESCRIPTION
  *   Opens, parses, and converts the specified YAML file into a string
  *   representation.  If an error occurs, a descriptive message is returned
- *   through the err parameter.  The caller is responsible for freeing the
- *   returned string.
+ *   through the err parameter.  The returned string is allocated by the
+ *   library and must be released with OTELC_SFREE().
  *
  * RETURN VALUE
  *   Returns a pointer to a newly allocated string containing the YAML content,
@@ -585,7 +585,14 @@ char *yaml_read(const char *file, char **err)
 	OTEL_DEFER(yaml_close(&fyd));
 
 #ifdef HAVE_LIBFYAML_H
-	const auto retptr = fy_emit_document_to_string(fyd, OTEL_CAST_STATIC(enum fy_emitter_cfg_flags, 0));
+	auto retptr = fy_emit_document_to_string(fyd, OTEL_CAST_STATIC(enum fy_emitter_cfg_flags, 0));
+
+	/***
+	 * The returned string is released by the caller with OTELC_SFREE();
+	 * re-dup the libfyaml malloc'd string into the tracked debug channel
+	 * so a debug build does not release a foreign pointer.
+	 */
+	OTELC_DBG_MEM_TRACKING(retptr, strlen(retptr));
 
 #else
 
@@ -1060,7 +1067,7 @@ static int yaml_get_node_v(OTEL_YAML_DOC *fyd, char **err, const char *desc, con
 	for ( ; type != OTEL_YAML_END; type = va_arg(ap, decltype(type))) {
 		int         arg_is_mandatory = va_arg(ap, decltype(arg_is_mandatory));
 		const char *arg_path         = va_arg(ap, decltype(arg_path));
-		const char *path_desc        = strrchr(arg_path, '/');
+		const char *path_desc        = OTEL_NULL(arg_path) ? nullptr : strrchr(arg_path, '/');
 
 		*subarg = '\0';
 

@@ -67,6 +67,10 @@ template <typename T> otel_defer_struct<T>make_defer(T fn) { return { fn }; }
 #define OTEL_NULL(p)                  ((p) == nullptr)
 #define OTEL_ARG_DEFAULT(p,v)         do { if (OTEL_NULL(p)) (p) = (v); } while (0)
 
+/***
+ * The pointer argument of OTEL_EXT_FREE_CLEAR() is evaluated more than once,
+ * so it must be a side-effect-free lvalue.
+ */
 #define OTEL_EXT_MALLOC(s)            otelc_ext_malloc(OTELC_DBG_ARGS (s))
 #define OTEL_EXT_FREE_CLEAR(p)        do { if (!OTEL_NULL(p)) { otelc_ext_free(OTELC_DBG_ARGS (p)); (p) = nullptr; } } while (0)
 

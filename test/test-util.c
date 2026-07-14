@@ -148,7 +148,7 @@ int test_init(int argc, char **argv, const char *banner, const char **cfg_file)
 		int rc = snprintf(cfg_path, sizeof(cfg_path), "%s/%s", dirname(argv[0]), cfg);
 		if (OTELC_IN_RANGE(rc, 0, (int)(sizeof(cfg_path) - 1))) {
 			if (access(cfg_path, F_OK) == -1) {
-				char *path = strdup(cfg_path);
+				char *path = OTELC_STRDUP(__func__, __LINE__, cfg_path);
 
 				if (_nNULL(path)) {
 					rc = snprintf(cfg_path, sizeof(cfg_path), "%s/../%s", dirname(path), cfg);

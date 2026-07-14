@@ -1530,12 +1530,12 @@ static void test_yaml_resolve_prefix_invalid_args(OTEL_YAML_DOC *doc)
 
 	if (yaml_resolve_prefix(nullptr, &err, "/nodes", "my_node", "default", &prefix) != OTELC_RET_ERROR)
 		result = TEST_FAIL;
-	OTELC_SFREE(prefix);
+	OTELC_SFREE_CLEAR(prefix);
 	OTELC_SFREE_CLEAR(err);
 
 	if (yaml_resolve_prefix(doc, &err, nullptr, "my_node", "default", &prefix) != OTELC_RET_ERROR)
 		result = TEST_FAIL;
-	OTELC_SFREE(prefix);
+	OTELC_SFREE_CLEAR(prefix);
 	OTELC_SFREE_CLEAR(err);
 
 	if (yaml_resolve_prefix(doc, &err, "/nodes", "my_node", "default", nullptr) != OTELC_RET_ERROR)
@@ -1825,7 +1825,7 @@ int main(int argc, char **argv)
 	 * Build the temporary YAML file path relative to the config file.
 	 */
 	{
-		char *cfg_copy = strdup(cfg_file);
+		char *cfg_copy = OTELC_STRDUP(__func__, __LINE__, cfg_file);
 
 		if (_NULL(cfg_copy)) {
 			OTELC_LOG(stderr, "ERROR: strdup() failed");

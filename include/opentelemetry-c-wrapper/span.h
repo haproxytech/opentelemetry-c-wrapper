@@ -848,7 +848,12 @@ struct otelc_span_ops {
 	 *
 	 * DESCRIPTION
 	 *   Used to store context information in a text map carrier used to
-	 *   propagate traces between services.
+	 *   propagate traces between services.  The writer structure must be
+	 *   zero-initialized before its first use.  On success the injected
+	 *   entries are stored in the writer's text map in library-allocated
+	 *   memory, releasing beforehand any content left in the text map by
+	 *   a previous inject.  The final content is released by the caller
+	 *   with otelc_text_map_free().
 	 *
 	 * RETURN VALUE
 	 *   Returns OTELC_RET_OK if the context is injected into the carrier,
@@ -870,7 +875,12 @@ struct otelc_span_ops {
 	 *
 	 * DESCRIPTION
 	 *   Used to store context information in an HTTP headers carrier used
-	 *   to propagate traces between services.
+	 *   to propagate traces between services.  The writer structure must
+	 *   be zero-initialized before its first use.  On success the injected
+	 *   entries are stored in the writer's text map in library-allocated
+	 *   memory, releasing beforehand any content left in the text map by
+	 *   a previous inject.  The final content is released by the caller
+	 *   with otelc_text_map_free().
 	 *
 	 * RETURN VALUE
 	 *   Returns OTELC_RET_OK if the context is injected into the carrier,
