@@ -222,11 +222,19 @@ static void test_two_tracers_coexist(const struct otelc_ctx *ctx1, const struct 
 			if (_nNULL(span_a) && _nNULL(span_b)
 			    && (span_a->tracer == primary)
 			    && (span_b->tracer == secondary)) {
-				/* Round-trip via each tracer's per-instance propagator. */
-				if ((otelc_span_inject_text_map(span_a, &tm_wr_a) == OTELC_RET_OK)
-				    && (otelc_span_inject_text_map(span_b, &tm_wr_b) == OTELC_RET_OK)) {
-					map_a  = &(tm_wr_a.text_map);
-					map_b  = &(tm_wr_b.text_map);
+				/***
+				 * Round-trip via each tracer's per-instance
+				 * propagator.  Each populated writer map is
+				 * recorded separately so the cleanup below
+				 * releases it even when the other injection
+				 * fails.
+				 */
+				if (otelc_span_inject_text_map(span_a, &tm_wr_a) == OTELC_RET_OK)
+					map_a = &(tm_wr_a.text_map);
+				if (otelc_span_inject_text_map(span_b, &tm_wr_b) == OTELC_RET_OK)
+					map_b = &(tm_wr_b.text_map);
+
+				if (_nNULL(map_a) && _nNULL(map_b)) {
 					sctx_a = otelc_tracer_extract_text_map(primary,   &tm_rd_a, map_a);
 					sctx_b = otelc_tracer_extract_text_map(secondary, &tm_rd_b, map_b);
 
@@ -307,11 +315,14 @@ static void test_tracer_destroy_order(const struct otelc_ctx *ctx1, const struct
 
 		/* Second tracer must still work. */
 		struct otelc_span *span_c = OTELC_OPS(secondary, start_span, "secondary-b");
-		if (_nNULL(span_b) && _nNULL(span_c)) {
-			OTELC_OPSR(span_b, end);
-			OTELC_OPSR(span_c, end);
+		if (_nNULL(span_b) && _nNULL(span_c))
 			result = TEST_PASS;
-		}
+
+		/* End the spans separately so neither leaks when the other is missing. */
+		if (_nNULL(span_b))
+			OTELC_OPSR(span_b, end);
+		if (_nNULL(span_c))
+			OTELC_OPSR(span_c, end);
 	}
 
 	if (_nNULL(secondary))

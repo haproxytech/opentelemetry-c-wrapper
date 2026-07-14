@@ -35,6 +35,99 @@ static THREAD_LOCAL std::atomic<int> otel_tracer_count{0};
 #ifndef OTELC_USE_STATIC_HANDLE
 
 /***
+ * Base values for the handle identifier generators.  Handle numbering goes on
+ * across map generations: each newly created map starts where the last one
+ * stopped, so a leftover span or span context from a destroyed generation can
+ * never alias a live handle of a newer generation with the same index.  The
+ * storage class follows the maps, like the tracer count above.
+ */
+static THREAD_LOCAL std::atomic<int64_t> otel_span_id_base{0};
+static THREAD_LOCAL std::atomic<int64_t> otel_span_context_id_base{0};
+
+
+#ifndef OTELC_USE_THREAD_SHARED_HANDLE
+
+/***
+ * NAME
+ *   otel_handle_reaper - thread-exit reaper for the per-thread handle maps
+ *
+ * DESCRIPTION
+ *   In the thread-local handle build any span operation may allocate the
+ *   calling thread's maps, but the teardown in otel_tracer_destroy() runs
+ *   only on a thread whose tracer count drops to zero.  A worker thread that
+ *   never destroys a tracer would leak its maps together with every handle
+ *   left inside them; the destructor of this object runs at thread exit and
+ *   releases whatever is still present, ending leftover spans so that the
+ *   processor can still export them.
+ */
+struct otel_handle_reaper {
+	~otel_handle_reaper() noexcept
+	{
+		OTELCPP_FUNC("", "otel_handle_reaper");
+
+		/* Clear and destroy the span context handle map. */
+		if (!OTEL_NULL(otel_span_context)) {
+			OTEL_HANDLE(otel_span_context, clear_locked());
+
+			delete otel_span_context;
+			otel_span_context = nullptr;
+		}
+
+		/* End all remaining spans, delete their handles and destroy the span handle map. */
+		if (!OTEL_NULL(otel_span)) {
+			OTEL_HANDLE(otel_span, for_each_locked([](int64_t id __maybe_unused, struct otel_span_handle *handle) {
+				if (OTEL_NULL(handle))
+					return;
+
+				if (!OTEL_NULL(handle->span)) {
+					handle->span->End(otel_trace::EndSpanOptions{});
+
+					OTELC_DBG(DEBUG, "span #%" PRId64 " ended implicitly", id);
+				}
+
+				delete handle;
+			}));
+
+			delete otel_span;
+			otel_span = nullptr;
+		}
+
+		OTELC_RETURN();
+	}
+};
+
+
+/***
+ * NAME
+ *   otel_tracer_handle_reaper_touch - instantiates the thread-exit reaper
+ *
+ * SYNOPSIS
+ *   static void otel_tracer_handle_reaper_touch(void)
+ *
+ * ARGUMENTS
+ *   This function takes no arguments.
+ *
+ * DESCRIPTION
+ *   Forces the construction of the calling thread's otel_handle_reaper
+ *   instance so that its destructor runs at thread exit.  Called whenever
+ *   the per-thread handle maps are about to be allocated.
+ *
+ * RETURN VALUE
+ *   This function does not return a value.
+ */
+static void otel_tracer_handle_reaper_touch(void)
+{
+	static thread_local struct otel_handle_reaper reaper;
+
+	OTELC_FUNC("%p", &reaper);
+
+	OTELC_RETURN();
+}
+
+#endif /* OTELC_USE_THREAD_SHARED_HANDLE */
+
+
+/***
  * NAME
  *   otel_tracer_handle_init - per-thread initialization of tracer handles
  *
@@ -52,7 +145,8 @@ static THREAD_LOCAL std::atomic<int> otel_tracer_count{0};
  *   on the first tracer create across the whole program; concurrent first calls
  *   are serialized with a function-local mutex.  In the thread-local dynamic
  *   build the maps are per-thread and are allocated on the first call from each
- *   thread.
+ *   thread.  A newly allocated map continues handle numbering from the point
+ *   where the previous map generation stopped.
  *
  * RETURN VALUE
  *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR if allocation fails.
@@ -75,16 +169,25 @@ static int otel_tracer_handle_init(void)
 
 	const size_t num_shards = otel_handle_map_shards.load();
 
+#ifndef OTELC_USE_THREAD_SHARED_HANDLE
+	/* Arm the thread-exit reaper before the per-thread maps are allocated. */
+	otel_tracer_handle_reaper_touch();
+#endif
+
 	if (OTEL_NULL(otel_span)) {
-		otel_span = new(std::nothrow) struct otel_handle<struct otel_span_handle *, OTEL_HANDLE_SHARED>(num_shards);
+		otel_span = otel::new_nothrow<struct otel_handle<struct otel_span_handle *, OTEL_HANDLE_SHARED>>(num_shards);
 		if (OTEL_NULL(otel_span))
 			OTELC_RETURN_INT(OTELC_RET_ERROR);
+
+		OTEL_HANDLE(otel_span, id) = otel_span_id_base.load();
 	}
 
 	if (OTEL_NULL(otel_span_context)) {
-		otel_span_context = new(std::nothrow) struct otel_handle<struct otel_span_context_handle *, OTEL_HANDLE_SHARED>(num_shards);
+		otel_span_context = otel::new_nothrow<struct otel_handle<struct otel_span_context_handle *, OTEL_HANDLE_SHARED>>(num_shards);
 		if (OTEL_NULL(otel_span_context))
 			OTELC_RETURN_INT(OTELC_RET_ERROR);
+
+		OTEL_HANDLE(otel_span_context, id) = otel_span_context_id_base.load();
 	}
 
 	OTELC_RETURN_INT(OTELC_RET_OK);
@@ -150,7 +253,7 @@ static struct otelc_span *otel_tracer_start_span_with_options(struct otelc_trace
 	if (OTEL_NULL(impl))
 		OTEL_TRACER_RETURN_PTR(OTEL_ERROR_MSG_INVALID_TRACER);
 
-	/* Copy the SDK Tracer handle so it cannot be released mid-call. */
+	/* Snapshot the SDK Tracer handle for the duration of the call. */
 	auto tracer_shared = impl->tracer;
 	if (OTEL_NULL(tracer_shared))
 		OTEL_TRACER_RETURN_PTR(OTEL_ERROR_MSG_INVALID_TRACER);
@@ -351,7 +454,7 @@ static struct otelc_span *otel_tracer_start_span_with_options(struct otelc_trace
 
 		/* Register the span handle in the shared map. */
 		OTEL_HANDLE_EMPLACE(otel_span, retptr->idx, span_handle,
-			{ span_handle->span->End(otel_trace::EndSpanOptions{}); delete span_handle; otel_nolock_span_destroy(&retptr); },
+			{ span_handle->span->End(otel_trace::EndSpanOptions{}); delete span_handle; OTEL_EXT_FREE_CLEAR(retptr); },
 			OTEL_TRACER_RETURN_PTR, OTEL_ERROR_MSG_ADD_SPAN ": duplicate id", OTEL_ERROR_MSG_ADD_SPAN
 		);
 	}
@@ -435,7 +538,7 @@ static int otel_span_context_add(struct otelc_tracer *tracer, struct otelc_span_
 
 	/* Register the span context handle in the shared map. */
 	OTEL_HANDLE_EMPLACE(otel_span_context, (*span_context)->idx, span_context_handle,
-		{ delete span_context_handle; otel_nolock_span_context_destroy(span_context); },
+		{ delete span_context_handle; OTEL_EXT_FREE_CLEAR(*span_context); },
 		OTEL_TRACER_RETURN_INT, OTEL_ERROR_MSG_ADD_SPAN_CTX ": duplicate id", OTEL_ERROR_MSG_ADD_SPAN_CTX
 	);
 
@@ -547,8 +650,13 @@ static struct otelc_span_context *otel_tracer_extract_carrier(struct otelc_trace
 			OTEL_TRACER_RETURN_PTR("Unable to add a key-value pair to %s carrier", carrier_name);
 	}
 
-	/* Extract the context from the carrier using the per-tracer propagator. */
-	const CarrierClass<std::map<std::string, std::string>> map_carrier(carrier_data);
+	/***
+	 * Extract the context from the carrier using the per-tracer propagator.
+	 * The populated map is moved into the carrier: a move steals the nodes
+	 * and cannot fail, while a copy could throw bad_alloc out of this C API
+	 * function.
+	 */
+	const CarrierClass<std::map<std::string, std::string>> map_carrier(std::move(carrier_data));
 #ifndef OTELC_USE_RUNTIME_CONTEXT
 	otel_context::Context rt_context{};
 #else
@@ -558,7 +666,7 @@ static struct otelc_span_context *otel_tracer_extract_carrier(struct otelc_trace
 	if (OTEL_NULL(impl))
 		OTEL_TRACER_RETURN_PTR(OTEL_ERROR_MSG_NO_PROPAGATOR);
 
-	/* Copy the propagator so it cannot be released mid-call. */
+	/* Snapshot the propagator reference for the duration of the call. */
 	auto propagator = impl->propagator;
 	if (OTEL_NULL(propagator))
 		OTEL_TRACER_RETURN_PTR(OTEL_ERROR_MSG_NO_PROPAGATOR);
@@ -673,7 +781,7 @@ static int otel_tracer_enabled(struct otelc_tracer *tracer)
 	if (OTEL_NULL(impl))
 		OTEL_TRACER_RETURN_INT(OTEL_ERROR_MSG_INVALID_TRACER);
 
-	/* Copy the SDK Tracer handle so it cannot be released mid-call. */
+	/* Snapshot the SDK Tracer handle for the duration of the call. */
 	auto tracer_shared = impl->tracer;
 	if (OTEL_NULL(tracer_shared))
 		OTEL_TRACER_RETURN_INT(OTEL_ERROR_MSG_INVALID_TRACER);
@@ -819,6 +927,7 @@ static int otel_tracer_start(struct otelc_tracer *tracer)
 	if (retval < 1)
 		OTELC_RETURN_INT(retval);
 
+	OTELC_SFREE(tracer->scope_name);
 	tracer->scope_name = OTELC_STRDUP(__func__, __LINE__, scope_name);
 	if (OTEL_NULL(tracer->scope_name))
 		OTEL_TRACER_RETURN_INT(OTEL_ERROR_MSG_ENOMEM("scope name"));
@@ -1016,7 +1125,10 @@ static void otel_tracer_destroy(struct otelc_tracer **tracer)
 	if (remaining == 0) {
 		/***
 		 * End any remaining spans before destroying the maps so the
-		 * processor can still export them.
+		 * processor can still export them, and delete their handles:
+		 * for_each_locked() clears the shards afterwards, so a handle
+		 * not deleted in the callback would leak together with the
+		 * span and context it owns.
 		 */
 		(void)clock_gettime(CLOCK_MONOTONIC, &ts_steady);
 		end_options.end_steady_time = otel_steady_timestamp(timespec_to_duration(&ts_steady));
@@ -1026,11 +1138,16 @@ static void otel_tracer_destroy(struct otelc_tracer **tracer)
 		OTEL_HANDLE(otel_span_context, clear_locked());
 
 		OTEL_HANDLE(otel_span, for_each_locked([&](int64_t id __maybe_unused, struct otel_span_handle *handle) {
-			if (!OTEL_NULL(handle) && !OTEL_NULL(handle->span)) {
+			if (OTEL_NULL(handle))
+				return;
+
+			if (!OTEL_NULL(handle->span)) {
 				handle->span->End(end_options);
 
 				OTELC_DBG(DEBUG, "span #%" PRId64 " ended implicitly", id);
 			}
+
+			delete handle;
 		}));
 
 #else
@@ -1039,19 +1156,28 @@ static void otel_tracer_destroy(struct otelc_tracer **tracer)
 		if (!OTEL_NULL(otel_span_context)) {
 			OTEL_HANDLE(otel_span_context, clear_locked());
 
+			otel_span_context_id_base = OTEL_HANDLE(otel_span_context, id.load());
+
 			delete otel_span_context;
 			otel_span_context = nullptr;
 		}
 
-		/* End all remaining spans and destroy the span handle map. */
+		/* End all remaining spans, delete their handles and destroy the span handle map. */
 		if (!OTEL_NULL(otel_span)) {
 			OTEL_HANDLE(otel_span, for_each_locked([&](int64_t id __maybe_unused, struct otel_span_handle *handle) {
-				if (!OTEL_NULL(handle) && !OTEL_NULL(handle->span)) {
+				if (OTEL_NULL(handle))
+					return;
+
+				if (!OTEL_NULL(handle->span)) {
 					handle->span->End(end_options);
 
 					OTELC_DBG(DEBUG, "span #%" PRId64 " ended implicitly", id);
 				}
+
+				delete handle;
 			}));
+
+			otel_span_id_base = OTEL_HANDLE(otel_span, id.load());
 
 			delete otel_span;
 			otel_span = nullptr;
@@ -1129,7 +1255,7 @@ static struct otelc_tracer *otel_tracer_new(void)
 		retptr->yaml_prefix = nullptr;
 		retptr->enabled     = true;
 		retptr->ops         = &otel_tracer_ops;
-		retptr->impl        = new(std::nothrow) otel_tracer_impl{};
+		retptr->impl        = otel::new_nothrow<otel_tracer_impl>();
 
 		if (OTEL_NULL(retptr->impl))
 			OTELC_SFREE_CLEAR(retptr);
@@ -1155,6 +1281,8 @@ static struct otelc_tracer *otel_tracer_new(void)
  *   otel_tracer_new().  On failure, an error message may be written
  *   to *err if provided.  The supplied context must be non-NULL and
  *   is retained by the tracer for later configuration lookups.
+ *   An error message stored in *err is allocated by the library and must be
+ *   released with OTELC_SFREE().
  *
  * RETURN VALUE
  *   Returns a pointer to a newly created tracer instance on success, or nullptr

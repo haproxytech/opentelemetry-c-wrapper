@@ -72,6 +72,31 @@ namespace otel
 		}
 	}
 
+	/***
+	 * NAME
+	 *   new_nothrow - creates a raw object with nothrow new
+	 *
+	 * DESCRIPTION
+	 *   Creates an object using a non-throwing new expression, returning
+	 *   a nullptr on allocation failure.  A bare new(std::nothrow) only
+	 *   suppresses the operator new failure; an exception thrown by the
+	 *   constructor of T still propagates after the new expression has
+	 *   freed the raw memory.  This helper catches that exception as well
+	 *   and converts it to a nullptr result, so an allocation failure in
+	 *   a member constructor cannot escape across the C API boundary.  The
+	 *   caller owns the returned object and releases it with delete.
+	 */
+	template <class T, class... Args>
+	T *new_nothrow(Args &&... args) noexcept
+	{
+		try {
+			return new(std::nothrow) T(std::forward<Args>(args)...);
+		}
+		catch (...) {
+			return nullptr;
+		}
+	}
+
 	/* For C-style strings. */
 	template <typename T, typename std::enable_if<std::is_convertible<T, const char*>::value, int>::type = 0>
 	std::string make_string_nothrow(T str) noexcept

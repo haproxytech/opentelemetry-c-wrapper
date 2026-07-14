@@ -77,7 +77,7 @@ public:
 	 *
 	 * RETURN VALUE
 	 *   The value associated with the key, or an empty string_view if the
-	 *   key is not found.
+	 *   key is not found or the lookup fails.
 	 */
 	virtual otel_nostd::string_view Get(otel_nostd::string_view key) const noexcept override
 	{
@@ -85,9 +85,14 @@ public:
 
 		OTELCPP_FUNC("\"%s\"", OTELC_STRINGIFY(OTEL_MAP_CARRIER), std::string(key).c_str());
 
-		const auto it = tm_data.find(std::string(key));
-		if (it != tm_data.end())
-			retval = it->second;
+		/* The method is noexcept: a failed lookup leaves retval empty. */
+		try {
+			const auto it = tm_data.find(std::string(key));
+			if (it != tm_data.end())
+				retval = it->second;
+		}
+		catch (...) {
+		}
 
 		OTELC_DBG(OTEL, "'%s' -> '%s'", std::string(key).c_str(), std::string(retval).c_str());
 
@@ -108,7 +113,8 @@ public:
 	 *   value - the value to associate with the key
 	 *
 	 * DESCRIPTION
-	 *   Sets a key-value pair in the carrier.
+	 *   Sets a key-value pair in the carrier.  An entry that cannot be
+	 *   stored because of an allocation failure is dropped.
 	 *
 	 * RETURN VALUE
 	 *   This function does not return a value.
@@ -117,7 +123,12 @@ public:
 	{
 		OTELCPP_FUNC("\"%s\", \"%s\"", OTELC_STRINGIFY(OTEL_MAP_CARRIER), std::string(key).c_str(), std::string(value).c_str());
 
-		tm_data[std::string{key}] = std::string{value};
+		/* The method is noexcept: an entry that cannot be stored is dropped. */
+		try {
+			tm_data[std::string{key}] = std::string{value};
+		}
+		catch (...) {
+		}
 
 		OTELC_RETURN();
 	}
@@ -266,7 +277,7 @@ public:
 	 *
 	 * RETURN VALUE
 	 *   The value associated with the key, or an empty string_view if the
-	 *   key is not found.
+	 *   key is not found or the lookup fails.
 	 */
 	virtual otel_nostd::string_view Get(otel_nostd::string_view key) const noexcept override
 	{
@@ -274,9 +285,14 @@ public:
 
 		OTELCPP_FUNC("\"%s\"", OTELC_STRINGIFY(OTEL_HTTP_CARRIER), std::string(key).c_str());
 
-		const auto it = headers_data.find(std::string(key));
-		if (it != headers_data.end())
-			retval = it->second;
+		/* The method is noexcept: a failed lookup leaves retval empty. */
+		try {
+			const auto it = headers_data.find(std::string(key));
+			if (it != headers_data.end())
+				retval = it->second;
+		}
+		catch (...) {
+		}
 
 		OTELC_DBG(OTEL, "'%s' -> '%s'", std::string(key).c_str(), std::string(retval).c_str());
 
@@ -297,7 +313,8 @@ public:
 	 *   value - the value to associate with the key
 	 *
 	 * DESCRIPTION
-	 *   Sets a key-value pair in the carrier.
+	 *   Sets a key-value pair in the carrier.  An entry that cannot be
+	 *   stored because of an allocation failure is dropped.
 	 *
 	 * RETURN VALUE
 	 *   This function does not return a value.
@@ -306,7 +323,12 @@ public:
 	{
 		OTELCPP_FUNC("\"%s\", \"%s\"", OTELC_STRINGIFY(OTEL_HTTP_CARRIER), std::string(key).c_str(), std::string(value).c_str());
 
-		headers_data[std::string{key}] = std::string{value};
+		/* The method is noexcept: an entry that cannot be stored is dropped. */
+		try {
+			headers_data[std::string{key}] = std::string{value};
+		}
+		catch (...) {
+		}
 
 		OTELC_RETURN();
 	}

@@ -202,6 +202,13 @@ Any macro not explicitly defined in the custom configuration is left undefined.
 The OTELC_USER_CONFIG guard prevents the default block from executing, giving
 full control over which features are enabled.
 
+The OTELC_USE_STATIC_HANDLE + OTELC_USE_THREAD_SHARED_HANDLE combination in
+the example above turns the span and span context handle maps into process-wide
+globals.  Their destructors then run only at process exit, possibly after the
+OpenTelemetry SDK state referenced by any leftover handles has been destroyed
+(see the NOTE in include/util.h).  With this combination, end every span and
+destroy every span context before the process exits.
+
 
 9. handle_map_shards YAML key
 ------------------------------------------------------------------------------

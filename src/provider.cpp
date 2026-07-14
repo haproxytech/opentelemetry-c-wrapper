@@ -58,6 +58,10 @@ int otel_tracer_provider_create(struct otelc_tracer *tracer, std::vector<std::un
 		OTEL_TRACER_RETURN_INT("Unable to create OpenTelemetry tracer context");
 	auto provider_maybe = otel_nostd::unique_ptr<otel_trace::TracerProvider>(otel::make_unique_nothrow<otel_sdk_trace::TracerProvider>(std::move(context_maybe)).release());
 #else
+	/* This build hands exactly one processor to the provider. */
+	if (processors.empty())
+		OTEL_TRACER_RETURN_INT("No OpenTelemetry trace processors configured");
+
 	auto provider_maybe = otel_nostd::unique_ptr<otel_trace::TracerProvider>(otel::make_unique_nothrow<otel_sdk_trace::TracerProvider>(std::move(processors[0]), std::move(resource), std::move(sampler)).release());
 #endif /* OTELC_USE_MULTIPLE_PROCESSORS */
 
