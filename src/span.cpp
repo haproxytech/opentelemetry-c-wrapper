@@ -194,7 +194,7 @@ static int otel_span_inject_carrier(const struct otelc_span *span, W *carrier, c
 	auto *impl = OTEL_NULL(span->tracer) ? nullptr : OTEL_CAST_STATIC(struct otel_tracer_impl *, span->tracer->impl);
 	if (OTEL_NULL(impl) || OTEL_NULL(impl->propagator))
 		OTEL_SPAN_RETURN_INT(OTEL_ERROR_MSG_NO_PROPAGATOR);
-	/* Copy the propagator so it cannot be released mid-call. */
+	/* Snapshot the propagator reference for the duration of the call. */
 	auto propagator = impl->propagator;
 	propagator->Inject(otel_carrier, *(handle->context));
 
@@ -321,6 +321,15 @@ static void otel_span_end_with_options(struct otelc_span **span, const struct ti
 
 	if (OTEL_NULL(span) || OTEL_NULL(*span))
 		OTELC_RETURN();
+
+#ifndef OTELC_USE_STATIC_HANDLE
+	/* The maps are gone: skip the shard lock, the nolock path frees the structure. */
+	if (OTEL_NULL(otel_span)) {
+		otel_nolock_span_destroy(span);
+
+		OTELC_RETURN();
+	}
+#endif
 
 	OTEL_LOCK_TRACER(span, (*span)->idx);
 
@@ -648,7 +657,8 @@ static int otel_span_set_baggage(const struct otelc_span *span, const char *key,
  * RETURN VALUE
  *   Returns a newly allocated string containing the value associated with the
  *   specified name, or NULL if the specified name is not present and also in
- *   case of error.  The caller is responsible for freeing the returned string.
+ *   case of error.  The caller is responsible for freeing the returned string
+ *   with OTELC_SFREE().
  */
 static char *otel_span_get_baggage(const struct otelc_span *span, const char *key)
 {
@@ -700,7 +710,7 @@ static char *otel_span_get_baggage(const struct otelc_span *span, const char *ke
  *
  * RETURN VALUE
  *   Returns a text map containing the baggage key-value pairs, or NULL if
- *   there was an error.
+ *   there was an error; the caller releases it with otelc_text_map_destroy().
  */
 static struct otelc_text_map *otel_span_get_baggage_var(const struct otelc_span *span, const char *key, ...)
 {
@@ -714,6 +724,8 @@ static struct otelc_text_map *otel_span_get_baggage_var(const struct otelc_span 
 		OTELC_RETURN_PTR(nullptr);
 	else if (!OTELC_STR_IS_VALID(key))
 		OTEL_SPAN_RETURN_PTR(OTEL_ERROR_MSG_INVALID_BAGGAGE_NAME);
+
+	OTEL_SPAN_MAP_GUARD(_PTR, span, span);
 
 	va_start(ap, key);
 	for (n = 1; !OTEL_NULL(va_arg(ap, decltype(key))); n++);
@@ -1234,6 +1246,8 @@ static int otel_span_add_link(const struct otelc_span *span, const struct otelc_
 
 		target = handle->span->GetContext();
 	} else {
+		OTEL_SPAN_MAP_GUARD(_INT, span_context, link_context);
+
 		OTEL_LOCK_TRACER(span_context, link_context->idx);
 
 		const auto context_handle = OTEL_SPAN_CONTEXT_HANDLE(link_context);
@@ -1363,6 +1377,19 @@ void otel_nolock_span_destroy(struct otelc_span **span)
 	if (OTEL_NULL(span) || OTEL_NULL(*span))
 		OTELC_RETURN();
 
+#ifndef OTELC_USE_STATIC_HANDLE
+	/***
+	 * The handle maps are torn down together with the last tracer.  A
+	 * span that outlived that teardown has no handle map to consult and
+	 * its handle has already been deleted; release only the C structure.
+	 */
+	if (OTEL_NULL(otel_span)) {
+		OTEL_EXT_FREE_CLEAR(*span);
+
+		OTELC_RETURN();
+	}
+#endif
+
 	/* Look up the span handle, delete it, and erase it from the map. */
 	const auto handle = OTEL_SPAN_HANDLE(*span);
 	if (!OTEL_NULL(handle)) {
@@ -1409,6 +1436,15 @@ static void otel_span_destroy(struct otelc_span **span)
 
 	if (OTEL_NULL(span) || OTEL_NULL(*span))
 		OTELC_RETURN();
+
+#ifndef OTELC_USE_STATIC_HANDLE
+	/* The maps are gone: skip the shard lock, the nolock path frees the structure. */
+	if (OTEL_NULL(otel_span)) {
+		otel_nolock_span_destroy(span);
+
+		OTELC_RETURN();
+	}
+#endif
 
 	OTEL_LOCK_TRACER(span, (*span)->idx);
 
@@ -1707,8 +1743,9 @@ static int otel_span_context_trace_state_get(const struct otelc_span_context *co
  *
  * DESCRIPTION
  *   Iterates over all key-value pairs in the W3C trace state and appends them
- *   to the provided text map.  The caller is responsible for freeing the text
- *   map contents with otelc_text_map_destroy() when done.
+ *   to the provided text map.  The text map must be initialized before the
+ *   call, either created by otelc_text_map_new() or zero-filled.  The caller
+ *   is responsible for freeing the map contents with otelc_text_map_destroy().
  *
  * RETURN VALUE
  *   Returns the number of entries added to the text map, or OTELC_RET_ERROR in
@@ -1976,6 +2013,20 @@ void otel_nolock_span_context_destroy(struct otelc_span_context **context)
 	if (OTEL_NULL(context) || OTEL_NULL(*context))
 		OTELC_RETURN();
 
+#ifndef OTELC_USE_STATIC_HANDLE
+	/***
+	 * The handle maps are torn down together with the last tracer.  A
+	 * span context that outlived that teardown has no handle map to
+	 * consult and its handle has already been deleted; release only the
+	 * C structure.
+	 */
+	if (OTEL_NULL(otel_span_context)) {
+		OTEL_EXT_FREE_CLEAR(*context);
+
+		OTELC_RETURN();
+	}
+#endif
+
 	/* Look up the context handle, delete it, and erase it from the map. */
 	const auto handle = OTEL_SPAN_CONTEXT_HANDLE(*context);
 	if (!OTEL_NULL(handle)) {
@@ -2026,6 +2077,15 @@ static void otel_span_context_destroy(struct otelc_span_context **context)
 	if (OTEL_NULL(context) || OTEL_NULL(*context))
 		OTELC_RETURN();
 
+#ifndef OTELC_USE_STATIC_HANDLE
+	/* The maps are gone: skip the shard lock, the nolock path frees the structure. */
+	if (OTEL_NULL(otel_span_context)) {
+		otel_nolock_span_context_destroy(context);
+
+		OTELC_RETURN();
+	}
+#endif
+
 	OTEL_LOCK_TRACER(span_context, (*context)->idx);
 
 	otel_nolock_span_context_destroy(context);
@@ -2075,6 +2135,15 @@ struct otelc_span_context *otel_span_context_new(void)
 
 	OTELC_FUNC("");
 
+#ifndef OTELC_USE_STATIC_HANDLE
+	/***
+	 * The handle maps exist only while at least one tracer does; without
+	 * the map no index can be assigned nor the handle registered later.
+	 */
+	if (OTEL_NULL(otel_span_context))
+		OTELC_RETURN_PTR(retptr);
+#endif
+
 	if (!OTEL_NULL(retptr = OTEL_CAST_TYPEOF(retptr, OTEL_EXT_MALLOC(sizeof(*retptr))))) {
 		retptr->idx = OTEL_HANDLE(otel_span_context, id++);
 		retptr->ops = &otel_span_context_ops;
@@ -2110,7 +2179,11 @@ struct otelc_span_context *otel_span_context_new(void)
  *   bytes.  This allows callers to link to external spans or restore context
  *   from storage without round-tripping through text map propagation.  The
  *   optional trace_state_header argument is parsed as a W3C tracestate header
- *   string.
+ *   string.  At least one tracer must exist at the time of the call because
+ *   span context handles live in the handle maps that are created together
+ *   with the first tracer and destroyed together with the last one.  An error
+ *   message stored in *err is allocated by the library and must be released
+ *   with OTELC_SFREE().
  *
  * RETURN VALUE
  *   Returns a pointer to a newly created span context on success, or nullptr
@@ -2124,6 +2197,16 @@ struct otelc_span_context *otelc_span_context_create(const uint8_t *trace_id, si
 
 	OTELC_FUNC("%p, %zu, %p, %zu, 0x%02x, %d, \"%s\", %p:%p", trace_id, trace_id_size, span_id, span_id_size, trace_flags, is_remote, OTELC_STR_ARG(trace_state_header), OTELC_DPTR_ARGS(err));
 
+#ifndef OTELC_USE_STATIC_HANDLE
+	/***
+	 * The span context handle map is created with the first tracer and
+	 * destroyed with the last one (see otel_tracer_handle_init()); a
+	 * call made outside that window would dereference the missing map.
+	 */
+	if (OTEL_NULL(otel_span_context))
+		OTEL_ERR_RETURN_PTR("Unable to create span context: no active tracer");
+#endif
+
 	/* Copy raw ID bytes into fixed-size arrays. */
 	if (!OTEL_NULL(trace_id) && (trace_id_size >= sizeof(tid)))
 		(void)memcpy(tid, trace_id, sizeof(tid));
@@ -2136,8 +2219,13 @@ struct otelc_span_context *otelc_span_context_create(const uint8_t *trace_id, si
 	/* Construct C++ SpanContext. */
 	otel_trace::SpanContext span_ctx(otel_trace::TraceId{tid}, otel_trace::SpanId{sid}, otel_trace::TraceFlags{trace_flags}, is_remote != 0, ts);
 
-	/* Wrap in a DefaultSpan and Context. */
-	otel_nostd::shared_ptr<otel_trace::Span> default_span(new(std::nothrow) otel_trace::DefaultSpan(span_ctx));
+	/***
+	 * Wrap in a DefaultSpan and Context.  make_shared_nothrow is used
+	 * because the nostd::shared_ptr(pointer) constructor is not noexcept:
+	 * its internal control-block allocation may throw bad_alloc, which
+	 * must not escape this C API function.
+	 */
+	otel_nostd::shared_ptr<otel_trace::Span> default_span(otel::make_shared_nothrow<otel_trace::DefaultSpan>(span_ctx));
 	if (OTEL_NULL(default_span))
 		OTEL_ERR_RETURN_PTR(OTEL_ERROR_MSG_ENOMEM("default span"));
 
@@ -2162,7 +2250,7 @@ struct otelc_span_context *otelc_span_context_create(const uint8_t *trace_id, si
 
 	/* Register the span context handle in the shared map. */
 	OTEL_HANDLE_EMPLACE(otel_span_context, retptr->idx, span_context_handle,
-		{ delete span_context_handle; otel_nolock_span_context_destroy(&retptr); },
+		{ delete span_context_handle; OTEL_EXT_FREE_CLEAR(retptr); },
 		OTEL_ERR_RETURN_PTR, OTEL_ERROR_MSG_ADD_SPAN_CTX ": duplicate id", OTEL_ERROR_MSG_ADD_SPAN_CTX
 	);
 

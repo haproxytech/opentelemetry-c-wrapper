@@ -433,7 +433,10 @@ processors, and (for tracers) text-map propagator and ostream logfile; meters
 also own their own distinct instrument and view registries.  The shared span
 and span-context handle maps are reference-counted by the tracers and torn down
 only when the last tracer is destroyed, so destroying any one tracer does not
-invalidate spans owned by another tracer that is still in use.
+invalidate spans owned by another tracer that is still in use.  A span or span
+context that outlives its own tracer supports only the end, end_with_options
+and destroy operations; any other operation on such a leftover instance fails
+without recording an error message.
 
 Functions that can fail return OTELC_RET_OK (0) on success or OTELC_RET_ERROR
 (-1) on failure.  Functions that create resources return a pointer on success or

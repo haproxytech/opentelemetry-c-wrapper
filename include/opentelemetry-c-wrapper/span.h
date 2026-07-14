@@ -591,7 +591,7 @@ struct otelc_span_ops {
 	 *   Returns a newly allocated string containing the value associated
 	 *   with the specified name, or NULL if the specified name is not
 	 *   present and also in case of error.  The caller is responsible
-	 *   for freeing the returned string.
+	 *   for freeing the returned string with OTELC_SFREE().
 	 */
 	char *(*get_baggage)(const struct otelc_span *span, const char *key)
 		OTELC_NONNULL_ALL;
@@ -620,7 +620,8 @@ struct otelc_span_ops {
 	 *
 	 * RETURN VALUE
 	 *   Returns a text map containing the baggage key-value pairs, or NULL
-	 *   if there was an error.
+	 *   if there was an error; the caller releases the returned map with
+	 *   otelc_text_map_destroy().
 	 */
 	struct otelc_text_map *(*get_baggage_var)(const struct otelc_span *span, const char *key, ...)
 		OTELC_NONNULL(1, 2);
@@ -961,7 +962,13 @@ struct otelc_span {
  *   bytes.  This allows callers to link to external spans or restore context
  *   from storage without round-tripping through text map propagation.  The
  *   optional trace_state_header argument is parsed as a W3C tracestate header
- *   string.
+ *   string.  At least one tracer must exist at the time of the call because
+ *   span context handles live in the handle maps that are created together
+ *   with the first tracer and destroyed together with the last one.  An error
+ *   message stored in *err is allocated by the library and must be released
+ *   with OTELC_SFREE(); on entry, *err must be a null pointer or a pointer
+ *   from a previous call, since any previous message is released before being
+ *   replaced.
  *
  * RETURN VALUE
  *   Returns a pointer to a newly created span context on success, or nullptr

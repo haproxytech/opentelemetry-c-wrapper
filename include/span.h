@@ -111,9 +111,31 @@ struct T {
 };
 #undef T
 
+/***
+ * Early return used when the handle maps have already been torn down together
+ * with the last tracer.  The owning tracer of a leftover instance may be gone
+ * as well, so the error must not be recorded through span->tracer->err; the
+ * condition is only debug-logged instead.
+ */
+#ifndef OTELC_USE_STATIC_HANDLE
+#  define OTEL_SPAN_TEARDOWN_RETURN        OTELC_RETURN()
+#  define OTEL_SPAN_TEARDOWN_RETURN_INT    OTELC_RETURN_INT(OTELC_RET_ERROR)
+#  define OTEL_SPAN_TEARDOWN_RETURN_PTR    OTELC_RETURN_PTR(nullptr)
+#  define OTEL_SPAN_MAP_GUARD(arg_type, arg_map, arg_handle)                                  \
+	if (OTEL_NULL(otel_##arg_map)) {                                                      \
+		OTELC_DBG(OTEL, "invalid otel_" #arg_map "[%" PRId64 "]", (arg_handle)->idx); \
+		                                                                              \
+		OTEL_SPAN_TEARDOWN_RETURN##arg_type;                                          \
+	}
+#else
+#  define OTEL_SPAN_MAP_GUARD(arg_type, arg_map, arg_handle)   while (0)
+#endif /* OTELC_USE_STATIC_HANDLE */
+
 #define OTEL_LOCK_SPAN_HANDLE(...)         OTEL_23(__VA_ARGS__, OTEL_LOCK_SPAN_HANDLE_3, OTEL_LOCK_SPAN_HANDLE_2)(__VA_ARGS__)
 #define OTEL_LOCK_SPAN_HANDLE_2(t,h)       OTEL_LOCK_SPAN_HANDLE_3(t, (h), OTEL_ERROR_MSG_INVALID_SPAN)
 #define OTEL_LOCK_SPAN_HANDLE_3(arg_type, arg_handle, arg_msg)                        \
+	OTEL_SPAN_MAP_GUARD(arg_type, span, arg_handle);                              \
+	                                                                              \
 	OTEL_LOCK_TRACER(span, (arg_handle)->idx);                                    \
 	                                                                              \
 	const auto handle = OTEL_SPAN_HANDLE(arg_handle);                             \
@@ -124,6 +146,8 @@ struct T {
 	}
 
 #define OTEL_LOCK_SPAN_CONTEXT_HANDLE(arg_type, arg_handle)                                   \
+	OTEL_SPAN_MAP_GUARD(arg_type, span_context, arg_handle);                              \
+	                                                                                      \
 	OTEL_LOCK_TRACER(span_context, (arg_handle)->idx);                                    \
 	                                                                                      \
 	const auto handle = OTEL_SPAN_CONTEXT_HANDLE(arg_handle);                             \

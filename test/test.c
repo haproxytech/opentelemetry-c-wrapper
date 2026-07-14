@@ -752,6 +752,9 @@ static void worker_thread(void *data)
 		}
 	}
 
+	/* Release any spans left over from a pass aborted with break above. */
+	worker_end_all_spans(worker);
+
 #ifndef OTELC_USE_THREAD_SHARED_HANDLE
 	int otelc_status  = otelc_statistics_check(NULL, 0, 0, worker->count * 5, 0, worker->count * 5, worker->count * 5);
 	otelc_status     |= otelc_statistics_check(NULL, 1, 0, worker->count * 2, 0, worker->count * 2, worker->count * 2);
@@ -1274,6 +1277,8 @@ int main(int argc, char **argv)
 	if (cfg.opt_flags & (FLAG_OPT_HELP | FLAG_OPT_USAGE)) {
 		usage(prg.name, (cfg.opt_flags & FLAG_OPT_HELP) ? 1 : 0);
 
+		OTELC_SFREE(otel_err);
+
 		OTELC_RETURN_INT((cfg.opt_flags & FLAG_OPT_HELP) ? EX_OK : EX_USAGE);
 	}
 	else if (cfg.opt_flags & FLAG_OPT_VERSION) {
@@ -1354,8 +1359,11 @@ int main(int argc, char **argv)
 			usage(prg.name, 0);
 	}
 
-	if (flag_error || (cfg.opt_flags & (FLAG_OPT_HELP | FLAG_OPT_VERSION)))
+	if (flag_error || (cfg.opt_flags & (FLAG_OPT_HELP | FLAG_OPT_VERSION))) {
+		OTELC_SFREE(otel_err);
+
 		OTELC_RETURN_INT(flag_error ? EX_USAGE : EX_OK);
+	}
 
 	/***
 	 * Pidfile creation and write failures are non-fatal: an error is logged
