@@ -56,8 +56,16 @@
 		OTELCPP_FUNC("<" #arg_member ">, \"%s\", %d", OTELC_STRINGIFY(T), OTELC_STR_ARG(name_), type_);                   \
 		                                                                                                                  \
 		arg_member = std::move(arg_member##_);                                                                            \
-		name       = name_;                                                                                               \
 		type       = type_;                                                                                               \
+		                                                                                                                  \
+		/* The string assignment may throw; the invalid type then marks the failure for is_valid(). */                    \
+		try {                                                                                                             \
+			OTEL_DBG_THROW();                                                                                         \
+			name = name_;                                                                                             \
+		}                                                                                                                 \
+		catch (...) {                                                                                                    \
+			type = OTEL_CAST_STATIC(otelc_metric_instrument_t, -1);                                                   \
+		}                                                                                                                 \
 		                                                                                                                  \
 		OTELC_RETURN();                                                                                                   \
 	}
@@ -88,7 +96,9 @@ struct T {
 	 * constructed.  Meter::Create*() variants are 'noexcept' and their
 	 * contract nowhere guarantees a non-empty pointer; this guard keeps
 	 * an unexpectedly empty instrument from reaching the dispatch sites
-	 * and dereferencing null there.
+	 * and dereferencing null there.  A constructor that failed to store
+	 * the instrument name also reports itself here through the invalid
+	 * type value.
 	 */
 	bool is_valid() const noexcept
 	{
@@ -151,13 +161,23 @@ struct T {
 
 #define T   otel_view_handle
 struct T {
-	std::string name; /* Name of the metric view. */
+	std::string name;  /* Name of the metric view. */
+	bool        valid; /* False when the constructor failed to store the name. */
 
 	T(const char *name_) noexcept
 	{
 		OTELCPP_FUNC("\"%s\"", OTELC_STRINGIFY(T), OTELC_STR_ARG(name_));
 
-		name = name_;
+		valid = true;
+
+		/* The string assignment may throw; a cleared flag marks the failure. */
+		try {
+			OTEL_DBG_THROW();
+			name = name_;
+		}
+		catch (...) {
+			valid = false;
+		}
 
 		OTELC_RETURN();
 	}
@@ -274,12 +294,14 @@ struct T {
  * the shared lock, so of a whole startup herd racing for the same name only
  * the winner ever acquires the exclusive map lock; every other thread leaves
  * through the shared re-probe.  Lock order: create_mutex first, then the
- * handle map mutex; never the other way around.
+ * handle map mutex; never the other way around.  The logfile comes first so
+ * that it is destroyed last, after the provider members that may still flush
+ * into it.
  */
 struct otel_meter_impl {
+	std::ofstream                                                                logfile;
 	otel_nostd::shared_ptr<otel_metrics::MeterProvider>                          provider;
 	otel_nostd::shared_ptr<otel_metrics::Meter>                                  meter;
-	std::ofstream                                                                logfile;
 	struct otel_handle<struct otel_instrument_handle *, true, otel_shared_mutex> instrument{1};
 	struct otel_handle<struct otel_view_handle *, true, otel_shared_mutex>       view{1};
 	std::unordered_map<std::string, int64_t>                                     instrument_index;

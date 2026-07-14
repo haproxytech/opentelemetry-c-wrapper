@@ -420,6 +420,12 @@ struct otelc_meter_ops {
 	 *   sequence of exporters (and optionally a matching sequence of readers),
 	 *   each pair is created and passed to the provider.
 	 *
+	 *   The caller must drain every concurrent operation on this meter
+	 *   instance before invoking start, including a repeated start: the
+	 *   concurrent calls snapshot the SDK meter and provider handles that
+	 *   start replaces, and such a snapshot racing with the replacement
+	 *   is a data race.
+	 *
 	 * RETURN VALUE
 	 *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR in case of an
 	 *   error.
@@ -486,7 +492,10 @@ struct otelc_meter {
  *   Allocates and initializes a new meter instance via otel_meter_new().  On
  *   failure, an error message may be written to *err if it is provided.  The
  *   supplied context must be non-NULL and is retained by the meter for later
- *   configuration lookups.
+ *   configuration lookups.  An error message stored in *err is allocated by
+ *   the library and must be released with OTELC_SFREE(); on entry, *err must
+ *   be a null pointer or a pointer from a previous call, since any previous
+ *   message is released before being replaced.
  *
  * RETURN VALUE
  *   Returns a pointer to a newly created meter instance on success, or

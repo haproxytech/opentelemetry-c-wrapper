@@ -285,6 +285,15 @@ static int64_t otel_meter_add_view(struct otelc_meter *meter, const char *view_n
 
 	rdguard_view_recheck.unlock();
 
+	/***
+	 * The scope name is null when the meter was never started or when a
+	 * restart failed to duplicate it; the MeterSelector constructed below
+	 * must not receive a null pointer.  The creation mutex held above
+	 * serializes this read against the replacement in otel_meter_start().
+	 */
+	if (OTEL_NULL(meter->scope_name))
+		OTEL_METER_RETURN_INT("Meter instrumentation scope name not set");
+
 #define OTELC_METRIC_INSTRUMENT_DEF(a,b)   otel_sdk_metrics::InstrumentType::b,
 	static constexpr otel_sdk_metrics::InstrumentType instrument_type_map[] = { OTELC_METRIC_INSTRUMENT_DEFINES };
 #undef OTELC_METRIC_INSTRUMENT_DEF
@@ -373,7 +382,7 @@ static int64_t otel_meter_add_view(struct otelc_meter *meter, const char *view_n
 	if (OTEL_NULL(impl))
 		OTEL_METER_RETURN_INT(OTEL_ERROR_MSG_METER_PROVIDER);
 
-	/* Copy the provider so it cannot be released mid-call. */
+	/* Snapshot the provider reference for the duration of the call. */
 	auto       provider_shared = impl->provider;
 	const auto provider_sdk    = OTEL_METER_PROVIDER(provider_shared);
 
@@ -391,6 +400,12 @@ static int64_t otel_meter_add_view(struct otelc_meter *meter, const char *view_n
 		const auto view_handle = new(std::nothrow) otel_view_handle{view_name};
 		if (OTEL_NULL(view_handle))
 			OTEL_METER_RETURN_INT(OTEL_ERROR_MSG_ENOMEM("view handle"));
+
+		if (!view_handle->valid) {
+			delete view_handle;
+
+			OTEL_METER_RETURN_INT(OTEL_ERROR_MSG_ENOMEM("view handle name"));
+		}
 
 		try {
 			OTEL_DBG_THROW();
@@ -647,7 +662,7 @@ static int64_t otel_meter_create_instrument(struct otelc_meter *meter, const cha
 	if (OTEL_NULL(impl))
 		OTEL_METER_RETURN_INT(OTEL_ERROR_MSG_INVALID_METER);
 
-	/* Copy the SDK Meter handle so it cannot be released mid-call. */
+	/* Snapshot the SDK Meter handle for the duration of the call. */
 	auto meter_shared = impl->meter;
 	if (OTEL_NULL(meter_shared))
 		OTEL_METER_RETURN_INT(OTEL_ERROR_MSG_INVALID_METER);
@@ -1105,6 +1120,14 @@ static int otel_meter_start(struct otelc_meter *meter)
 	if (retval < 1)
 		OTELC_RETURN_INT(retval);
 
+	/***
+	 * Serialize the scope_name replacement against add_view(), which
+	 * reads it under the same mutex, and against a concurrent second
+	 * start().
+	 */
+	OTEL_LOCK_METER_CREATE();
+
+	OTELC_SFREE(meter->scope_name);
 	meter->scope_name = OTELC_STRDUP(__func__, __LINE__, scope_name);
 	if (OTEL_NULL(meter->scope_name))
 		OTEL_METER_RETURN_INT(OTEL_ERROR_MSG_ENOMEM("scope name"));
@@ -1374,7 +1397,7 @@ static struct otelc_meter *otel_meter_new(void)
 		retptr->yaml_prefix = nullptr;
 		retptr->enabled     = true;
 		retptr->ops         = &otel_meter_ops;
-		retptr->impl        = new(std::nothrow) otel_meter_impl{};
+		retptr->impl        = otel::new_nothrow<otel_meter_impl>();
 
 		if (OTEL_NULL(retptr->impl))
 			OTELC_SFREE_CLEAR(retptr);
@@ -1400,6 +1423,8 @@ static struct otelc_meter *otel_meter_new(void)
  *   otel_meter_new().  On failure, an error message may be written
  *   to *err if provided.  The supplied context must be non-NULL and
  *   is retained by the meter for later configuration lookups.
+ *   An error message stored in *err is allocated by the library and must be
+ *   released with OTELC_SFREE().
  *
  * RETURN VALUE
  *   Returns a pointer to a newly created meter instance on success, or nullptr
