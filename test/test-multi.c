@@ -565,6 +565,74 @@ static void test_tracers_span_isolation(const struct otelc_ctx *ctx_a, const str
 
 /***
  * NAME
+ *   test_tracer_destroy_leftover_spans - tests teardown with spans left open
+ *
+ * SYNOPSIS
+ *   static void test_tracer_destroy_leftover_spans(const struct otelc_ctx *ctx_a)
+ *
+ * ARGUMENTS
+ *   ctx_a - library context exporting traces to the file MULTI_TRACES_A
+ *
+ * DESCRIPTION
+ *   Creates a tracer -- the only one alive -- starts spans on it, and then
+ *   destroys the tracer while those spans are still open.  The teardown must
+ *   end the leftover spans implicitly and release their span handles, and the
+ *   per-instance exporter file must contain the span names after the destroy.
+ *   A late destroy or end of the leftover span structures after the teardown
+ *   must be safe: both release only the C structure and clear the caller's
+ *   pointer.
+ *
+ * RETURN VALUE
+ *   This function does not return a value.
+ */
+static void test_tracer_destroy_leftover_spans(const struct otelc_ctx *ctx_a)
+{
+	struct otelc_tracer *tracer = NULL;
+	struct otelc_span   *span_a = NULL, *span_b = NULL;
+	char                *err = NULL;
+	int                  result = TEST_FAIL;
+
+	tracer = otelc_tracer_create(ctx_a, &err);
+
+	if (_nNULL(tracer) && (OTELC_OPS(tracer, start) == OTELC_RET_OK)) {
+		span_a = OTELC_OPS(tracer, start_span, "leftover-alpha");
+		span_b = OTELC_OPS(tracer, start_span, "leftover-bravo");
+
+		if (_nNULL(span_a) && _nNULL(span_b)) {
+			/* Destroy the LAST tracer while both spans are still open. */
+			otelc_deinit(NULL, &tracer, NULL, NULL);
+
+			/* Late destroy and late end must only release the C structures. */
+			OTELC_OPSR(span_a, destroy);
+			OTELC_OPSR(span_b, end);
+
+			if (_NULL(tracer) && _NULL(span_a) && _NULL(span_b))
+				result = TEST_PASS;
+		} else {
+			if (_nNULL(span_a))
+				OTELC_OPSR(span_a, destroy);
+			if (_nNULL(span_b))
+				OTELC_OPSR(span_b, destroy);
+		}
+	}
+
+	otelc_deinit(NULL, &tracer, NULL, NULL);
+
+	if ((result == TEST_PASS)
+	    && (test_file_contains(MULTI_TRACES_A, "leftover-alpha") == 1)
+	    && (test_file_contains(MULTI_TRACES_A, "leftover-bravo") == 1))
+		result = TEST_PASS;
+	else
+		result = TEST_FAIL;
+
+	OTELC_SFREE(err);
+
+	test_report("last tracer destroy exports and releases leftover spans", result);
+}
+
+
+/***
+ * NAME
  *   test_loggers_record_isolation - tests per-instance log export isolation
  *
  * SYNOPSIS
@@ -1048,6 +1116,7 @@ int main(int argc, char **argv)
 
 	OTELC_LOG(stdout, "[multi-isolation]");
 	test_tracers_span_isolation(ctx_multi[0], ctx_multi[1]);
+	test_tracer_destroy_leftover_spans(ctx_multi[0]);
 	test_loggers_record_isolation(ctx_multi[0], ctx_multi[1]);
 	test_meters_value_isolation(ctx_multi[0], ctx_multi[1]);
 	test_meters_instrument_id_spaces(ctx_multi[0], ctx_multi[1]);

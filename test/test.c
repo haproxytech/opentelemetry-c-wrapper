@@ -609,10 +609,15 @@ static void worker_thread(void *data)
 				continue;
 
 			if (_nNULL(context = otelc_tracer_extract_text_map(*tracer, &tm_rd, text_map))) {
-				if (_NULL(*span_prop_tm = OTELC_OPS(*tracer, start_span_with_options, "text map propagation", NULL, context, &ts_steady, &ts_system, OTELC_SPAN_KIND_SERVER, NULL, 0)))
-					break;
+				*span_prop_tm = OTELC_OPS(*tracer, start_span_with_options, "text map propagation", NULL, context, &ts_steady, &ts_system, OTELC_SPAN_KIND_SERVER, NULL, 0);
 
 				OTELC_OPSR(context, destroy);
+
+				if (_NULL(*span_prop_tm)) {
+					otelc_text_map_destroy(&text_map);
+
+					break;
+				}
 			}
 			otelc_text_map_destroy(&text_map);
 		}
@@ -638,10 +643,15 @@ static void worker_thread(void *data)
 				continue;
 
 			if (_nNULL(context = otelc_tracer_extract_http_headers(*tracer, &hh_rd, text_map))) {
-				if (_NULL(*span_prop_hh = OTELC_OPS(*tracer, start_span_with_options, "http headers propagation", NULL, context, &ts_steady, &ts_system, OTELC_SPAN_KIND_SERVER, NULL, 0)))
-					break;
+				*span_prop_hh = OTELC_OPS(*tracer, start_span_with_options, "http headers propagation", NULL, context, &ts_steady, &ts_system, OTELC_SPAN_KIND_SERVER, NULL, 0);
 
 				OTELC_OPSR(context, destroy);
+
+				if (_NULL(*span_prop_hh)) {
+					otelc_text_map_destroy(&text_map);
+
+					break;
+				}
 			}
 			otelc_text_map_destroy(&text_map);
 		}
