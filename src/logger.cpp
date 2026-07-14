@@ -16,6 +16,10 @@
 #include "include.h"
 
 
+/* Serializes the scope_name replacement in otel_logger_start(). */
+static std::mutex otel_logger_start_mutex;
+
+
 /***
  * Helper subclass that exposes the protected SetMinimumSeverity method on the
  * OpenTelemetry C++ Logger base class.  Call sites cast the SDK Logger pointer
@@ -108,7 +112,7 @@ static int otel_logger_enabled(struct otelc_logger *logger, otelc_log_severity_t
 	if (OTEL_NULL(impl))
 		OTEL_LOGGER_RETURN_INT(OTEL_ERROR_MSG_INVALID_LOGGER);
 
-	/* Copy the SDK Logger handle so it cannot be released mid-call. */
+	/* Snapshot the SDK Logger handle for the duration of the call. */
 	auto logger_shared = impl->logger;
 	if (OTEL_NULL(logger_shared))
 		OTEL_LOGGER_RETURN_INT(OTEL_ERROR_MSG_INVALID_LOGGER);
@@ -190,7 +194,7 @@ static int otel_logger_set_min_severity(struct otelc_logger *logger, otelc_log_s
 	if (OTEL_NULL(impl))
 		OTEL_LOGGER_RETURN_INT(OTEL_ERROR_MSG_INVALID_LOGGER);
 
-	/* Copy the SDK Logger handle so it cannot be released mid-call. */
+	/* Snapshot the SDK Logger handle for the duration of the call. */
 	auto logger_shared = impl->logger;
 	if (OTEL_NULL(logger_shared))
 		OTEL_LOGGER_RETURN_INT(OTEL_ERROR_MSG_INVALID_LOGGER);
@@ -358,7 +362,7 @@ static int otel_logger_log_v(struct otelc_logger *logger, otelc_log_severity_t s
 	if (OTEL_NULL(impl))
 		OTEL_LOGGER_RETURN_INT(OTEL_ERROR_MSG_INVALID_LOGGER);
 
-	/* Copy the SDK Logger handle so it cannot be released mid-call. */
+	/* Snapshot the SDK Logger handle for the duration of the call. */
 	auto logger_shared = impl->logger;
 	if (OTEL_NULL(logger_shared))
 		OTEL_LOGGER_RETURN_INT(OTEL_ERROR_MSG_INVALID_LOGGER);
@@ -573,7 +577,7 @@ static int otel_logger_log_body(struct otelc_logger *logger, otelc_log_severity_
 	if (OTEL_NULL(impl))
 		OTEL_LOGGER_RETURN_INT(OTEL_ERROR_MSG_INVALID_LOGGER);
 
-	/* Copy the SDK Logger handle so it cannot be released mid-call. */
+	/* Snapshot the SDK Logger handle for the duration of the call. */
 	auto logger_shared = impl->logger;
 	if (OTEL_NULL(logger_shared))
 		OTEL_LOGGER_RETURN_INT(OTEL_ERROR_MSG_INVALID_LOGGER);
@@ -735,6 +739,10 @@ static int otel_logger_start(struct otelc_logger *logger)
 	if (retval < 1)
 		OTELC_RETURN_INT(retval);
 
+	/* Serialize the scope_name replacement against a concurrent start(). */
+	const std::lock_guard<std::mutex> start_guard(otel_logger_start_mutex);
+
+	OTELC_SFREE(logger->scope_name);
 	logger->scope_name = OTELC_STRDUP(__func__, __LINE__, scope_name);
 	if (OTEL_NULL(logger->scope_name))
 		OTEL_LOGGER_RETURN_INT(OTEL_ERROR_MSG_ENOMEM("scope name"));
@@ -940,7 +948,7 @@ static struct otelc_logger *otel_logger_new(void)
 		retptr->min_severity = OTELC_LOG_SEVERITY_TRACE;
 		retptr->enabled      = true;
 		retptr->ops          = &otel_logger_ops;
-		retptr->impl         = new(std::nothrow) otel_logger_impl{};
+		retptr->impl         = otel::new_nothrow<otel_logger_impl>();
 
 		if (OTEL_NULL(retptr->impl))
 			OTELC_SFREE_CLEAR(retptr);
@@ -969,6 +977,8 @@ static struct otelc_logger *otel_logger_new(void)
  *   set_min_severity operation.  On failure, an error message may be written
  *   to *err if provided.  The supplied context must be non-NULL and
  *   is retained by the logger for later configuration lookups.
+ *   An error message stored in *err is allocated by the library and must be
+ *   released with OTELC_SFREE().
  *
  * RETURN VALUE
  *   Returns a pointer to a newly created logger instance on success, or nullptr

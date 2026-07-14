@@ -353,6 +353,12 @@ struct otelc_logger_ops {
 	 *   matching sequence of exporters), each pair is created and passed to
 	 *   the provider.
 	 *
+	 *   The caller must drain every concurrent operation on this logger
+	 *   instance before invoking start, including a repeated start: the
+	 *   concurrent calls snapshot the SDK logger and provider handles that
+	 *   start replaces, and such a snapshot racing with the replacement
+	 *   is a data race.
+	 *
 	 * RETURN VALUE
 	 *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR in case of an
 	 *   error.
@@ -421,7 +427,10 @@ struct otelc_logger {
  *   or changed at runtime through the set_min_severity operation.  On failure,
  *   an error message may be written to *err if it is provided.  The supplied
  *   context must be non-NULL and is retained by the logger and used for later
- *   configuration lookups.
+ *   configuration lookups.  An error message stored in *err is allocated by
+ *   the library and must be released with OTELC_SFREE(); on entry, *err must
+ *   be a null pointer or a pointer from a previous call, since any previous
+ *   message is released before being replaced.
  *
  * RETURN VALUE
  *   Returns a pointer to a newly created logger instance on success, or nullptr

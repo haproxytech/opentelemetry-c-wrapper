@@ -33,12 +33,14 @@
  * Per-instance implementation state for a logger.  Holds the SDK LoggerProvider
  * with the SDK Logger obtained from it, and the ostream exporter logfile owned
  * by this logger.  All members are owned by the instance, so multiple loggers
- * can coexist without sharing process-wide state.
+ * can coexist without sharing process-wide state.  The logfile comes first
+ * so that it is destroyed last, after the provider members that may still
+ * flush into it.
  */
 struct otel_logger_impl {
+	std::ofstream                                     logfile;
 	otel_nostd::shared_ptr<otel_logs::LoggerProvider> provider;
 	otel_nostd::shared_ptr<otel_logs::Logger>         logger;
-	std::ofstream                                     logfile;
 };
 
 #endif /* _OPENTELEMETRY_C_WRAPPER_LOGGER_H_ */
