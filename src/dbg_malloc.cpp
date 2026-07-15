@@ -121,13 +121,14 @@ static void otelc_dbg_mem_add(const char *func, int line, void *ptr, size_t size
  */
 static void otelc_dbg_mem_alloc(const char *func, int line, void *old_ptr, void *ptr, size_t size)
 {
-	size_t idx = 0;
-	int    rc;
+	struct otelc_dbg_mem *mem = dbg_mem;
+	size_t                idx = 0;
+	int                   rc;
 
 	OTELC_FUNC_EX(MEM, "\"%s\", %d, %p, %p, %zu", OTELC_STR_ARG(func), line, old_ptr, ptr, size);
 
-	if (OTEL_NULL(dbg_mem)) {
-		/*
+	if (OTEL_NULL(mem)) {
+		/***
 		 * The tracker is not yet initialized (this allocation ran
 		 * before otelc_dbg_mem_init()).  The block still carries the
 		 * reserved metadata header, and otelc_dbg_free() relies on a
@@ -144,8 +145,21 @@ static void otelc_dbg_mem_alloc(const char *func, int line, void *old_ptr, void 
 		OTELC_RETURN();
 	}
 
-	if ((rc = pthread_mutex_lock(&(dbg_mem->mutex))) != 0) {
+	if ((rc = pthread_mutex_lock(&(mem->mutex))) != 0) {
 		DBG_MEM_ERR("unable to lock mutex: %s", otel_strerror(rc));
+
+		OTELC_RETURN();
+	}
+
+	if (dbg_mem != mem) {
+		/***
+		 * The tracker was disabled while this thread was waiting for
+		 * the mutex.  Mark the block untracked, exactly as the
+		 * uninitialized-tracker path above does, so it stays freeable.
+		 */
+		otelc_dbg_set_metadata(ptr, nullptr);
+
+		(void)pthread_mutex_unlock(&(mem->mutex));
 
 		OTELC_RETURN();
 	}
@@ -171,7 +185,7 @@ static void otelc_dbg_mem_alloc(const char *func, int line, void *old_ptr, void 
 		else if (metadata->data->used && (metadata->data->ptr == DBG_MEM_DATA(old_ptr))) {
 			OTELC_DBG(MEM, "MEM_REALLOC: %s:%d(%p %zu -> %p %zu)", func, line, old_ptr, metadata->data->size, DBG_MEM_PTR(ptr), size);
 
-			dbg_mem->size -= metadata->data->size;
+			mem->size -= metadata->data->size;
 			otelc_dbg_mem_add(func, line, ptr, size, metadata->data, OTELC_DBG_MEM_OP_REALLOC);
 		}
 	} else {
@@ -182,37 +196,37 @@ static void otelc_dbg_mem_alloc(const char *func, int line, void *old_ptr, void 
 		 * used at all so far.  If such is not found, an attempt is made
 		 * to find the first available location.
 		 */
-		if (dbg_mem->assigned < dbg_mem->count) {
-			idx = dbg_mem->assigned++;
+		if (mem->assigned < mem->count) {
+			idx = mem->assigned++;
 		} else {
 			do {
-				if (dbg_mem->reused >= dbg_mem->count)
-					dbg_mem->reused = 0;
+				if (mem->reused >= mem->count)
+					mem->reused = 0;
 
-				if (!dbg_mem->data[dbg_mem->reused].used) {
-					idx = dbg_mem->reused++;
+				if (!mem->data[mem->reused].used) {
+					idx = mem->reused++;
 
 					break;
 				}
 
-				dbg_mem->reused++;
-			} while (++idx < dbg_mem->count);
+				mem->reused++;
+			} while (++idx < mem->count);
 		}
 
-		if (idx < dbg_mem->count) {
+		if (idx < mem->count) {
 			OTELC_DBG(MEM, "MEM_ALLOC: %s:%d(%p %zu %zu)", func, line, DBG_MEM_PTR(ptr), size, idx);
 
-			otelc_dbg_mem_add(func, line, ptr, size, dbg_mem->data + idx, OTELC_DBG_MEM_OP_ALLOC);
+			otelc_dbg_mem_add(func, line, ptr, size, mem->data + idx, OTELC_DBG_MEM_OP_ALLOC);
 		}
 	}
 
-	if ((rc = pthread_mutex_unlock(&(dbg_mem->mutex))) != 0) {
+	if ((rc = pthread_mutex_unlock(&(mem->mutex))) != 0) {
 		DBG_MEM_ERR("unable to unlock mutex: %s", otel_strerror(rc));
 
 		OTELC_RETURN();
 	}
 
-	if (idx >= dbg_mem->count)
+	if (idx >= mem->count)
 		DBG_MEM_ERR("alloc overflow: %s:%d(%p -> %p %zu)", func, line, old_ptr, DBG_MEM_PTR(ptr), size);
 
 	OTELC_RETURN();
@@ -242,11 +256,12 @@ static void otelc_dbg_mem_alloc(const char *func, int line, void *old_ptr, void 
  */
 static void otelc_dbg_mem_release(const char *func, int line, void *ptr, int op_idx)
 {
-	int rc;
+	struct otelc_dbg_mem *mem = dbg_mem;
+	int                   rc;
 
 	OTELC_FUNC_EX(MEM, "\"%s\", %d, %p, %d", OTELC_STR_ARG(func), line, ptr, op_idx);
 
-	if (OTEL_NULL(dbg_mem)) {
+	if (OTEL_NULL(mem)) {
 		OTELC_RETURN();
 	}
 	else if (OTEL_NULL(ptr)) {
@@ -255,8 +270,15 @@ static void otelc_dbg_mem_release(const char *func, int line, void *ptr, int op_
 		OTELC_RETURN();
 	}
 
-	if ((rc = pthread_mutex_lock(&(dbg_mem->mutex))) != 0) {
+	if ((rc = pthread_mutex_lock(&(mem->mutex))) != 0) {
 		DBG_MEM_ERR("unable to lock mutex: %s", otel_strerror(rc));
+
+		OTELC_RETURN();
+	}
+
+	if (dbg_mem != mem) {
+		/* The tracker was disabled while this thread was waiting for the mutex. */
+		(void)pthread_mutex_unlock(&(mem->mutex));
 
 		OTELC_RETURN();
 	}
@@ -281,19 +303,19 @@ static void otelc_dbg_mem_release(const char *func, int line, void *ptr, int op_
 
 		metadata->data->used = false;
 
-		dbg_mem->size -= metadata->data->size;
-		dbg_mem->op_cnt[op_idx]++;
+		mem->size -= metadata->data->size;
+		mem->op_cnt[op_idx]++;
 	}
 	else {
 		DBG_MEM_ERR("invalid ptr: %s:%d(%p)", func, line, ptr);
 
 		if (!OTEL_NULL(metadata))
-			for (size_t i = 0; i < dbg_mem->count; i++)
-				if (dbg_mem->data[i].ptr == metadata)
-					DBG_MEM_ERR("possible previous use: %s %hhu", dbg_mem->data[i].func, dbg_mem->data[i].used);
+			for (size_t i = 0; i < mem->count; i++)
+				if (mem->data[i].ptr == metadata)
+					DBG_MEM_ERR("possible previous use: %s %hhu", mem->data[i].func, mem->data[i].used);
 	}
 
-	if ((rc = pthread_mutex_unlock(&(dbg_mem->mutex))) != 0) {
+	if ((rc = pthread_mutex_unlock(&(mem->mutex))) != 0) {
 		DBG_MEM_ERR("unable to unlock mutex: %s", otel_strerror(rc));
 
 		OTELC_RETURN();
@@ -326,6 +348,9 @@ static void otelc_dbg_mem_release(const char *func, int line, void *ptr, int op_
 void *otelc_dbg_malloc(const char *func, int line, size_t size)
 {
 	OTELC_FUNC_EX(MEM, "\"%s\", %d, %zu", OTELC_STR_ARG(func), line, size);
+
+	if (size > (SIZE_MAX - DBG_MEM_SIZE(0)))
+		OTELC_RETURN_EX(nullptr, void *, "%p");
 
 	auto retptr = malloc(DBG_MEM_SIZE(size));
 
@@ -401,12 +426,15 @@ void *otelc_dbg_realloc(const char *func, int line, void *ptr, size_t size)
 
 	OTELC_FUNC_EX(MEM, "\"%s\", %d, %p, %zu", OTELC_STR_ARG(func), line, ptr, size);
 
+	if (size > (SIZE_MAX - DBG_MEM_SIZE(0)))
+		OTELC_RETURN_EX(nullptr, void *, "%p");
+
 	if (OTEL_NULL(ptr)) {
 		retptr = malloc(DBG_MEM_SIZE(size));
 
 		otelc_dbg_mem_alloc(func, line, nullptr, retptr, size);
 	} else {
-		const struct otelc_dbg_mem_metadata *metadata = DBG_MEM_DATA(ptr);
+		struct otelc_dbg_mem_metadata *metadata = DBG_MEM_DATA(ptr);
 
 		/***
 		 * If memory is not allocated via these debug functions, it must
@@ -416,7 +444,22 @@ void *otelc_dbg_realloc(const char *func, int line, void *ptr, size_t size)
 			retptr = realloc(ptr, size);
 
 			OTELC_RETURN_PTR(retptr);
-		} else {
+		}
+		else if (metadata->data == OTEL_CAST_TYPEOF(metadata->data, metadata)) {
+			/***
+			 * An untracked block (allocated before the tracker was
+			 * initialized, or while the tracking table was full)
+			 * carries self-referencing metadata.  Reallocate its
+			 * real base and re-initialize the header: the copied
+			 * self-pointer would go stale when the block moves,
+			 * and the tracked path below would then inspect freed
+			 * memory through it.
+			 */
+			retptr = realloc(DBG_MEM_DATA(ptr), DBG_MEM_SIZE(size));
+
+			otelc_dbg_set_metadata(retptr, nullptr);
+		}
+		else {
 			retptr = realloc(DBG_MEM_DATA(ptr), DBG_MEM_SIZE(size));
 
 			otelc_dbg_mem_alloc(func, line, ptr, retptr, size);
@@ -449,7 +492,7 @@ void *otelc_dbg_realloc(const char *func, int line, void *ptr, size_t size)
  */
 void otelc_dbg_free(const char *func, int line, void *ptr)
 {
-	const struct otelc_dbg_mem_metadata *metadata;
+	struct otelc_dbg_mem_metadata *metadata;
 
 	OTELC_FUNC_EX(MEM, "\"%s\", %d, %p", OTELC_STR_ARG(func), line, ptr);
 
@@ -464,6 +507,18 @@ void otelc_dbg_free(const char *func, int line, void *ptr)
 	metadata = DBG_MEM_DATA(ptr);
 	if (OTEL_NULL(metadata) || OTEL_NULL(metadata->data) || (metadata->magic != DBG_MEM_MAGIC)) {
 		free(ptr);
+
+		OTELC_RETURN();
+	}
+
+	/***
+	 * An untracked block (allocated before the tracker was initialized, or
+	 * while the tracking table was full) carries self-referencing metadata.
+	 * Free its real base directly: there is no record to release, and
+	 * otelc_dbg_mem_release() would only log a spurious error for it.
+	 */
+	if (metadata->data == OTEL_CAST_TYPEOF(metadata->data, metadata)) {
+		free(DBG_MEM_DATA(ptr));
 
 		OTELC_RETURN();
 	}
@@ -621,7 +676,13 @@ int otelc_dbg_mem_init(struct otelc_dbg_mem *mem, struct otelc_dbg_mem_data *dat
  *   This function takes no arguments.
  *
  * DESCRIPTION
- *   Disables the memory debugger and releases any associated resources.  After
+ *   Disables the memory debugger.  The global tracker pointer is cleared under
+ *   the tracker mutex, so a tracker operation running on another thread either
+ *   completes before the debugger is disabled or detects the disabling after it
+ *   acquires the mutex and backs out.  The mutex itself is deliberately not
+ *   destroyed: a thread may still be blocked on it, and destroying a mutex in
+ *   that state is undefined behavior.  The mutex remains initialized inside the
+ *   caller-provided state structure, which must therefore stay valid.  After
  *   this function is called, the debugging memory functions will no longer
  *   track allocations.
  *
@@ -630,14 +691,24 @@ int otelc_dbg_mem_init(struct otelc_dbg_mem *mem, struct otelc_dbg_mem_data *dat
  */
 void otelc_dbg_mem_disable(void)
 {
+	struct otelc_dbg_mem *mem = dbg_mem;
+	int                   rc;
+
 	OTELC_FUNC_EX(MEM, "");
 
-	if (OTEL_NULL(dbg_mem))
+	if (OTEL_NULL(mem))
 		OTELC_RETURN();
 
-	(void)pthread_mutex_destroy(&(dbg_mem->mutex));
+	if ((rc = pthread_mutex_lock(&(mem->mutex))) != 0) {
+		DBG_MEM_ERR("unable to lock mutex: %s", otel_strerror(rc));
+
+		OTELC_RETURN();
+	}
 
 	dbg_mem = nullptr;
+
+	if ((rc = pthread_mutex_unlock(&(mem->mutex))) != 0)
+		DBG_MEM_ERR("unable to unlock mutex: %s", otel_strerror(rc));
 
 	OTELC_RETURN();
 }
@@ -666,30 +737,51 @@ void otelc_dbg_mem_info(void)
 #if defined(HAVE_MALLINFO) || defined(HAVE_MALLINFO2)
 	struct otelc_mallinfo mi;
 #endif
+	struct otelc_dbg_mem *mem = dbg_mem;
 	size_t                chunks = 0;
 	uint64_t              size = 0;
+	int                   rc;
 
 	OTELC_FUNC_EX(MEM, "");
 
-	if (OTEL_NULL(dbg_mem))
+	if (OTEL_NULL(mem))
 		OTELC_RETURN();
 
-	OTELC_DBG(INFO, "--- Memory info -------------------------------------");
-	OTELC_DBG(INFO, "  alloc/realloc: %" PRIu64 "/%" PRIu64 ", free/release: %" PRIu64 "/%" PRIu64, dbg_mem->op_cnt[0], dbg_mem->op_cnt[1], dbg_mem->op_cnt[2], dbg_mem->op_cnt[3]);
-	OTELC_DBG(INFO, "  assigned: %zu, reused: %zu, count: %zu", dbg_mem->assigned, dbg_mem->reused, dbg_mem->count);
-	for (size_t i = 0; i < dbg_mem->count; i++)
-		if (dbg_mem->data[i].used) {
-			OTELC_DBG(INFO, "  %zu %s(%p %zu)", chunks, dbg_mem->data[i].func, DBG_MEM_PTR(dbg_mem->data[i].ptr), dbg_mem->data[i].size);
+	if ((rc = pthread_mutex_lock(&(mem->mutex))) != 0) {
+		DBG_MEM_ERR("unable to lock mutex: %s", otel_strerror(rc));
 
-			size += dbg_mem->data[i].size;
+		OTELC_RETURN();
+	}
+
+	if (dbg_mem != mem) {
+		/* The tracker was disabled while this thread was waiting for the mutex. */
+		(void)pthread_mutex_unlock(&(mem->mutex));
+
+		OTELC_RETURN();
+	}
+
+	OTELC_DBG(INFO, "--- Memory info -------------------------------------");
+	OTELC_DBG(INFO, "  alloc/realloc: %" PRIu64 "/%" PRIu64 ", free/release: %" PRIu64 "/%" PRIu64, mem->op_cnt[0], mem->op_cnt[1], mem->op_cnt[2], mem->op_cnt[3]);
+	OTELC_DBG(INFO, "  assigned: %zu, reused: %zu, count: %zu", mem->assigned, mem->reused, mem->count);
+	for (size_t i = 0; i < mem->count; i++)
+		if (mem->data[i].used) {
+			OTELC_DBG(INFO, "  %zu %s(%p %zu)", chunks, mem->data[i].func, DBG_MEM_PTR(mem->data[i].ptr), mem->data[i].size);
+
+			size += mem->data[i].size;
 			chunks++;
 		}
 
 	if (chunks > 0)
 		OTELC_DBG(INFO, "  allocated %" PRIu64 " byte(s) in %zu chunk(s)", size, chunks);
 
-	if (dbg_mem->size != size)
-		OTELC_DBG(INFO, "  size does not match: %" PRIu64 " != %" PRIu64, dbg_mem->size, size);
+	if (mem->size != size)
+		OTELC_DBG(INFO, "  size does not match: %" PRIu64 " != %" PRIu64, mem->size, size);
+
+	if ((rc = pthread_mutex_unlock(&(mem->mutex))) != 0) {
+		DBG_MEM_ERR("unable to unlock mutex: %s", otel_strerror(rc));
+
+		OTELC_RETURN();
+	}
 
 #if defined(HAVE_MALLINFO) || defined(HAVE_MALLINFO2)
 	mi = otelc_mallinfo();
@@ -736,6 +828,10 @@ void *otelc_dbg_memdup(const char *func, int line, const void *s, size_t size)
 	void *retptr = nullptr;
 
 	OTELC_FUNC_EX(MEM, "\"%s\", %d, %p, %zu", OTELC_STR_ARG(func), line, s, size);
+
+	/* Guard the size + 1 payload plus the metadata header against overflow. */
+	if (size > (SIZE_MAX - DBG_MEM_SIZE(1)))
+		OTELC_RETURN_EX(nullptr, void *, "%p");
 
 	if (!OTEL_NULL(s)) {
 		retptr = malloc(DBG_MEM_SIZE(size + 1));

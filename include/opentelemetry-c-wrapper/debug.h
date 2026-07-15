@@ -18,7 +18,22 @@
 
 __CPLUSPLUS_DECL_BEGIN
 
+/***
+ * OTELC_DBG_MEM selects the debug ABI of the library: the otelc_dbg_* memory
+ * channel, the (func, line) argument pairs that OTELC_DBG_ARGS inserts into
+ * function signatures, and the extended otelc_ext_malloc_t/otelc_ext_free_t
+ * callback types.  It is derived here from DEBUG and DEBUG_OTEL so that every
+ * declaration conditioned on it stays consistent with the OTELC_DBG_IFDEF()
+ * selection below, whichever of the three macros the consumer defines.  The
+ * pkg-config file of the debug library provides -DOTELC_DBG_MEM.
+ */
 #if defined(DEBUG) || defined(DEBUG_OTEL)
+#  ifndef OTELC_DBG_MEM
+#    define OTELC_DBG_MEM
+#  endif
+#endif
+
+#ifdef OTELC_DBG_MEM
 #define  OTELC_DBG_LEVEL_DEFINES                                                                  \
 	OTELC_DBG_LEVEL_DEF(LOG)     /* Low-level logging infrastructure messages. */             \
 	OTELC_DBG_LEVEL_DEF(FUNC)    /* Function entry/exit and call-tracing messages. */         \
@@ -112,7 +127,7 @@ extern bool         otelc_dbg_trigger_throw;
 #  define OTELC_RETURN_PTR(a)      return a
 #  define OTELC_RETURN_ENUM(a)     return a
 #  define OTELC_RETURN_INT(a)      return a
-#endif /* DEBUG || DEBUG_OTEL */
+#endif /* OTELC_DBG_MEM */
 
 #define OTELC_DBG_ARGS             OTELC_DBG_IFDEF(OTELC_ARGS(__func__, __LINE__, ), )
 

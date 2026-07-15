@@ -18,6 +18,11 @@
 
 __CPLUSPLUS_DECL_BEGIN
 
+/***
+ * The pointer argument of OTELC_SFREE() and OTELC_SFREE_CLEAR() is evaluated
+ * more than once, so it must be a side-effect-free lvalue; an argument with
+ * side effects would release the memory twice.
+ */
 #ifdef OTELC_USE_INTERNAL_INCLUDES
 #  define OTELC_MALLOC(f,l,s)      OTELC_DBG_IFDEF(otelc_dbg_malloc(f, l, (s)),       malloc(s)             )
 #  define OTELC_CALLOC(f,l,n,e)    OTELC_DBG_IFDEF(otelc_dbg_calloc(f, l, (n), (e)),  calloc((n), (e))      )
@@ -46,21 +51,21 @@ __CPLUSPLUS_DECL_BEGIN
 #  ifndef OTEL_CAST_TYPEOF
 #    define OTEL_CAST_TYPEOF(t,e)   ((__typeof__(t))(e))
 #  endif
-#  define OTELC_DBG_MEM_TRACKING(p,n)                                \
-	do {                                                         \
-		int   errno_;                                        \
-		void *ptr_;                                          \
-		                                                     \
-		if ((p) == NULL)                                     \
-			break;                                       \
-		                                                     \
-		errno_ = errno;                                      \
-		ptr_   = OTELC_MEMDUP(__func__, __LINE__, (p), (n)); \
-		if (ptr_ != NULL) {                                  \
-			free(p);                                     \
-			(p) = OTEL_CAST_TYPEOF((p), ptr_);           \
-		}                                                    \
-		errno = errno_;                                      \
+#  define OTELC_DBG_MEM_TRACKING(p,n)                                     \
+	do {                                                              \
+		int   errno_;                                             \
+		void *ptr_;                                               \
+		                                                          \
+		if ((p) == NULL)                                          \
+			break;                                            \
+		                                                          \
+		errno_ = errno;                                           \
+		ptr_   = otelc_dbg_memdup(__func__, __LINE__, (p), (n));  \
+		if (ptr_ != NULL) {                                       \
+			free(p);                                          \
+			(p) = OTEL_CAST_TYPEOF((p), ptr_);                \
+		}                                                         \
+		errno = errno_;                                           \
 	} while (0)
 
 enum {

@@ -22,7 +22,7 @@ __CPLUSPLUS_DECL_BEGIN
 	OTELC_DBG_STRUCT(_##l, h, h " %p:{ %p %p %p %zu/%zu %hhu }", (p), \
 	                 (p)->flags, (p)->key, (p)->value, (p)->count, (p)->size, (p)->is_dynamic)
 
-#if defined(DEBUG) || defined(DEBUG_OTEL)
+#ifdef OTELC_DBG_MEM
 #  define OTELC_TEXT_MAP_DUMP(p,d)        otelc_text_map_dump((p), (d))
 #else
 #  define OTELC_TEXT_MAP_DUMP(...)        while (0)
@@ -221,7 +221,7 @@ typedef int   (*otelc_ext_thread_id_t)(void);
 extern otelc_ext_thread_id_t otelc_ext_thread_id;
 
 
-#if defined(DEBUG) || defined(DEBUG_OTEL)
+#ifdef OTELC_DBG_MEM
 void                   otelc_text_map_dump(const struct otelc_text_map *text_map, const char *desc);
 const char            *otelc_value_dump(const struct otelc_value *value, const char *desc);
 const char            *otelc_kv_dump(const struct otelc_kv *kv, const char *desc);

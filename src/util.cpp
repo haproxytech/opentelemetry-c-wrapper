@@ -214,10 +214,14 @@ otelc_ext_thread_id_t otelc_ext_thread_id = otelc_thread_id;
  *   Sets up the C wrapper library to use the provided callbacks for memory
  *   management and thread identification.  By supplying custom allocation and
  *   free functions, the library can integrate seamlessly with different memory
- *   environments.  The thread ID callback allows the library to perform
- *   thread-local operations and maintain diagnostic or debugging information
- *   in multithreaded contexts.  This function must be called once before using
- *   any other library functions that depend on these callbacks.
+ *   environments.  The allocation callbacks are accepted only as a complete
+ *   pair: if either func_malloc or func_free is NULL, both are replaced by the
+ *   library defaults, since memory obtained from a custom allocator must never
+ *   be released through a mismatched deallocator.  The thread ID callback lets
+ *   the library perform thread-local operations and maintain diagnostic or
+ *   debugging information in multithreaded contexts.  This function must be
+ *   called once before using any other library functions that depend on these
+ *   callbacks.
  *
  * RETURN VALUE
  *   This function does not return a value.
@@ -229,10 +233,22 @@ void otelc_ext_init(otelc_ext_malloc_t func_malloc, otelc_ext_free_t func_free, 
 	/***
 	 * The functions otelc_ext_malloc/free() are used only for memory
 	 * operations on the otelc_span and otelc_span_context structures.
+	 *
+	 * The allocation callbacks are taken over only as a complete pair; a
+	 * custom allocator combined with the default deallocator (or the
+	 * reverse) would release memory through a mismatched function.
 	 */
-	otelc_ext_malloc    = OTEL_NULL(func_malloc)    ? OTELC_DBG_IFDEF(otelc_dbg_malloc, malloc) : func_malloc;
-	otelc_ext_free      = OTEL_NULL(func_free)      ? OTELC_DBG_IFDEF(otelc_dbg_free,   free)   : func_free;
-	otelc_ext_thread_id = OTEL_NULL(func_thread_id) ? otelc_thread_id                           : func_thread_id;
+	if (OTEL_NULL(func_malloc) || OTEL_NULL(func_free)) {
+		if (OTEL_NULL(func_malloc) != OTEL_NULL(func_free))
+			OTELC_DBG(ERROR, "incomplete allocation callback pair ignored: malloc %p, free %p", func_malloc, func_free);
+
+		otelc_ext_malloc = OTELC_DBG_IFDEF(otelc_dbg_malloc, malloc);
+		otelc_ext_free   = OTELC_DBG_IFDEF(otelc_dbg_free,   free);
+	} else {
+		otelc_ext_malloc = func_malloc;
+		otelc_ext_free   = func_free;
+	}
+	otelc_ext_thread_id = OTEL_NULL(func_thread_id) ? otelc_thread_id : func_thread_id;
 
 	OTELC_RETURN();
 }
@@ -758,7 +774,7 @@ const char *otelc_strctrl(const void *data, size_t size)
 }
 
 
-#ifdef DEBUG
+#ifdef OTELC_DBG_MEM
 
 /***
  * NAME
@@ -977,7 +993,7 @@ const char *otelc_kv_dump(const struct otelc_kv *kv, const char *desc)
 	return retbuf;
 }
 
-#endif /* DEBUG */
+#endif /* OTELC_DBG_MEM */
 
 
 /***
