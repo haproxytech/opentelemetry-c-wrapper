@@ -31,8 +31,8 @@ OPENTELEMETRY_INCLUDEDIR="${1:-/opt/include}"
 			n!=""			{ if ($1=="{") p=n"_"; n=""; next }
 						{ _trim_space() }
 			/^static constexpr int/	{ sub(/;$/,""); print "#define "p""$4"\t"$6; next }
-			/^static constexpr.*;$/	{ sub(/;$/,""); sub("*",p,$5); s=$0; sub(/^[^=]*=/,"",s); print "#define "$5"\t"s; next }
-			/^static constexpr /	{ k=$5; sub("*",p,k); next }
+			/^static constexpr.*;$/	{ sub(/;$/,""); sub(/\*/,p,$5); s=$0; sub(/^[^=]*=/,"",s); print "#define "$5"\t"s; next }
+			/^static constexpr /	{ k=$5; sub(/\*/,p,k); next }
 			(k!="") && /;$/		{ _trim(); print "#define "k"\t\""v""$0"\""; k=""; v=""; next }
 			k!=""			{ _trim(); (v=="") ? v=$0 : v=v""$0; next }
 		' "${_var_in}" >> "${_ax_var_sc_tmp}"
