@@ -195,7 +195,7 @@ struct T {
 	                                                                                       \
 	OTELC_DBG(OTEL, "new span baggage context set");                                       \
 	                                                                                       \
-	OTELC_RETURN_INT(arg_retval);                                                          \
+	OTELC_RETURN_INT(arg_retval);
 
 
 #ifdef OTELC_USE_STATIC_HANDLE

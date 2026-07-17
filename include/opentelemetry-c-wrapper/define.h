@@ -65,7 +65,7 @@
 
 #define OTELC_ARGS(a, ...)         a, ##__VA_ARGS__
 #define OTELC_DPTR_ARGS(p)         (p), ((p) == NULL) ? NULL : *(p)
-#define OTELC_STR_ARG(s)           ((s) == NULL) ? "(null)" : (s)
+#define OTELC_STR_ARG(s)           (((s) == NULL) ? "(null)" : (s))
 #define OTELC_TV_ARGS(p)           (p)->tv_sec, (p)->tv_nsec
 #define OTELC_RUNTIME_MS()         ((otelc_runtime() + 500) / 1000)
 #define OTELC_STR_IS_VALID(s)      (((s) != NULL) && (*(s) != '\0'))
