@@ -145,6 +145,17 @@ struct T {
 		OTEL_SPAN_RETURN##arg_type(arg_msg);                                  \
 	}
 
+/***
+ * Early-return dispatch used by OTEL_LOCK_SPAN_CONTEXT_HANDLE when the
+ * looked-up handle is missing.  A span context carries no error channel, so
+ * the condition is only debug-logged; the arg_type suffix selects the failure
+ * value: the empty form returns void, _INT returns OTELC_RET_ERROR, and _PTR
+ * returns nullptr.
+ */
+#define OTEL_SPAN_CONTEXT_RETURN           OTELC_RETURN()
+#define OTEL_SPAN_CONTEXT_RETURN_INT       OTELC_RETURN_INT(OTELC_RET_ERROR)
+#define OTEL_SPAN_CONTEXT_RETURN_PTR       OTELC_RETURN_PTR(nullptr)
+
 #define OTEL_LOCK_SPAN_CONTEXT_HANDLE(arg_type, arg_handle)                                   \
 	OTEL_SPAN_MAP_GUARD(arg_type, span_context, arg_handle);                              \
 	                                                                                      \
@@ -154,7 +165,7 @@ struct T {
 	if (OTEL_NULL(handle)) {                                                              \
 		OTELC_DBG(OTEL, "invalid otel_span_context[%" PRId64 "]", (arg_handle)->idx); \
 		                                                                              \
-		OTELC_RETURN##arg_type(OTELC_RET_ERROR);                                      \
+		OTEL_SPAN_CONTEXT_RETURN##arg_type;                                           \
 	}
 
 /***
