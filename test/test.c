@@ -524,8 +524,8 @@ static void worker_thread(void *data)
 				continue;
 
 			(void)OTELC_OPS(*span_root, get_id, span_id, sizeof(span_id), trace_id, sizeof(trace_id), &trace_flags);
-			OTELC_OPS(*logger, log, OTELC_LOG_SEVERITY_DEBUG, 0, NULL, span_id, sizeof(span_id), trace_id, sizeof(trace_id), trace_flags, &ts, NULL, attr, OTELC_TABLESIZE(attr), "debug log from worker %d (span_root)", worker->id);
-			OTELC_OPS(*logger, log_span, OTELC_LOG_SEVERITY_INFO, 0, NULL, *span_root, &ts, NULL, attr, OTELC_TABLESIZE(attr), "info log from worker %d (span_root)", worker->id);
+			(void)OTELC_OPS(*logger, log, OTELC_LOG_SEVERITY_DEBUG, 0, NULL, span_id, sizeof(span_id), trace_id, sizeof(trace_id), trace_flags, &ts, NULL, attr, OTELC_TABLESIZE(attr), "debug log from worker %d (span_root)", worker->id);
+			(void)OTELC_OPS(*logger, log_span, OTELC_LOG_SEVERITY_INFO, 0, NULL, *span_root, &ts, NULL, attr, OTELC_TABLESIZE(attr), "info log from worker %d (span_root)", worker->id);
 		}
 		else if (worker->otel_state == WORKER_STATE_SPAN_CHILD_START) {
 			if (_NULL(*tracer))
@@ -544,7 +544,7 @@ static void worker_thread(void *data)
 			if (_NULL(*meter))
 				continue;
 
-			OTELC_OPS(*meter, add_view, "histogram_double", "", "histogram_double", "", OTELC_METRIC_INSTRUMENT_HISTOGRAM_DOUBLE, OTELC_METRIC_AGGREGATION_HISTOGRAM, bounds, OTELC_TABLESIZE(bounds));
+			(void)OTELC_OPS(*meter, add_view, "histogram_double", "", "histogram_double", "", OTELC_METRIC_INSTRUMENT_HISTOGRAM_DOUBLE, OTELC_METRIC_AGGREGATION_HISTOGRAM, bounds, OTELC_TABLESIZE(bounds));
 
 			meter_instrument[0] = OTELC_OPS(*meter, create_instrument, "counter_uint64", "synchronous counter of type uint64_t", "", OTELC_METRIC_INSTRUMENT_COUNTER_UINT64, NULL);
 			meter_instrument[1] = OTELC_OPS(*meter, create_instrument, "histogram_double", "histogram of double values", "", OTELC_METRIC_INSTRUMENT_HISTOGRAM_DOUBLE, NULL);
@@ -563,11 +563,11 @@ static void worker_thread(void *data)
 			if (_NULL(*meter))
 				continue;
 
-			OTELC_OPS(*meter, update_instrument, meter_instrument[0], value + 0);
-			OTELC_OPS(*meter, update_instrument, meter_instrument[0], value + 1);
+			(void)OTELC_OPS(*meter, update_instrument, meter_instrument[0], value + 0);
+			(void)OTELC_OPS(*meter, update_instrument, meter_instrument[0], value + 1);
 
-			OTELC_OPS(*meter, update_instrument, meter_instrument[1], value + 2);
-			OTELC_OPS(*meter, update_instrument, meter_instrument[1], value + 3);
+			(void)OTELC_OPS(*meter, update_instrument, meter_instrument[1], value + 2);
+			(void)OTELC_OPS(*meter, update_instrument, meter_instrument[1], value + 3);
 		}
 		else if (worker->otel_state == WORKER_STATE_METER_INSTRUMENTS_UPDATE_KV) {
 			static const struct otelc_kv attr_1[] = {
@@ -586,8 +586,8 @@ static void worker_thread(void *data)
 			if (_NULL(*meter))
 				continue;
 
-			OTELC_OPS(*meter, update_instrument_kv_n, meter_instrument[0], value + 0, attr_1, OTELC_TABLESIZE(attr_1));
-			OTELC_OPS(*meter, update_instrument_kv_n, meter_instrument[1], value + 1, attr_2, OTELC_TABLESIZE(attr_2));
+			(void)OTELC_OPS(*meter, update_instrument_kv_n, meter_instrument[0], value + 0, attr_1, OTELC_TABLESIZE(attr_1));
+			(void)OTELC_OPS(*meter, update_instrument_kv_n, meter_instrument[1], value + 1, attr_2, OTELC_TABLESIZE(attr_2));
 		}
 		else if (worker->otel_state == WORKER_STATE_SPAN_CHILD_INJECT_TEXT_MAP) {
 			if (_NULL(*span_child))
