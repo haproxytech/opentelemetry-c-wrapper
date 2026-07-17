@@ -53,7 +53,7 @@ __CPLUSPLUS_DECL_BEGIN
  * use of OTELC_DBG_LEVEL_* in a macro that invokes another macro using the same
  * value for the debug level.  This is supported up to two levels of submacros.
  *
- * For example, see the definition of the OTELC_KV_DUMP() macro.
+ * For example, see the definition of the OTELC_DBG_TEXT_MAP() macro.
  */
 #define OTELC_DBG_LEVEL_DEF(a)   OTELC_DBG_LEVEL_##a, OTELC_DBG_LEVEL__##a = OTELC_DBG_LEVEL_##a, OTELC_DBG_LEVEL___##a = OTELC_DBG_LEVEL_##a,
 enum OTELC_DBG_LEVEL_enum {

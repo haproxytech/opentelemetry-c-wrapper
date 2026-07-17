@@ -62,7 +62,7 @@
 #define OTEL_YAML_ARG_MAP(m,p,n)          OTEL_YAML_MAP,    (m), OTEL_YAML_##p "/%s/" #n, &(n)
 
 typedef enum {
-	OTEL_YAML_STR,      /* { char *value, size_t value_size } */
+	OTEL_YAML_STR,      /* { char *value, int value_size } */
 	OTEL_YAML_BOOL,     /* { int *value } */
 	OTEL_YAML_INT64,    /* { int64_t *value, int64_t min, int64_t max } */
 	OTEL_YAML_DOUBLE,   /* { double *value, double min, double max } */
