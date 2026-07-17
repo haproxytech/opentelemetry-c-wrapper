@@ -8,6 +8,7 @@ config.status
 config/
 configure
 core
+gmon.out
 libtool
 m4/libtool.m4
 m4/ltoptions.m4
@@ -16,6 +17,8 @@ m4/ltversion.m4
 m4/lt~obsolete.m4
 otel_cpp.h
 package
+scripts/semconv.h
+scripts/semconv.h.tmp
 stamp-h1
 test/otel-c-wrapper-test*
 test/test-*

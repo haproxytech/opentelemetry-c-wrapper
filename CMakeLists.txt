@@ -44,6 +44,11 @@ project(opentelemetry-c-wrapper
     LANGUAGES C CXX
 )
 
+## Match the autotools default installation prefix (AC_PREFIX_DEFAULT).
+if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
+    set(CMAKE_INSTALL_PREFIX "/usr" CACHE PATH "Install path prefix" FORCE)
+endif()
+
 set(CMAKE_C_STANDARD   11)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -60,6 +65,7 @@ include(CheckSymbolExists)
 option(BUILD_STATIC    "Build a static library instead of shared" OFF)
 option(ENABLE_DEBUG    "Include debugging options"           OFF)
 option(ENABLE_WARNINGS "Enable additional compiler warnings" OFF)
+option(ENABLE_GPROF    "Enable profiling with gprof"         OFF)
 option(ENABLE_THREADS  "Enable multi-thread support"          ON)
 option(WITH_LIBFYAML   "Use libfyaml YAML library"           OFF)
 option(WITH_RAPIDYAML  "Use rapidyaml YAML library"           ON)
@@ -219,6 +225,15 @@ endif()
 if(NOT CMAKE_CXX_FLAGS)
     set(CMAKE_CXX_FLAGS "${_base_cxxflags}${_checked_cxxflags}"
         CACHE STRING "" FORCE)
+endif()
+
+## Profiling with gprof (mirrors AX_ENABLE_GPROF).
+if(ENABLE_GPROF)
+    set(GPROF 1)
+    string(APPEND CMAKE_C_FLAGS   " -pg")
+    string(APPEND CMAKE_CXX_FLAGS " -pg")
+    string(APPEND CMAKE_EXE_LINKER_FLAGS    " -pg")
+    string(APPEND CMAKE_SHARED_LINKER_FLAGS " -pg")
 endif()
 
 ## ---------------------------------------------------------------------------
@@ -606,6 +621,25 @@ else()
 endif()
 
 ## ---------------------------------------------------------------------------
+## Abseil check-op library  (mirrors AX_WITH_ABSEIL)
+## ---------------------------------------------------------------------------
+## The debug YAML test links absl_log_internal_check_op when rapidyaml is in
+## use, matching the autotools @ABSL_LIBS@ handling.
+set(ABSL_LIBS "")
+if(WITH_RAPIDYAML)
+    execute_process(
+        COMMAND pkg-config --exists absl_log_internal_check_op
+        RESULT_VARIABLE _absl_rc
+    )
+    if(_absl_rc EQUAL 0)
+        set(ABSL_LIBS "absl_log_internal_check_op")
+        message(STATUS "abseil check-op library: found")
+    else()
+        message(STATUS "abseil check-op library: not found")
+    endif()
+endif()
+
+## ---------------------------------------------------------------------------
 ## Threads
 ## ---------------------------------------------------------------------------
 if(ENABLE_THREADS)
@@ -636,8 +670,9 @@ endif()
 ## ---------------------------------------------------------------------------
 ## Generate version.h
 ## ---------------------------------------------------------------------------
-## Substitution variables for version.h.in
-string(TIMESTAMP DATE "%Y/%m/%d")
+## Substitution variables for version.h.in.  DATE carries the full date(1)
+## output, matching the autotools DATE variable from AX_HOST.
+execute_process(COMMAND date OUTPUT_VARIABLE DATE OUTPUT_STRIP_TRAILING_WHITESPACE)
 set(DEFS              "")
 set(CPPFLAGS          "")
 set(CFLAGS            "${CMAKE_C_FLAGS}")
@@ -716,11 +751,14 @@ if(NOT EXISTS "${_semconv_h}")
         "scripts/semconv.sh did not produce scripts/semconv.h")
 endif()
 
-## Extract only #define lines (skip copyright / include guards).
+## Extract the #define lines, excluding the template's own include guard.
+## An empty extraction aborts the configure step.
 execute_process(
-    COMMAND grep "^#define [a-z]" "${_semconv_h}"
+    COMMAND grep "^#define " "${_semconv_h}"
+    COMMAND grep -v "OPENTELEMETRY_C_WRAPPER_SEMANTIC_CONVENTIONS_H"
     OUTPUT_VARIABLE OTEL_CPP_HDR_SEMANTIC_CONVENTIONS
     OUTPUT_STRIP_TRAILING_WHITESPACE
+    COMMAND_ERROR_IS_FATAL ANY
 )
 
 configure_file(
@@ -737,29 +775,53 @@ set(exec_prefix "${CMAKE_INSTALL_PREFIX}")
 set(libdir      "${CMAKE_INSTALL_FULL_LIBDIR}")
 set(includedir  "${CMAKE_INSTALL_FULL_INCLUDEDIR}")
 
-if(BUILD_STATIC)
-    ## Build Libs.private from all transitive dependencies.
-    set(_pc_libs_private "")
-    foreach(_dir IN LISTS OPENTELEMETRY_LIBRARY_DIRS YAML_LIBRARY_DIRS
-                          SYSLIB_LIBRARY_DIRS)
-        string(APPEND _pc_libs_private " -L${_dir}")
-    endforeach()
-    foreach(_lib IN LISTS OPENTELEMETRY_LIBRARIES EXPORTER_LIBRARIES
-                          SDK_LIBRARIES SYSLIB_LIBRARIES YAML_LIBRARIES)
-        string(APPEND _pc_libs_private " -l${_lib}")
-    endforeach()
-    if(ENABLE_THREADS)
-        string(APPEND _pc_libs_private " -lpthread")
+## Build Libs.private from all transitive dependencies.  Both library types
+## expose it: the static .pc needs it to link at all, and the shared .pc
+## serves pkg-config --static consumers, mirroring the autotools
+## LIBS_PRIVATE substitution.  Entries probed as absolute paths (the
+## shared-build exporter and YAML libraries) are folded back into -L/-l
+## form so the .pc stays relocatable.
+set(_pc_priv_dirs "")
+set(_pc_priv_libs "")
+foreach(_dir IN LISTS OPENTELEMETRY_LIBRARY_DIRS YAML_LIBRARY_DIRS
+                      SYSLIB_LIBRARY_DIRS)
+    list(APPEND _pc_priv_dirs "${_dir}")
+endforeach()
+foreach(_item IN LISTS OPENTELEMETRY_LIBRARIES EXPORTER_LIBRARIES
+                       SDK_LIBRARIES SYSLIB_LIBRARIES YAML_LIBRARIES)
+    if(IS_ABSOLUTE "${_item}")
+        get_filename_component(_dir   "${_item}" DIRECTORY)
+        get_filename_component(_fname "${_item}" NAME_WE)
+        string(REGEX REPLACE "^lib" "" _fname "${_fname}")
+        list(APPEND _pc_priv_dirs "${_dir}")
+        list(APPEND _pc_priv_libs "${_fname}")
+    else()
+        list(APPEND _pc_priv_libs "${_item}")
     endif()
+endforeach()
+list(REMOVE_DUPLICATES _pc_priv_dirs)
 
-    ## The wrapper exposes a C API but is implemented in C++; -lstdc++ is needed
-    ## so pure-C consumers can link the static archive with gcc.  libgrpc.a
-    ## (pulled in via the OpenTelemetry SDK) references lround() from libm,
-    ## so -lm is required as well under linkers that enforce
-    ## --no-copy-dt-needed-entries (the default on modern toolchains).
-    string(APPEND _pc_libs_private " -lstdc++ -lm")
-    string(STRIP "${_pc_libs_private}" _pc_libs_private)
+set(_pc_libs_private "")
+foreach(_dir IN LISTS _pc_priv_dirs)
+    string(APPEND _pc_libs_private " -L${_dir}")
+endforeach()
+foreach(_lib IN LISTS _pc_priv_libs)
+    string(APPEND _pc_libs_private " -l${_lib}")
+endforeach()
+if(ENABLE_THREADS)
+    string(APPEND _pc_libs_private " -lpthread")
+endif()
 
+## The wrapper exposes a C API but is implemented in C++; -lstdc++ is needed
+## so pure-C consumers can link the static archive with gcc.  libgrpc.a
+## (pulled in via the OpenTelemetry SDK) references lround() from libm,
+## so -lm is required as well under linkers that enforce
+## --no-copy-dt-needed-entries (the default on modern toolchains).
+string(APPEND _pc_libs_private " -lstdc++ -lm")
+string(STRIP "${_pc_libs_private}" _pc_libs_private)
+set(LIBS_PRIVATE "${_pc_libs_private}")
+
+if(BUILD_STATIC)
     if(ENABLE_DEBUG)
         set(_pc_cflags "-I\${includedir} -DOTELC_DBG_MEM")
     else()
@@ -973,16 +1035,18 @@ add_wrapper_executable(test-logger${_test_suffix}
 ## test-yaml  (C++ -- not installed)
 add_wrapper_executable(test-yaml${_test_suffix} CXX
     SOURCES test/test-yaml.cpp test/test-util.c)
+if(ENABLE_DEBUG AND ABSL_LIBS)
+    target_link_libraries(test-yaml${_test_suffix} PRIVATE ${ABSL_LIBS})
+endif()
 
 ## test-multi  (multi-instance integration test -- not installed)
 add_wrapper_executable(test-multi${_test_suffix}
     SOURCES test/test-multi.c test/test-util.c test/opentelemetry.c)
 
-## Copy YAML config files to the build directory so test programs can find them
-file(GLOB _test_yml_files "${CMAKE_CURRENT_SOURCE_DIR}/test/*.yml")
-foreach(_yml IN LISTS _test_yml_files)
-    configure_file("${_yml}" "${CMAKE_CURRENT_BINARY_DIR}" COPYONLY)
-endforeach()
+## Copy the YAML test configuration to the build directory so test programs
+## can find it (mirrors the autotools yml_DATA entry).
+configure_file("${CMAKE_CURRENT_SOURCE_DIR}/test/otel-cfg.yml"
+               "${CMAKE_CURRENT_BINARY_DIR}" COPYONLY)
 
 ## Custom "test" target -- builds all test programs on demand.
 add_custom_target(test DEPENDS
@@ -1083,8 +1147,7 @@ install(FILES
 )
 
 ## YAML test configuration
-file(GLOB _install_yml_files "${CMAKE_CURRENT_SOURCE_DIR}/test/*.yml")
-install(FILES ${_install_yml_files}
+install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/test/otel-cfg.yml"
     DESTINATION "${CMAKE_INSTALL_DOCDIR}"
 )
 

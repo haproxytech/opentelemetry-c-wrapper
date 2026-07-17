@@ -39,3 +39,4 @@ OPENTELEMETRY_INCLUDEDIR="${1:-/opt/include}"
 	done
 	sort "${_ax_var_sc_tmp}" | uniq >> "${_ax_var_sc_out}"
 	${AWK} 'BEGIN { RS="@SEMANTIC_CONVENTIONS@" } NR==2 { print }' "${_ax_var_sc_in}" >> "${_ax_var_sc_out}"
+	rm -f "${_ax_var_sc_tmp}"
