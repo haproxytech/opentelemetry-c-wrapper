@@ -27,8 +27,6 @@ __CPLUSPLUS_DECL_BEGIN
 #define OTELC_DBG_METRIC_OBSERVABLE_CB(l,h,p) \
 	OTELC_DBG_STRUCT(_##l, h, h " %p:{ %p %p %p }", (p), (p)->func, (p)->value, (p)->data)
 
-#define OTEL_METRIC_INSTRUMENT_IS_OBSERVABLE(t)   OTELC_IN_RANGE((t), OTELC_METRIC_INSTRUMENT_OBSERVABLE_COUNTER_INT64, OTELC_METRIC_INSTRUMENT_OBSERVABLE_UDCOUNTER_DOUBLE)
-
 /* <opentelemetry/sdk/metrics/instruments.h> */
 #define OTELC_METRIC_INSTRUMENT_DEFINES                                                    \
 	OTELC_METRIC_INSTRUMENT_DEF(COUNTER_UINT64,              kCounter                ) \

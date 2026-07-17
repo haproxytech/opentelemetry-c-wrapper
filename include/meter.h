@@ -48,6 +48,8 @@
 		OTEL_METER_IMPL(meter)->instrument.erase_cnt.load(),                                       \
 		OTEL_METER_IMPL(meter)->instrument.destroy_cnt.load())
 
+#define OTEL_METRIC_INSTRUMENT_IS_OBSERVABLE(t)   OTELC_IN_RANGE((t), OTELC_METRIC_INSTRUMENT_OBSERVABLE_COUNTER_INT64, OTELC_METRIC_INSTRUMENT_OBSERVABLE_UDCOUNTER_DOUBLE)
+
 #define T_CONSTRUCTOR(arg_ptr, arg_type, arg_member)                                                                              \
 	otel_nostd::arg_ptr<otel_metrics::arg_type> arg_member;                                                                   \
 	                                                                                                                          \
