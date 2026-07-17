@@ -1,0 +1,468 @@
+ChangeLog
+=========
+
+Release notes are grouped by package version.  Entries summarise individual
+commits, with a few directly related commits folded into a single bullet, and
+the git log keeps the full descriptions.
+
+
+Version 3.0.0 (2026-07-17)
+--------------------------
+
+API and ABI break since 2.2.1.  Provider state moved into per-instance handles
+and the new otelc_ctx library context now replaces the previous global state.
+Every caller threads that context through the public API; existing consumers
+cannot recompile or link against the new shared object without source-level
+changes.
+
+The meter hot path now scales: the handle-map lookups run under a shared mutex,
+the attribute intermediates use flat vectors instead of maps and the instrument
+names resolve through a case-folded index, together nearly doubling the metric
+throughput of a single instance at high worker counts.  The YAML parser still
+accepts the legacy flat signal layout written for the 2.x releases, and the new
+otelc_ctx_nstate_get() reports how the context name resolved against each signal
+section.  Destroying the last tracer now releases any spans left open instead
+of leaking their handles, and a memory audit hardened the wrapper around it:
+every span and span context operation tolerates the handle maps torn down with
+that tracer, creating a span context without a tracer fails instead of crashing,
+concurrent error reporting no longer double-frees a shared message, allocation
+failure inside a constructor returns an error instead of escaping the C API,
+carrier injection releases the previous content instead of orphaning it, and
+the text maps and the debug allocator enforce strict ownership and overflow
+rules.  The debug build also became safer: the memory tracker tolerates being
+disabled while other threads allocate, custom allocation callbacks are accepted
+only in matching pairs and the public headers present one consistent debug ABI,
+so the debug library works through its pkg-config file.  A closing macro audit
+made the semantic convention extraction run on any POSIX awk and brought the
+alternative CMake build to parity with the autotools output, from the generated
+headers through the pkg-config metadata to the option surface.
+
+  * VERSION: Bumped package version to 3.0.0; library version 7:0:0.
+  * MAJOR: Moved provider state into per-instance handles so multiple tracers,
+    meters or loggers can coexist in a single process.
+  * REFACTOR: Introduced explicit otelc_ctx library context that owns the parsed
+    YAML configuration; otelc_init() returns a context that otelc_deinit()
+    releases.  The test programs and shared test-util helpers were updated for
+    the new signatures in the same commit.
+  * REFACTOR: Added per-name signal lookup with default fallback so a single
+    YAML document can hold several independent signal definitions; the ryml
+    backend now rejects duplicate keys at load.  test-yaml.cpp and the test
+    configuration were updated for the new layout in the same commit.
+  * MEDIUM: Guarded the meter handle maps with a shared mutex so lookups and
+    updates run in parallel while creation keeps the exclusive lock and
+    writers cannot starve; the single-instance metric throughput nearly
+    doubled at high worker counts.
+  * MEDIUM: Released the span handles left open when the last tracer is
+    destroyed, which had leaked together with the SDK objects they owned.
+    Handle numbering now survives map re-creation so a leftover instance can
+    no longer destroy a live handle of a newer generation, a thread-exit
+    reaper releases the per-thread maps of the thread-local build and the
+    propagation carriers drop entries instead of throwing out of the C API.
+    The handle map and tracer implementation state allocations go through a
+    nothrow construction helper that absorbs constructor exceptions and the
+    start description now documents the same drain requirement as destroy does.
+    README-configuration warns about leftover handles at process exit in the
+    static-handle build.
+  * MEDIUM: Guarded every span and span context operation against handle maps
+    already torn down together with the last tracer, so a late call on a
+    leftover instance fails cleanly, and otelc_span_context_create() reports
+    an error instead of crashing when no tracer exists.
+  * MEDIUM: Serialized the replacement of error strings so concurrent error
+    paths cannot double-free a shared err field, made the text maps take no
+    ownership on every failure path while releasing their own duplicates and
+    put the counting processors' status pointer behind a mutex.  Injecting into
+    a carrier writer now releases the content a previous inject left in its
+    text map and the writer ownership is documented, yaml_read() returns its
+    string on the OTELC_SFREE() channel in the libfyaml build as well, and the
+    free-and-clear macros require a side-effect-free lvalue argument.
+  * MEDIUM: Hardened the debug allocator to recognize the self-referencing
+    metadata of untracked blocks in realloc and free and to reject the size
+    arithmetic that would overflow, taught the memory tracker to survive being
+    disabled while other threads wait on its mutex, moved the diagnostics dump
+    under that mutex and made otelc_ext_init() accept the allocation callbacks
+    only as a complete pair.  The public headers now derive OTELC_DBG_MEM from
+    DEBUG and DEBUG_OTEL and gate the whole debug ABI on it, so a consumer built
+    with the debug pkg-config flags gets a working debug ABI instead of a mixed
+    one.
+  * MINOR: Moved exporter logfiles into per-instance state so concurrent
+    ostream-exporter tracers no longer contend for the same file.
+  * MINOR: Moved meter instrument and view handle maps into per-meter state so
+    two meters using the same context no longer collide on instrument names;
+    otelc_statistics() takes a meter argument.
+  * MINOR: Reference-counted shared span maps across tracer destroys so
+    destroying one tracer does not invalidate spans owned by another.
+  * MINOR: Hardened SDK handle lifetimes across signal hot paths via local
+    shared_ptr copies and try/catch around shared_ptr ctor calls that may throw.
+  * MINOR: Hardened tracer carrier callback so the reinterpret_cast follows the
+    null check; documented the same-thread destroy contract for the
+    thread-local-handle build and the install-catch propagator-reset reasoning.
+  * MINOR: Validated meter instrument pointers after creation; an empty inner
+    unique_ptr / shared_ptr no longer reaches the dispatch sites.
+  * MINOR: Deduplicated meter update_instrument observable branches behind
+    OTEL_METRIC_INSTRUMENT_IS_OBSERVABLE and factored the logger span-context
+    extraction into a single static helper.
+  * MINOR: Gated OTELC_DEFER on GCC and added portable OTELC_DEFER_CALL via
+    __attribute__((cleanup)) so Clang and C++ clients have a usable form without
+    producing an executable-stack mark on the resulting object.
+  * MINOR: Renamed otelc_dbg_mem "unused" field to "assigned" to match its
+    actual high-water-mark semantics.
+  * MINOR: Hardened the parent_based sampler so per-state delegate allocations
+    use otel::make_shared_nothrow, returning an empty shared_ptr on failure
+    rather than aborting under -fno-exceptions.
+  * MINOR: Tidied redundant "? true : false" conversions across the wrapper on
+    calls that already return bool.
+  * MINOR: Added a top-level handle_map_shards YAML key that overrides the
+    default span and span-context handle-map shard count; the first otelc_init()
+    call that carries a valid key applies it and later calls still validate but
+    do not change the live value.
+  * MINOR: Added a per-signal enabled flag (default true) and a set_enabled
+    operation to otelc_tracer, otelc_meter and otelc_logger that gate telemetry
+    creation at runtime.
+  * MINOR: Replaced the std::map attribute intermediates with flat vectors
+    that borrow the caller's keys and values, cutting per-call allocations;
+    a duplicate key within one call now resolves in the SDK map, where the
+    last value wins.
+  * MINOR: Indexed meter instruments by case-folded name and type so the
+    create and lookup path resolves an existing instrument in constant time
+    instead of scanning the whole registry.
+  * MINOR: Accepted legacy signal configurations without a naming level; when
+    a signal section holds neither the requested nor the 'default' entry, the
+    section itself now serves as the configuration, recognized through the
+    mandatory scope_name key.  otelc_init() records how the context name
+    resolved against each signal section and the new exported function
+    otelc_ctx_nstate_get() reads the state back.
+  * MINOR: Replaced the error message texts that appeared in more than one place
+    with OTEL_ERROR_MSG_* macros defined in the module headers; the emitted
+    texts did not change and suffix variants build on the base macro through
+    compile-time concatenation.
+  * MINOR: Hardened the meter instrument and view handle constructors against
+    allocation failure, which had terminated the process, and serialized the
+    scope name replacement in the meter start path under the creation mutex.
+    The meter implementation state construction is guarded the same way and
+    the meter start description documents the drain requirement.
+  * MINOR: Fixed the logger scope name replacement to release the previous
+    name and run serialized, and moved the logfile member in front of the
+    provider so its destruction cannot flush into a destroyed stream.
+    The logger implementation state construction is guarded against constructor
+    exceptions and the logger start description documents the drain requirement.
+  * TEST: Added multi-instance integration tests (test-multi.c) covering
+    distinct contexts for tracers, meters and loggers, including an
+    inject/extract round-trip through each per-tracer propagator.
+  * MINOR: Documented multi-instance caveats and matching test coverage before
+    the per-instance refactor was completed.
+  * TEST: Added optional pidfile creation to the test binary and speed.sh; the
+    test program writes its PID through a dedicated helper with a non-fatal
+    error path, and speed.sh refuses to start on a stale pidfile.
+  * TEST: Fixed speed.sh test executable and configuration handling.
+  * TEST: Switched speed.sh runtime and runtype arguments to -r and -t getopts
+    flags, with a usage message for unknown flags before the run.
+  * TEST: Grouped OTel config and runtime handles into nested structures
+    (cfg_otel_ctx for inputs, prg_otel for runtime handles) so configuration
+    and active program state no longer share a flat block.
+  * TEST: Ran multiple OpenTelemetry instances in parallel via -i; per-instance
+    startup moved into instance_thread() with worker slots disjoint across
+    instances and per-context post-run checks summed across the pool.  A failing
+    instance now propagates its exit status into the run result.
+  * TEST: Lowered otlp_file flush_interval to one second so a multi-instance
+    teardown drains within a bounded window without losing steady-state
+    on-disk batching.
+  * TEST: Appended the missing newline to the --debug help line so usage() no
+    longer bleeds it into the next help entry.
+  * TEST: Added speed-show.sh, summarizing worker-group throughput logs with
+    per-group-size minimum, maximum and total statistics via an embedded awk
+    program.
+  * TEST: Verified per-instance isolation of the exported telemetry; each
+    instance exports every signal to its own file and the tests assert that
+    spans, log records and counter totals never cross between two live
+    instances.
+  * TEST: Added a leftover-span teardown check to test-multi that destroys the
+    last tracer with spans still open and then disposes of them, proving the
+    handles are released and a late disposal only frees the C structure.
+  * DOC: Updated README files for the new ctx-based API and YAML layout,
+    including the per-name subtree walkthroughs.
+  * DOC: Synced logger and meter function comments and clarified semantics;
+    the observable-callback contract now documents wrapper-owned scratch
+    storage repurposed each observation cycle, log and log_span document the
+    zero returned when severity is disabled, and record_create notes silent
+    truncation on undersized span/trace ids.
+  * DOC: Documented destroy lifetime contracts and lock-macro invariants;
+    callers must drain in-flight ops and end every span before destroy frees
+    the impl, and the OTEL_LOCK_TRACER family must live at function or block
+    scope, never as a single-statement body for if/while/for.
+  * DOC: Documented the meter performance work in README-meter_performance
+    and refreshed the MEMO sections that described the old locking.
+  * BUILD: Made the semconv macro extraction portable across awk variants; the
+    m4 extractor dropped the gawk-only gensub() call and the bare '*' pattern
+    that mawk rejects, and now produces the same output as scripts/semconv.sh.
+  * MINOR: span: Fixed the return dispatch of the context lock macro; the new
+    OTEL_SPAN_CONTEXT_RETURN group selects the failure value that matches the
+    empty, _INT and _PTR suffix forms.
+  * REFACTOR: Hardened the shared header macro expansions; OTELC_STR_ARG and
+    OTELC_VALUE_STR expand fully parenthesized and OTEL_SPAN_UPDATE_BAGGAGE no
+    longer ends with a stray line continuation.
+  * MINOR: meter: Moved the observable instrument type check into the internal
+    meter header; the public header no longer exposes an internal-style macro
+    name.
+  * DOC: Corrected stale macro references in header comments; the debug-level
+    NOTE points at an existing macro and the OTEL_YAML_STR annotation matches
+    the int argument type actually consumed.
+  * TEST: Cast discarded ops call results to void where the worker loop had
+    ignored value-returning meter and logger operations.
+  * BUILD: Aligned the alternative CMake build system with the autotools output;
+    the generated otel_cpp.h matches byte for byte, the shared pkg-config file
+    carries the full Libs.private closure, and the abseil, gprof, prefix and
+    package date handling mirror the autotools configure.
+  * DOC: Filled in the ChangeLog from the commit history.
+
+
+Version 2.2.1 (2026-07-04)
+--------------------------
+
+Patch release on the 2.2 line, mostly YAML configuration-parsing fixes.  The
+otelc_memdup() and otelc_text_map_free() functions are now exported from the
+shared library, so the library current and age both rose while the soname
+stayed unchanged (6:0:1), keeping existing binaries compatible.
+
+  * VERSION: Bumped package version to 2.2.1; library version 6:0:1.
+  * BUG/MEDIUM: yaml: Treated empty scalar values as absent so an empty value
+    no longer reads past the parse arena into neighbouring document text.
+  * BUG/MINOR: yaml: Treated a missing sequence path as absent so an optional
+    http_headers or resources map no longer aborts startup.
+  * BUG/MINOR: meter: Rejected an export_interval equal to export_timeout, which
+    the SDK would otherwise silently reset to its defaults.
+  * BUG/MINOR: Exported otelc_memdup() and otelc_text_map_free(), which the
+    public headers already declared but the version scripts kept local.
+  * MINOR: yaml: Hardened the libfyaml lookups, rejected node names containing
+    '%', and aligned malformed-sequence handling across both parser backends.
+  * MINOR: tracer: Completed the entry traces and corrected the handle-init
+    description.
+  * MINOR: meter: Took the view lock after the entry trace and argument checks
+    rather than before them.
+  * BUILD: Made the public umbrella header self-contained so the documented
+    Quick Start examples compile as written.
+  * TEST: Added empty-value regression tests to test-yaml.
+  * DOC: Corrected stale descriptions in the sources and headers.
+  * DOC: Corrected stale and inaccurate statements in the documentation.
+  * DOC: Linked the documentation files from the README.md overview.
+
+
+Version 2.2.0 (2026-06-26)
+--------------------------
+
+ABI break since 2.1.0.  struct otelc_export_status gained record-count fields,
+so the caller-provided pipeline-status struct grew; the library current rose
+with the age kept at 0 (5:0:0), while the package took a minor bump.
+
+  * VERSION: Bumped package version to 2.2.0; library version 5:0:0.
+  * MINOR: Added records_ok and records_fail to the export-pipeline status,
+    tallied from each successful or failed batch in the span and log counting
+    exporters; the metric signal has no per-record count, so both stay -1.
+  * BUG/MINOR: Initialized the debug allocator metadata header in its pre-init
+    early-return path so a pointer handed out before the tracker exists stays
+    freeable, fixing a free(): invalid pointer abort at teardown.
+  * MINOR: Routed foreign blocks straight to the C library in otelc_dbg_free(),
+    matching otelc_dbg_realloc(), so freeing memory the debug allocator does
+    not own no longer reports invalid magic or metadata.
+
+
+Version 2.1.0 (2026-06-19)
+--------------------------
+
+ABI break since 2.0.0.  The per-signal otelc_processor_dropped_count() was
+replaced by otelc_pipeline_status(), which fills a caller-provided struct
+covering the trace, log and metric signals; removing the old public symbol
+raised the library current and reset its age, while the package took a minor
+bump for the added accessor.
+
+  * VERSION: Bumped package version to 2.1.0; library version 4:0:0.
+  * MINOR: Added the otelc_pipeline_status() accessor and its status structs,
+    replacing the per-signal otelc_processor_dropped_count(); the trace fields
+    are filled from the span exporter outcomes and the span processor queue.
+  * MINOR: Filled the export-pipeline status log fields from the log exporter
+    outcomes and the log processor queue.
+  * MINOR: Filled the export-pipeline status metric fields via a counting
+    metric exporter wired into the periodic reader; a metric reader has no
+    queue, so its dropped and queue fields stay -1.
+  * DOC: Documented the export-pipeline status accessor and its per-signal
+    fields in the README, including the asynchronous-exporter caveat.
+
+
+Version 2.0.0 (2026-06-05)
+--------------------------
+
+API and ABI break since 1.1.0.  The logger log, log_span, log_body and
+log_body_span operations gained a ts_obs argument that sets a record's
+observed timestamp; changing those public signatures is breaking, so the
+package took a major bump and the library age was reset to 3:0:0.
+
+  * VERSION: Bumped package version to 2.0.0; library version 3:0:0.
+  * MINOR: Added a ts_obs argument to log, log_span, log_body and log_body_span
+    that sets the log record's observed timestamp.
+  * BUG/MINOR: Stopped forcing the observed timestamp to the event time,
+    leaving it to the SDK default and noting any record whose event time
+    post-dates the observed time.
+  * MINOR: Moved the C++-only method-entry trace macros into an internal
+    debug.h header so the public C API header compiles as plain C.
+
+
+Version 1.1.0 (2026-05-09)
+--------------------------
+
+Backwards-compatible additions and build-system fixes since 1.0.2.  Library
+version 2:0:2 keeps the existing soname while exposing the new CPU affinity
+option as additional symbols.
+
+  * VERSION: Bumped package version to 1.1.0; library version 2:0:2.
+  * MINOR: Added optional CPU affinity (cpu_id) for OTel SDK threads via
+    pthread_setaffinity_np(), configurable per component in YAML.
+  * BUG/MINOR: Fixed double free in make_shared_nothrow on bad_alloc.
+  * BUILD: Added static-library build option to autotools and CMake, with
+    transitive dependency probing for static OTel C++ SDK builds.
+  * BUILD: Added static/dynamic OTel C++ SDK build option to build-bundle.sh
+    (lib-type argument).
+  * BUILD: Added monorepo assembly script for opentelemetry-cpp 1.26.0.
+  * BUILD: Probed OTel SDK libraries for cmake shared builds too.
+  * BUILD: Pulled in the C++ runtime for static linking of the wrapper.
+  * BUILD: Split rpath change into its own opentelemetry-cpp patch.
+  * BUILD: Made sh_archive idempotent and dropped redundant cmake flag.
+  * BUILD: Auto-detected ryml lib vs lib64 via new AX_FIND_LIBDIR macro.
+  * BUILD: Split ryml AC_LANG_PROGRAM includes onto separate lines.
+  * BUILD: Fixed function checks failing under -Werror by switching to
+    check_symbol_exists with proper headers.
+  * BUILD: Replaced GCC typeof with decltype/__typeof__ for portability.
+  * BUILD: Guarded async-only options with ENABLE_ASYNC_EXPORT.
+  * BUILD: Silenced GCC 15 alloc-size warning on trace_state Set/Delete.
+  * BUILD: Silenced clang nullability warnings from absl headers.
+  * BUILD: Silenced unused-but-set-variable warnings in log_handler and
+    worker_run.
+  * BUILD: Fixed clang vs GCC detection order in compiler.h.
+  * BUILD: Added override specifier to Keys() in propagation.h.
+
+
+Version 1.0.2 (2026-04-16)
+--------------------------
+
+Internal changes only since 1.0.1.  No public API or ABI changes; library
+version 1:1:1.
+
+  * VERSION: Bumped package version to 1.0.2.
+  * MINOR: Added configurable background_thread_wait_for YAML option for the
+    OTLP/HTTP exporter, preventing the std::terminate() crash caused by
+    thread-respawn failure inside MaybeSpawnBackgroundThread.
+  * MINOR: Pre-spawned exporter background threads at startup for OTLP HTTP,
+    OTLP gRPC, OTLP File and Elasticsearch exporters.
+  * BUILD: Added OTel SDK patch 0006 exposing SetBackgroundWaitFor() through the
+    OTLP/HTTP exporter chain.
+  * BUILD: Split the monolithic opentelemetry-cpp-1.26.0.patch into five
+    numbered git format-patch files (0001-0005) covering system SSL/rpath and
+    MaybeSpawnBackgroundThread for HTTP, Elasticsearch, File and gRPC exporters.
+  * BUILD: Updated build script to apply numbered patches in order.
+  * BUILD: Corrected patch file resolution in sh_archive() so the glob pattern
+    is expanded instead of passed literally to patch.
+  * DOC: Expanded the YAML configuration reference in README to cover every
+    exporter, sampler, processor, reader and resource key, with a table of
+    contents for the new subsections.
+  * DOC: Noted manual patch and CMake option requirements in both README files
+    for users who do not run the bundled build scripts.
+
+
+Version 1.0.1 (2026-04-11)
+--------------------------
+
+Patch release for build system improvements.  No library interface changes since
+1.0.0.
+
+  * VERSION: Bumped package version to 1.0.1.
+  * BUILD: Added minimum OTel SDK version (>= 1.26.0) and ABI version 2
+    enforcement at configure time in both autotools and CMake.
+  * BUILD: Required autoconf-archive (clear configure error when
+    AX_CHECK_COMPILE_FLAG is missing); commented out optional AWS-LC and curl
+    install steps in build-bundle.sh; bootstrap exits on aclocal failure instead
+    of continuing silently.
+  * DOC: Documented build-script usage and dependency defaults, recommending the
+    provided build scripts over system packages.
+
+
+Version 1.0.0 (initial release, 2025-12-09 .. 2026-04-04)
+---------------------------------------------------------
+
+Initial public release of the OpenTelemetry C wrapper library, a C-compatible
+interface to the OpenTelemetry C++ SDK for instrumenting native C applications.
+The trace, metrics and logs signals are all covered by the C API, with
+YAML-driven configuration and both autotools and CMake build systems.
+
+Library
+
+  * Initial commit: trace signal C wrapper API, public C API headers versus
+    internal C++ implementation split, autotools build system, build-test
+    scripts and a C++ snippet exercising the upstream API.
+  * MEDIUM: Added meter instrumentation support (full meter lifecycle, all
+    synchronous and observable instrument types, In-Memory, ostream, OTLP File,
+    OTLP gRPC and OTLP HTTP exporters).
+  * MEDIUM: Added logger instrumentation support (24 severity levels, trace/span
+    correlation, Elasticsearch and OTLP exporters, batch and simple log record
+    processors).
+  * MEDIUM: Support LoggerProvider with multiple processors and exporters via
+    YAML sequence configuration.
+  * MEDIUM: Support multiple processors and exporters in tracer.
+  * MEDIUM: meter: Support multiple metric readers / exporters pairs.
+  * MEDIUM: Add dropped span / log counting via delegating processors; exposed
+    through otelc_processor_dropped_count(type).
+  * MEDIUM: Expose SDK internal log handler through the C API
+    (otelc_log_set_handler / otelc_log_set_level), with optional AttributeMap
+    forwarding to otelc_kv structures.
+  * MEDIUM: Add sharded map (64 shards for spans, single shard for meter
+    instruments and views) to eliminate lock contention.
+  * MEDIUM: Convert otel_meter / otel_tracer / otel_logger globals to
+    std::atomic<raw pointer> + shared_ptr owner for safe concurrent access
+    against the destroy path.
+  * MINOR: Added otelc_value_visit() to dispatch on u_type, replacing if/else
+    dispatch chains in the value and kv helpers.
+  * MINOR: Added rapidyaml as the default YAML backend (libfyaml is still
+    selectable via --with-libfyaml; the two are exclusive).
+  * MINOR: YAML addon: yaml_get_sequence_len(), yaml_is_sequence(),
+    yaml_get_sequence_value() and yaml_get_node_v() helper.
+  * MINOR: Extracted per-instance ops into separate vtables for span, span
+    context, tracer, meter and logger.
+  * MINOR: span: added record_exception following the OTel semantic conventions
+    (exception.type / message / stacktrace).
+  * MINOR: span: added single-entry set_baggage operation.
+  * MINOR: logger: added log_body and log_body_span operations that accept an
+    otelc_value body instead of a printf-style format.
+  * MINOR: meter: added get_instrument by name and type, with case-insensitive
+    name comparison.
+  * MINOR: sampler: added ParentBased per-state delegates for the four parent
+    states (remote_sampled, remote_not_sampled, local_sampled,
+    local_not_sampled).
+  * REFACTOR: Unified error-return macros via signal dispatch, adding
+    OTEL_SIGNAL_RETURN* and signal-agnostic OTEL_RETURN*.
+  * REFACTOR: Unified shared exporter dispatch (ostream, OTLP File, OTLP gRPC,
+    OTLP HTTP) into ifdef-guarded macros in exporter.h.
+  * BUG/MEDIUM: build: linked the library with -z nodelete to keep the OTel C++
+    SDK GlobalLogHandler vtable valid past dlclose().
+
+Build
+
+  * BUILD: Added CMake build system as an alternative to autotools, including
+    find_package() support, exporter probing, YAML backend selection, and
+    version-script symbol visibility.
+  * BUILD: Added dependency build scripts (build.sh, build-bundle.sh, common.sh,
+    linux-update.sh) for all required third-party libraries, with patches for
+    nlohmann/json and opentelemetry-cpp.
+  * BUILD: Deferred test program compilation to 'make test' in both autotools
+    and CMake; the installed test binary is conditional.
+
+Tests and documentation
+
+  * TEST: Added the main multithreaded test program (test.c) covering all three
+    signals, with up to 8192 workers, plus YAML configs, Collector config,
+    Elastic APM docker-compose stack and a speed benchmark script.
+  * TEST: Added dedicated test programs for tracer, meter, logger and YAML
+    parsing, sharing test-util.c / test-util.h.
+  * DOC: Initial README, MEMO and TODO documents.
+  * DOC: Added sharded map vs. void pointer analysis document with benchmark
+    results across 1-1024 threads.
+  * DOC: Added naming convention document for function variants (_var, _kv_var,
+    _kv_n, _v) and the kv / kv_len parameter rule.
+  * DOC: Added README.md and README-configuration covering the OTELC_USE_*
+    compile-time configuration macros.
