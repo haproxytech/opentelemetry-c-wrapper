@@ -1123,7 +1123,7 @@ int main(int argc, char **argv)
     ctx = otelc_init("otel-cfg.yml", "default", &err);
     if (ctx == NULL) {
         fprintf(stderr, "Failed to init: %s\n", err);
-        free(err);
+        OTELC_SFREE(err);
         return 1;
     }
 
@@ -1131,7 +1131,7 @@ int main(int argc, char **argv)
     tracer = otelc_tracer_create(ctx, &err);
     if (tracer == NULL) {
         fprintf(stderr, "Failed to create tracer: %s\n", err);
-        free(err);
+        OTELC_SFREE(err);
         otelc_deinit(&ctx, NULL, NULL, NULL);
         return 1;
     }
@@ -1186,7 +1186,7 @@ int main(int argc, char **argv)
     ctx = otelc_init("otel-cfg.yml", "default", &err);
     if (ctx == NULL) {
         fprintf(stderr, "Failed to init: %s\n", err);
-        free(err);
+        OTELC_SFREE(err);
         return 1;
     }
 
@@ -1194,7 +1194,7 @@ int main(int argc, char **argv)
     meter = otelc_meter_create(ctx, &err);
     if (meter == NULL) {
         fprintf(stderr, "Failed to create meter: %s\n", err);
-        free(err);
+        OTELC_SFREE(err);
         otelc_deinit(&ctx, NULL, NULL, NULL);
         return 1;
     }
@@ -1248,7 +1248,7 @@ int main(int argc, char **argv)
     ctx = otelc_init("otel-cfg.yml", "default", &err);
     if (ctx == NULL) {
         fprintf(stderr, "Failed to init: %s\n", err);
-        free(err);
+        OTELC_SFREE(err);
         return 1;
     }
 
@@ -1256,7 +1256,7 @@ int main(int argc, char **argv)
     logger = otelc_logger_create(ctx, &err);
     if (logger == NULL) {
         fprintf(stderr, "Failed to create logger: %s\n", err);
-        free(err);
+        OTELC_SFREE(err);
         otelc_deinit(&ctx, NULL, NULL, NULL);
         return 1;
     }
@@ -1287,10 +1287,11 @@ The library is designed for multi-threaded use.  All data-plane operations
 (creating spans, recording metrics, emitting logs) are thread-safe and can be
 called concurrently from any number of threads.
 
-Spans are stored in a sharded map with 64 independently-locked shards,
-distributing contention across threads.  Metric instrument operations are
-serialized through a single lock, as the instrument set is typically small and
-rarely modified after startup.
+Spans are stored in a sharded map with independently-locked shards (the shard
+count is set by the handle_map_shards YAML key, with a compile-time default),
+distributing contention across threads.  Metric instrument lookups and updates
+take a shared lock and run in parallel; instrument creation is serialized, as
+the instrument set is typically small and rarely modified after startup.
 
 Lifecycle operations -- otelc_init(), otelc_*_create(), start(), destroy(),
 otelc_deinit(), and otelc_lib_shutdown() -- must be called from a single thread,

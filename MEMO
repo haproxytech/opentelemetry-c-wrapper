@@ -733,7 +733,7 @@ Access pattern analysis:
     - Created and destroyed frequently (per-request in HTTP servers)
     - High concurrent access from multiple worker threads
     - Short-lived (milliseconds to seconds)
-    - Configured with 64 shards
+    - Configured with the runtime shard count (otel_handle_map_shards)
 
   Instrument and view handles:
     - Created once during initialization
@@ -744,13 +744,15 @@ Access pattern analysis:
 Key implementation details:
 
   Runtime-configured shard count:
-    template<typename T, bool shared = true>
+    template<typename T, bool shared = true, typename M = std::mutex>
     struct otel_handle { ... };
 
     The shard count is a constructor argument; the default constructor uses
-    OTEL_HANDLE_MAP_SHARDS (64).  Different handle instances are created with
-    different shard counts.  The constructor validates that the count is a
-    power of two and throws std::invalid_argument otherwise.
+    OTEL_HANDLE_MAP_SHARDS, and the span and span context maps pass the
+    runtime otel_handle_map_shards value (the handle_map_shards YAML key).
+    Different handle instances are created with different shard counts.  The
+    constructor validates that the count is a power of two and throws
+    std::invalid_argument otherwise.
 
   Storage: std::vector of shards:
     std::vector<struct shard> shards;
@@ -816,10 +818,12 @@ Why other approaches were rejected:
     negligible next to the map lookup and locking, and a runtime count lets
     every handle type share a single template instantiation.
 
-  Larger shard counts (128, 256):
-    Diminishing returns.  64 shards sufficient for observed thread counts
-    (typically 8-32 worker threads).  More shards = more memory (each shard
-    preallocates buckets), worse cache locality.
+  Fixed shard count:
+    Rejected in favor of the handle_map_shards YAML key on top of the
+    OTEL_HANDLE_MAP_SHARDS default.  More shards = more memory (each shard
+    preallocates buckets), worse cache locality, so the count is tunable per
+    deployment; README-sharded_map records the measurements behind the
+    default.
 
 Measured behavior:
 
@@ -840,24 +844,42 @@ Measured behavior:
 11. Initialization and Deinitialization Architecture
 ------------------------------------------------------------------------
 
-The library follows a layered initialization model.  A single global entry point
-opens the YAML configuration, then per-component factory functions build the
-provider/exporter/processor stack from that configuration.  Deinitialization
-tears everything down in reverse.
+The library follows a layered initialization model.  otelc_init() creates a
+library context that owns the parsed YAML configuration, then per-component
+factory functions build the provider/exporter/processor stack from that
+configuration.  Deinitialization tears everything down in reverse.
 
 Global entry points:
 
   otelc_init (src/util.cpp):
-    Opens the YAML configuration file.  Must be called before any component is
-    created.
+    Allocates a library context (struct otelc_ctx) owning the parsed YAML
+    configuration document and a duplicated copy of the caller-supplied name.
+    Reads the optional top-level handle_map_shards key (the first call whose
+    configuration carries a valid key applies it) and records the resolution
+    state of the context name against each signal section, readable through
+    otelc_ctx_nstate_get().  Multiple contexts may coexist in one process; a
+    context must exist before any component is created against it.
 
   otelc_deinit (src/util.cpp):
-    Closes the YAML configuration document, destroys logger, meter, and tracer
-    (if provided), and resets external callbacks and log handlers.
+    Destroys the logger, meter, and tracer passed in (if provided), then
+    closes the YAML configuration document attached to the context, frees the
+    context, and clears each pointer.  Only per-context state is touched.
+
+  otelc_close_cfg (src/util.cpp):
+    Releases the parsed YAML document attached to a context independently of
+    the providers, letting the process drop filesystem access once
+    initialization is complete.  The context itself remains valid and is
+    still torn down with otelc_deinit().
+
+  otelc_lib_shutdown (src/util.cpp):
+    Reinstates the default SDK internal log handler and resets the external
+    malloc, free, and thread-ID callbacks to the library defaults.  Called
+    once after the final context has been destroyed; optional for a process
+    that exits immediately afterwards.
 
   otelc_ext_init (src/util.cpp):
     Registers external malloc, free, and thread-ID callbacks.  Called from
-    otelc_deinit to reset them.
+    otelc_lib_shutdown to reset them.
 
 Per-component lifecycle:
 
@@ -873,24 +895,31 @@ Per-component lifecycle:
 
   Structures returned to callers:
 
-    otelc_tracer  (tracer.h)  -- err, scope_name, ops
-    otelc_meter   (meter.h)   -- err, scope_name, ops
-    otelc_logger  (logger.h)  -- err, scope_name, min_severity, ops
+    otelc_tracer  (tracer.h)  -- err, scope_name, yaml_prefix, enabled, ops,
+                                 ctx, impl
+    otelc_meter   (meter.h)   -- err, scope_name, yaml_prefix, enabled, ops,
+                                 ctx, impl
+    otelc_logger  (logger.h)  -- err, scope_name, yaml_prefix, min_severity,
+                                 enabled, ops, ctx, impl
 
   The ops field in each structure is a vtable pointer that dispatches all
   subsequent operations through indirect function calls.
 
 Handle initialization:
 
-  Tracer initialization creates two handle maps:
+  Tracer initialization creates the span and span context handle maps:
     - otel_span handle (otel_handle<otel_span_handle *>)
     - otel_span_context handle (otel_handle<otel_span_context_handle *>)
-    Both use OTEL_HANDLE_MAP_SHARDS (64) for concurrent access.
+    Both are shared by all tracers and use the otel_handle_map_shards count
+    (OTEL_HANDLE_MAP_SHARDS by default, overridable through the top-level
+    handle_map_shards YAML key).  The maps are reference-counted by the
+    tracers and torn down when the last tracer in scope is destroyed.
 
-  Meter initialization creates two handle maps:
+  Meter initialization creates the per-instance instrument and view handle
+  maps:
     - otel_instrument handle (otel_handle<otel_instrument_handle *>)
     - otel_view handle (otel_handle<otel_view_handle *>)
-    Both use 1 shard (instruments are long-lived, low contention).
+    Both use a single shard (instruments are long-lived, low contention).
 
   Logger does not use handle maps.
 
@@ -949,26 +978,26 @@ Provider/exporter/processor stack:
 
   Destruction reverses this stack:
 
-    1. otel_*_destroy clears the global atomic pointer, preventing new
-       operations.
-    2. Force-flushes the provider with a 5-second timeout.
-    3. Resets the global provider via Set*Provider(nullptr).
-    4. Frees err and scope_name strings.
+    1. otel_*_destroy drops the SDK handle from the per-instance impl,
+       preventing new operations.
+    2. Force-flushes the per-instance provider with a 5-second timeout.
+    3. Releases the impl members; no global SDK provider is touched.
+    4. Frees err, scope_name, and yaml_prefix strings.
 
-  For the tracer, otel_tracer_destroy additionally:
+  For the tracer, otel_tracer_destroy additionally (when the last tracer in
+  scope is destroyed):
     - Destroys all remaining span context handles.
     - Ends all remaining spans and destroys the span handles.
-    - Clears the global text map propagator.
+  It also releases the per-instance text map propagator.
 
-Global state:
+Per-instance state:
 
-  Each component maintains two global variables:
-    - otel_nostd::shared_ptr<T> *_owner (reference-counted ownership)
-    - std::atomic<T *> *_ptr (lock-free access for hot paths)
-
-  The atomic pointer is cleared first during destruction, acting as a gate that
-  causes in-flight operations to see nullptr and bail out before the provider
-  is torn down.
+  Each component keeps its SDK objects (provider, tracer/meter/logger handle,
+  and for the tracer the propagator) in a heap-allocated impl structure
+  referenced from the public struct.  Operations snapshot the SDK handle from
+  the impl and bail out when it is empty; the destroy function drops that
+  handle first, before provider teardown, so in-flight callers cannot reach a
+  half-destroyed provider.  No process-wide SDK singletons are registered.
 
 Library constructor/destructor (debug builds only):
 
@@ -980,15 +1009,15 @@ Library constructor/destructor (debug builds only):
 
 Overall initialization flow:
 
-  otelc_init
+  otelc_init  (create the library context, parse YAML)
     |
-    +-- opens YAML configuration
+    +-- otelc_*_create  (one per component, bound to the context)
+    |     |
+    |     +-- otel_*_new  (allocate struct and impl, wire vtable)
+    |     +-- yaml_resolve_prefix  (locate the signal configuration)
+    |     +-- handle map initialization  (tracer shared maps; meter impl maps)
     |
-    +-- otelc_*_create  (one per component)
-          |
-          +-- otel_*_new  (allocate struct, wire vtable)
-          |
-          +-- handle map initialization  (tracer, meter only)
+    +-- ops->start  (build the pipeline from the YAML configuration)
           |
           +-- otel_*_exporter_create
           +-- otel_*_processor_create
@@ -1000,18 +1029,24 @@ Overall deinitialization flow:
 
   otelc_deinit
     |
-    +-- close YAML configuration
-    |
     +-- otel_*_destroy  (logger, meter, tracer, via ops vtable)
-          |
-          +-- clear atomic pointer
-          +-- destroy span context handles (tracer only)
-          +-- end remaining spans          (tracer only)
-          +-- destroy handle maps          (tracer, meter only)
-          +-- clear text map propagator    (tracer only)
-          +-- force-flush provider
-          +-- reset global provider
-          +-- free err, scope_name
+    |     |
+    |     +-- drop the SDK handle from the impl
+    |     +-- destroy span context handles (last tracer only)
+    |     +-- end remaining spans          (last tracer only)
+    |     +-- destroy the span maps        (last tracer, dynamic build)
+    |     +-- force-flush provider
+    |     +-- release propagator           (tracer only)
+    |     +-- release impl and provider
+    |     +-- free err, scope_name, yaml_prefix
+    |
+    +-- close YAML configuration
+    +-- free the context
+
+  otelc_lib_shutdown  (once, after the final context)
+    |
+    +-- reinstate the default SDK log handler
+    +-- reset external malloc/free/thread-ID callbacks
     |
     +-- reset external callbacks and log handlers
 
@@ -1025,16 +1060,19 @@ handles and vtable-based dispatch.  Each public C struct (otelc_tracer,
 otelc_span, otelc_span_context) carries an ops pointer to a function table,
 giving C code a virtual-dispatch-like interface without exposing any C++ types.
 
-Tracer global state:
+Tracer per-instance state:
 
-  Two variables govern the tracer's availability:
+  Each tracer owns an otel_tracer_impl structure (include/tracer.h) holding:
 
-    static otel_nostd::shared_ptr<otel_trace::Tracer> otel_tracer_owner;
-    static std::atomic<otel_trace::Tracer *>          otel_tracer;
+    std::ofstream                  logfile;
+    shared_ptr<TracerProvider>     provider;
+    shared_ptr<Tracer>             tracer;
+    shared_ptr<TextMapPropagator>  propagator;
 
-  The shared_ptr owns the lifetime.  The atomic raw pointer enables lock-free
-  access on the hot path (span creation).  During shutdown the atomic is nulled
-  first, gating out concurrent callers before the shared_ptr is released.
+  Operations snapshot the tracer member and bail out when it is empty.
+  During shutdown the member is dropped first, gating out concurrent callers
+  before the provider is torn down.  The logfile comes first so that it is
+  destroyed last, after the provider members that may still flush into it.
 
 Tracer startup (otel_tracer_start):
 
@@ -1048,8 +1086,8 @@ Tracer startup (otel_tracer_start):
        OTELC_SCOPE_VERSION, OTELC_SCOPE_SCHEMA_URL).
     5. Set up propagator: either CompositePropagator (HttpTraceContext
        + BaggagePropagator) or HttpTraceContext alone.
-    6. Store tracer globally via atomic store, register the global
-       TracerProvider and GlobalTextMapPropagator.
+    6. Store the provider, tracer, and propagator in the per-instance impl;
+       no global SDK provider or propagator is registered.
 
 Span creation (otel_tracer_start_span_with_options):
 
@@ -1207,14 +1245,15 @@ Tracer shutdown (otel_tracer_destroy):
 
   Shutdown is ordered to prevent use-after-free:
 
-    1. Atomically null otel_tracer to gate out concurrent callers.
-    2. Release otel_tracer_owner (shared_ptr).
-    3. Clear span context handles.
-    4. Iterate all remaining spans in the handle map, calling
-       handle->span->End(end_options) on each.
-    5. Clear the global text map propagator.
-    6. Destroy the provider and exporter.
-    7. Free err and scope_name strings.
+    1. Drop the SDK Tracer handle from the impl to gate out concurrent
+       callers.
+    2. When the last tracer in scope is destroyed: clear span context
+       handles, iterate all remaining spans in the handle map, calling
+       handle->span->End(end_options) on each, and destroy the span maps
+       (dynamic build), saving the id bases for the next map generation.
+    3. Force-flush the per-instance provider.
+    4. Release the per-instance propagator and provider, delete the impl.
+    5. Free err, scope_name, and yaml_prefix strings.
 
 
 ------------------------------------------------------------------------
@@ -1223,19 +1262,18 @@ Tracer shutdown (otel_tracer_destroy):
 
 The meter wrapper follows the same opaque-handle + vtable pattern as the tracer.
 The otelc_meter struct carries an ops pointer dispatching through
-otelc_meter_ops.  Unlike the tracer (which uses 64-shard maps for high-churn
-span handles), instrument and view handle maps use 1 shard because instruments
-are long-lived, created once at startup.
+otelc_meter_ops.  Unlike the tracer (whose sharded maps serve high-churn span
+handles), instrument and view handle maps use a single shard because
+instruments are long-lived, created once at startup.
 
-Meter global state:
+Meter per-instance state:
 
-  Two variables govern the meter's availability:
-
-    static otel_nostd::shared_ptr<otel_metrics::Meter> otel_meter_owner;
-    static std::atomic<otel_metrics::Meter *>          otel_meter;
-
-  Same dual-pointer pattern as the tracer: shared_ptr owns lifetime, atomic raw
-  pointer provides lock-free access.
+  Each meter owns an otel_meter_impl structure (include/meter.h) holding the
+  SDK MeterProvider and Meter, the per-instance instrument and view handle
+  maps, the case-folded instrument_index, the create_mutex serializing
+  instrument and view creation, and the ostream exporter logfile.  Operations
+  snapshot the meter member and bail out when it is empty; shutdown drops it
+  first, like the tracer.
 
 Meter startup (otel_meter_start):
 
@@ -1250,8 +1288,8 @@ Meter startup (otel_meter_start):
        reader via AddMetricReader().
     4. Get meter: provider->GetMeter(scope_name, OTELC_SCOPE_VERSION,
        OTELC_SCOPE_SCHEMA_URL).
-    5. Store globally: otel_meter_owner = meter, otel_meter.store(owner.get()),
-       Provider::SetMeterProvider(provider).
+    5. Store the provider and meter in the per-instance impl; no global SDK
+       provider is registered.
 
   This mirrors the multi-pipeline pattern already used by the tracer
   (processors/exporters) and logger (processors/exporters).
@@ -1407,25 +1445,27 @@ View support (otel_meter_add_view):
 Meter enabled check:
 
   The C++ SDK does not provide a Meter::Enabled() method (unlike
-  Tracer::Enabled() in ABI v2).  The wrapper returns true whenever the atomic
-  meter pointer is non-null.
+  Tracer::Enabled() in ABI v2).  The wrapper reports the wrapper-level gate
+  set via set_enabled() whenever the meter and its SDK handle are valid.
 
 Meter shutdown (otel_meter_destroy):
 
   Shutdown is ordered to prevent use-after-free:
 
-    1. Atomically null otel_meter to gate out concurrent callers.
-    2. Release otel_meter_owner (shared_ptr).
-    3. Destroy provider and exporter.
-    4. Clear instrument and view handle maps (deleting all handles).
-    5. Free err and scope_name strings.
+    1. Drop the SDK Meter handle from the impl to gate out concurrent
+       callers.
+    2. Force-flush the per-instance provider.
+    3. Clear the view and instrument handle maps (deleting all handles).
+    4. Release the impl members and delete the impl.
+    5. Free err, scope_name, and yaml_prefix strings.
 
 Key differences from tracer:
 
-  Handle maps use 1 shard (instruments are long-lived, low contention) vs 64
-  shards for spans.
+  Handle maps use a single shard (instruments are long-lived, low contention)
+  while the span maps are sharded (otel_handle_map_shards).
 
-  No per-thread handle storage -- instruments are global, shared across threads.
+  No per-thread handle storage -- instruments live in the meter instance and
+  are shared across threads.
 
   No "end" operation -- instruments live for the process lifetime.
 
@@ -1448,25 +1488,27 @@ it has no handle maps (log records are transient, created and emitted in a
 single call) and requires no explicit locking (all vtable operations are marked
 "Locking not required").
 
-Logger global state:
+Logger per-instance state:
 
-  Two variables govern the logger's availability:
-
-    static otel_nostd::shared_ptr<otel_logs::Logger> otel_logger_owner;
-    static std::atomic<otel_logs::Logger *>          otel_logger;
-
-  Same dual-pointer pattern as the tracer and meter: shared_ptr owns lifetime,
-  atomic raw pointer provides lock-free access on the hot path.
+  Each logger owns an otel_logger_impl structure (include/logger.h) holding
+  the SDK LoggerProvider and Logger and the ostream exporter logfile.
+  Operations snapshot the logger member and bail out when it is empty;
+  shutdown drops it first, like the tracer and meter.
 
 Logger instance structure:
 
-  Unlike the tracer and meter, the logger struct carries an additional field:
+  Unlike the tracer and meter, the logger struct carries an additional field,
+  min_severity:
 
     struct otelc_logger {
         char                          *err;
         char                          *scope_name;
+        char                          *yaml_prefix;
         otelc_log_severity_t           min_severity;
+        bool                           enabled;
         const struct otelc_logger_ops *ops;
+        const struct otelc_ctx        *ctx;
+        void                          *impl;
     };
 
   The min_severity field defaults to OTELC_LOG_SEVERITY_TRACE (all levels
@@ -1528,9 +1570,8 @@ Logger startup (otel_logger_start):
        OTELC_SCOPE_SCHEMA_URL).
     6. Set minimum severity on the obtained logger via
        SetMinimumSeverity(uint8_t).
-    7. Store globally: otel_logger_owner = logger,
-       otel_logger.store(owner.get()),
-       otel_logs::Provider::SetLoggerProvider(provider).
+    7. Store the provider and logger in the per-instance impl; no global SDK
+       provider is registered.
 
   The SetMinimumSeverity() method is protected in the C++ Logger base class.
   The wrapper accesses it through a helper struct:
@@ -1544,8 +1585,8 @@ Logger startup (otel_logger_start):
 
 Logger enabled check (otel_logger_enabled):
 
-  Unlike the meter (which always returns true), the logger delegates to the
-  C++ SDK:
+  Unlike the meter (which reports the wrapper-level gate), the logger
+  delegates to the C++ SDK:
 
     logger_ptr->Enabled(log_severity)
 
@@ -1578,7 +1619,7 @@ Log record creation and emission:
        - log_record->SetAttribute(key, value) via OTEL_VALUE_ADD
 
   The formatted variants delegate to otel_logger_log_v(), which validates the
-  format string, loads the atomic logger pointer, calls
+  format string, snapshots the SDK Logger handle from the impl, calls
   otel_logger_record_create(), then:
 
    11. Format body: vasprintf(&ptr, format, ap).
@@ -1640,10 +1681,11 @@ Logger shutdown (otel_logger_destroy):
 
   Shutdown is ordered to prevent use-after-free:
 
-    1. Atomically null otel_logger to gate out concurrent callers.
-    2. Release otel_logger_owner (shared_ptr).
-    3. Destroy provider and exporter.
-    4. Free err and scope_name strings.
+    1. Drop the SDK Logger handle from the impl to gate out concurrent
+       callers.
+    2. Force-flush the per-instance provider.
+    3. Release the impl members and delete the impl.
+    4. Free err, scope_name, and yaml_prefix strings.
 
 Key differences from tracer and meter:
 
@@ -1651,9 +1693,9 @@ Key differences from tracer and meter:
   function call.  There is no equivalent of a span handle or instrument handle
   that persists across calls.
 
-  No locking required -- all operations either use the atomic logger pointer or
-  operate on function-local data (the log record).  The vtable comments confirm
-  "Locking not required" for every operation.
+  No locking required -- all operations either snapshot the SDK logger handle
+  from the impl or operate on function-local data (the log record).  The
+  vtable comments confirm "Locking not required" for every operation.
 
   Severity filtering -- the logger has a min_severity threshold that is both
   configurable at startup via YAML and changeable at runtime via
@@ -1762,12 +1804,16 @@ Orphaned span cleanup:
 
 Global teardown order:
 
-  otelc_deinit() closes the YAML document first, then destroys logger, meter,
-  and tracer (reverse of typical startup order), then resets the external
-  callback pointers via otelc_ext_init(NULL, NULL, NULL).
+  otelc_deinit() destroys the logger, meter, and tracer passed in (reverse of
+  typical startup order), then closes the YAML document attached to the
+  context and frees the context.  Process-wide hooks stay untouched; a final
+  otelc_lib_shutdown() call resets the external callback pointers via
+  otelc_ext_init(NULL, NULL, NULL) and reinstates the default SDK log handler
+  once every context is gone.
 
-  Each signal's destroy function clears its atomic pointer before provider
-  teardown, preventing concurrent callers from accessing a half-destroyed signal.
+  Each signal's destroy function drops the SDK handle from its impl before
+  provider teardown, preventing concurrent callers from accessing a
+  half-destroyed signal.
 
 otelc_sprintf() ownership transfer:
 
@@ -1850,13 +1896,13 @@ Sequence operations:
 Library lifecycle:
 
   yaml_open() opens and parses a YAML file.  yaml_close() releases the document
-  and sets the pointer to nullptr.  The global otelc_fyd pointer holds the
-  active configuration document, set by otelc_init() and cleared by
-  otelc_deinit().
+  and sets the pointer to nullptr.  Each library context created by
+  otelc_init() owns its document (otelc_ctx.fyd); otelc_deinit() closes it
+  when the context is destroyed, and otelc_close_cfg() may close it earlier,
+  once initialization is complete.
 
-  otelc_init() rejects double initialization (returns error if otelc_fyd is
-  already non-null).  otelc_deinit() closes the document, destroys all signals,
-  and resets external callback pointers.  Reinitialization after deinit is
+  Multiple contexts may coexist within one process, each with its own
+  configuration document and name.  Reinitialization after deinit is
   supported.
 
 
@@ -1871,8 +1917,8 @@ Threading models:
 
   Shared-handle model (default) -- span and span_context handles live in global
   structures.  OTEL_LOCK_TRACER(type, idx) acquires a per-shard std::mutex via
-  lock_guard.  The shard is selected by idx & (num_shards - 1), giving 64
-  independent locks for spans.  THREAD_LOCAL expands to nothing;
+  lock_guard.  The shard is selected by idx & (num_shards - 1), giving one
+  independent lock per shard for spans.  THREAD_LOCAL expands to nothing;
   OTEL_HANDLE_SHARED is true.
 
   Thread-local model -- handles are thread_local.  OTEL_LOCK_TRACER(...)
@@ -1880,14 +1926,15 @@ Threading models:
   its own map.  THREAD_LOCAL expands to the thread_local keyword;
   OTEL_HANDLE_SHARED is false.
 
-  Meter handles (otel_instrument, otel_view) are always global (not thread-local)
-  and live in a single shard whose mutex is an otel_shared_mutex, a wrapper
-  around std::shared_mutex that adds writer preference.  Lookups and instrument
-  updates take it shared via OTEL_LOCK_METER_SHARED(type) and run in parallel;
-  creation is serialized on the meter's create_mutex and takes the map lock
-  exclusively only for the final insert, and teardown locks exclusively via
-  OTEL_LOCK_METER(type).  Instruments are long-lived and created once at
-  startup, so the exclusive path is cold.
+  Meter handles (otel_instrument, otel_view) live in the meter instance, are
+  shared across threads (not thread-local), and sit in a single shard whose
+  mutex is an otel_shared_mutex, a wrapper around std::shared_mutex that adds
+  writer preference.  Lookups and instrument updates take it shared via
+  OTEL_LOCK_METER_SHARED(type) and run in parallel; creation is serialized on
+  the meter's create_mutex and takes the map lock exclusively only for the
+  final insert, and teardown locks exclusively via OTEL_LOCK_METER(type).
+  Instruments are long-lived and created once at startup, so the exclusive
+  path is cold.
 
 Handle structure (otel_handle<T, shared, M>):
 

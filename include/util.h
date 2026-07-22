@@ -27,11 +27,14 @@ constexpr size_t OTEL_HANDLE_MAP_SHARDS    = 256;
 
 /***
  * Active per-process shard count for the span and span context handle maps.
- * Initialised to OTEL_HANDLE_MAP_SHARDS and overridden by the top-level YAML
- * key handle_map_shards on the first otelc_init() call.  Read at the moment
- * each handle map is constructed (per-thread in the static-handle build, once
- * per process in the dynamic build), so otelc_init() must always run before
- * any tracer create on threads that should observe a non-default value.
+ * The first otelc_init() call whose configuration carries a valid top-level
+ * handle_map_shards key overrides the initial OTEL_HANDLE_MAP_SHARDS value.
+ * Read at the moment each handle map is constructed (per-thread in the static
+ * thread-local build, once per process in the dynamic build), so otelc_init()
+ * must always run before any tracer create on threads that should observe a
+ * non-default value.  In the static shared-handle build the maps are process
+ * globals constructed at library load, before any otelc_init() call, so the
+ * key is validated and stored but never takes effect there.
  */
 extern std::atomic<size_t> otel_handle_map_shards;
 

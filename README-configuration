@@ -227,7 +227,10 @@ call whose configuration carries a valid key applies the value; later calls
 still validate the key but do not change the live setting, because the handle
 maps may already have been built with a different count.  Threads that touch
 the static-handle thread-local maps before any otelc_init() call construct
-them with the compile-time default.
+them with the compile-time default.  In the OTELC_USE_STATIC_HANDLE +
+OTELC_USE_THREAD_SHARED_HANDLE combination the maps are process-wide globals
+constructed when the library is loaded, before any otelc_init() call can run,
+so the key is validated and stored but never takes effect there.
 
 A higher shard count reduces per-shard mutex contention at high concurrency, at
 the cost of one mutex and one (initially empty) std::unordered_map per shard.
