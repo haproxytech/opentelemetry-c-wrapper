@@ -13,6 +13,8 @@ global:
 	otelc_nsleep;
 	otelc_runtime;
 	otelc_sprintf;
+	otelc_strdup;
+	otelc_strndup;
 	otelc_strlcpy;
 	otelc_strtoi;
 	otelc_strctrl;

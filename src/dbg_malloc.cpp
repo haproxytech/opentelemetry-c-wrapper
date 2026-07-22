@@ -28,7 +28,7 @@ static struct otelc_dbg_mem *dbg_mem = nullptr;
  *
  * ARGUMENTS
  *   ptr  - the real address of the allocated data
- *   data - pointer to the metadata to be associated with the allocation
+ *   data - pointer to the metadata for the allocation
  *
  * DESCRIPTION
  *   Associates metadata with a memory allocation for debugging purposes.  This
@@ -113,8 +113,8 @@ static void otelc_dbg_mem_add(const char *func, int line, void *ptr, size_t size
  *
  * DESCRIPTION
  *   Tracks a memory allocation, recording its location and size.  This function
- *   is called by the debugging versions of malloc, calloc, and realloc to
- *   register new memory allocations with the memory debugger.
+ *   is called by the debugging allocation functions to register new memory
+ *   allocations with the memory debugger.
  *
  * RETURN VALUE
  *   This function does not return a value.
@@ -140,7 +140,7 @@ static void otelc_dbg_mem_alloc(const char *func, int line, void *old_ptr, void 
 		OTELC_RETURN();
 	}
 	else if (OTEL_NULL(ptr)) {
-		DBG_MEM_ERR("invalid memory address: %p", ptr);
+		DBG_MEM_ERR("allocation failed: %s:%d(%p %zu)", OTELC_STR_ARG(func), line, old_ptr, size);
 
 		OTELC_RETURN();
 	}
@@ -238,7 +238,7 @@ static void otelc_dbg_mem_alloc(const char *func, int line, void *old_ptr, void 
  *   otelc_dbg_mem_release - releases a tracked memory allocation
  *
  * SYNOPSIS
- *   static void otelc_dbg_mem_release(const char *func, int line, void *ptr, int op_idx)
+ *   static int otelc_dbg_mem_release(const char *func, int line, void *ptr, int op_idx)
  *
  * ARGUMENTS
  *   func   - the name of the calling function
@@ -249,38 +249,41 @@ static void otelc_dbg_mem_alloc(const char *func, int line, void *old_ptr, void 
  * DESCRIPTION
  *   Marks a tracked memory allocation as released.  This is called by the
  *   debugging version of free to update the status of an allocation in the
- *   memory debugger.
+ *   memory debugger.  The release is rejected when the tracking record shows
+ *   that the block is not currently allocated or does not match the pointer,
+ *   which indicates a double or stray free.
  *
  * RETURN VALUE
- *   This function does not return a value.
+ *   Returns OTELC_RET_OK when the block may be released, or OTELC_RET_ERROR
+ *   when the pointer is rejected.
  */
-static void otelc_dbg_mem_release(const char *func, int line, void *ptr, int op_idx)
+static int otelc_dbg_mem_release(const char *func, int line, void *ptr, int op_idx)
 {
 	struct otelc_dbg_mem *mem = dbg_mem;
-	int                   rc;
+	int                   rc, retval = OTELC_RET_OK;
 
 	OTELC_FUNC_EX(MEM, "\"%s\", %d, %p, %d", OTELC_STR_ARG(func), line, ptr, op_idx);
 
 	if (OTEL_NULL(mem)) {
-		OTELC_RETURN();
+		OTELC_RETURN_INT(retval);
 	}
 	else if (OTEL_NULL(ptr)) {
 		DBG_MEM_ERR("invalid memory address: %p", ptr);
 
-		OTELC_RETURN();
+		OTELC_RETURN_INT(OTELC_RET_ERROR);
 	}
 
 	if ((rc = pthread_mutex_lock(&(mem->mutex))) != 0) {
 		DBG_MEM_ERR("unable to lock mutex: %s", otel_strerror(rc));
 
-		OTELC_RETURN();
+		OTELC_RETURN_INT(retval);
 	}
 
 	if (dbg_mem != mem) {
 		/* The tracker was disabled while this thread was waiting for the mutex. */
 		(void)pthread_mutex_unlock(&(mem->mutex));
 
-		OTELC_RETURN();
+		OTELC_RETURN_INT(retval);
 	}
 
 	OTEL_ARG_DEFAULT(func, "(null)");
@@ -309,6 +312,8 @@ static void otelc_dbg_mem_release(const char *func, int line, void *ptr, int op_
 	else {
 		DBG_MEM_ERR("invalid ptr: %s:%d(%p)", func, line, ptr);
 
+		retval = OTELC_RET_ERROR;
+
 		if (!OTEL_NULL(metadata))
 			for (size_t i = 0; i < mem->count; i++)
 				if (mem->data[i].ptr == metadata)
@@ -318,10 +323,10 @@ static void otelc_dbg_mem_release(const char *func, int line, void *ptr, int op_
 	if ((rc = pthread_mutex_unlock(&(mem->mutex))) != 0) {
 		DBG_MEM_ERR("unable to unlock mutex: %s", otel_strerror(rc));
 
-		OTELC_RETURN();
+		OTELC_RETURN_INT(retval);
 	}
 
-	OTELC_RETURN();
+	OTELC_RETURN_INT(retval);
 }
 
 
@@ -375,9 +380,8 @@ void *otelc_dbg_malloc(const char *func, int line, size_t size)
  *
  * DESCRIPTION
  *   Allocates a block of memory for an array of elements, zero-initializes the
- *   memory, and records debugging information about the allocation.  This is a
- *   wrapper around the standard calloc function that integrates with the memory
- *   debugger.
+ *   memory, and records debugging information about the allocation.  It behaves
+ *   like the standard calloc function but integrates with the memory debugger.
  *
  * RETURN VALUE
  *   Returns a pointer to the allocated memory, or nullptr on failure.
@@ -485,7 +489,9 @@ void *otelc_dbg_realloc(const char *func, int line, void *ptr, size_t size)
  * DESCRIPTION
  *   Frees a block of memory and records debugging information about the
  *   operation.  This is a wrapper around the standard free function that
- *   integrates with the memory debugger.
+ *   integrates with the memory debugger.  When the release of a tracked block
+ *   is rejected as a double or stray free, the memory is deliberately left
+ *   untouched after the diagnostic.
  *
  * RETURN VALUE
  *   This function does not return a value.
@@ -503,6 +509,15 @@ void otelc_dbg_free(const char *func, int line, void *ptr)
 	 * If memory was not allocated via these debug functions, it must not be
 	 * released through them either; free it transparently, as the realloc
 	 * path does, rather than flagging it as an invalid free.
+	 *
+	 * The magic probe here and in otelc_dbg_realloc() reads the metadata
+	 * header sizeof(struct otelc_dbg_mem_metadata) bytes below the payload
+	 * pointer.  For a pointer that was not produced by these functions the
+	 * read lies outside the allocation: formally undefined behavior that
+	 * in practice lands in the allocator's chunk header on glibc and is
+	 * reported by AddressSanitizer.  A foreign block whose preceding bytes
+	 * happen to match the magic would be mistaken for a tracked one; the
+	 * probability of that is negligible.
 	 */
 	metadata = DBG_MEM_DATA(ptr);
 	if (OTEL_NULL(metadata) || OTEL_NULL(metadata->data) || (metadata->magic != DBG_MEM_MAGIC)) {
@@ -523,7 +538,13 @@ void otelc_dbg_free(const char *func, int line, void *ptr)
 		OTELC_RETURN();
 	}
 
-	otelc_dbg_mem_release(func, line, ptr, OTELC_DBG_MEM_OP_FREE);
+	/***
+	 * A rejected release means the block is not currently allocated (a
+	 * double or stray free); freeing it again would corrupt the heap, so
+	 * the memory is deliberately left untouched after the diagnostic.
+	 */
+	if (otelc_dbg_mem_release(func, line, ptr, OTELC_DBG_MEM_OP_FREE) == OTELC_RET_ERROR)
+		OTELC_RETURN();
 
 	free(DBG_MEM_DATA(ptr));
 
@@ -545,25 +566,27 @@ void otelc_dbg_free(const char *func, int line, void *ptr)
  *
  * DESCRIPTION
  *   Duplicates a string and records debugging information about the allocation.
- *   This is a wrapper around the standard strdup function that integrates with
- *   the memory debugger.
+ *   It behaves like the standard strdup function but integrates with the memory
+ *   debugger.  If s is a null pointer, no allocation is performed and a null
+ *   pointer is returned.
  *
  * RETURN VALUE
  *   Returns a pointer to the newly allocated string, or nullptr on failure.
  */
 char *otelc_dbg_strdup(const char *func, int line, const char *s)
 {
-	size_t  len = 0;
-	char   *retptr = nullptr;
+	size_t  len;
+	char   *retptr;
 
 	OTELC_FUNC_EX(MEM, "\"%s\", %d, \"%s\"", OTELC_STR_ARG(func), line, OTELC_STR_ARG(s));
 
-	if (!OTEL_NULL(s)) {
-		len    = strlen(s) + 1;
-		retptr = OTEL_CAST_TYPEOF(retptr, malloc(DBG_MEM_SIZE(len)));
-		if (!OTEL_NULL(retptr))
-			(void)memcpy(DBG_MEM_PTR(retptr), s, len);
-	}
+	if (OTEL_NULL(s))
+		OTELC_RETURN_EX(nullptr, char *, "%p");
+
+	len    = strlen(s) + 1;
+	retptr = OTEL_CAST_TYPEOF(retptr, malloc(DBG_MEM_SIZE(len)));
+	if (!OTEL_NULL(retptr))
+		(void)memcpy(DBG_MEM_PTR(retptr), s, len);
 
 	otelc_dbg_mem_alloc(func, line, nullptr, retptr, len);
 
@@ -586,26 +609,28 @@ char *otelc_dbg_strdup(const char *func, int line, const char *s)
  *
  * DESCRIPTION
  *   Duplicates a string up to a specified length and records debugging
- *   information about the allocation.  This is a wrapper around the standard
- *   strndup function that integrates with the memory debugger.
+ *   information about the allocation.  It behaves like the standard strndup
+ *   function but integrates with the memory debugger.  If s is a null pointer,
+ *   no allocation is performed and a null pointer is returned.
  *
  * RETURN VALUE
  *   Returns a pointer to the newly allocated string, or nullptr on failure.
  */
 char *otelc_dbg_strndup(const char *func, int line, const char *s, size_t size)
 {
-	size_t  len = 0;
-	char   *retptr = nullptr;
+	size_t  len;
+	char   *retptr;
 
 	OTELC_FUNC_EX(MEM, "\"%s\", %d, \"%.*s\", %zu", OTELC_STR_ARG(func), line, OTEL_CAST_STATIC(int, size), OTELC_STR_ARG(s), size);
 
-	if (!OTEL_NULL(s)) {
-		len    = strnlen(s, size);
-		retptr = OTEL_CAST_TYPEOF(retptr, malloc(DBG_MEM_SIZE(len + 1)));
-		if (!OTEL_NULL(retptr)) {
-			(void)memcpy(DBG_MEM_PTR(retptr), s, len);
-			DBG_MEM_PTR(retptr)[len] = '\0';
-		}
+	if (OTEL_NULL(s))
+		OTELC_RETURN_EX(nullptr, char *, "%p");
+
+	len    = strnlen(s, size);
+	retptr = OTEL_CAST_TYPEOF(retptr, malloc(DBG_MEM_SIZE(len + 1)));
+	if (!OTEL_NULL(retptr)) {
+		(void)memcpy(DBG_MEM_PTR(retptr), s, len);
+		DBG_MEM_PTR(retptr)[len] = '\0';
 	}
 
 	otelc_dbg_mem_alloc(func, line, nullptr, retptr, len + 1);
@@ -817,28 +842,30 @@ void otelc_dbg_mem_info(void)
  *
  * DESCRIPTION
  *   Duplicates a block of memory and records debugging information about the
- *   allocation.  It allocates memory, copies the specified number of bytes from
- *   the source, and integrates with the memory debugger.
+ *   allocation.  It allocates memory, copies the specified number of bytes
+ *   from the source, and integrates with the memory debugger.  If s is a null
+ *   pointer, no allocation is performed and a null pointer is returned.
  *
  * RETURN VALUE
  *   Returns a pointer to the newly allocated memory, or nullptr on failure.
  */
 void *otelc_dbg_memdup(const char *func, int line, const void *s, size_t size)
 {
-	void *retptr = nullptr;
+	void *retptr;
 
 	OTELC_FUNC_EX(MEM, "\"%s\", %d, %p, %zu", OTELC_STR_ARG(func), line, s, size);
 
-	/* Guard the size + 1 payload plus the metadata header against overflow. */
-	if (size > (SIZE_MAX - DBG_MEM_SIZE(1)))
+	/***
+	 * A null source is rejected up front; the size + 1 payload plus the
+	 * metadata header is guarded against overflow.
+	 */
+	if (OTEL_NULL(s) || (size > (SIZE_MAX - DBG_MEM_SIZE(1))))
 		OTELC_RETURN_EX(nullptr, void *, "%p");
 
-	if (!OTEL_NULL(s)) {
-		retptr = malloc(DBG_MEM_SIZE(size + 1));
-		if (!OTEL_NULL(retptr)) {
-			(void)memcpy(DBG_MEM_PTR(retptr), s, size);
-			DBG_MEM_PTR(retptr)[size] = '\0';
-		}
+	retptr = malloc(DBG_MEM_SIZE(size + 1));
+	if (!OTEL_NULL(retptr)) {
+		(void)memcpy(DBG_MEM_PTR(retptr), s, size);
+		DBG_MEM_PTR(retptr)[size] = '\0';
 	}
 
 	otelc_dbg_mem_alloc(func, line, nullptr, retptr, size + 1);

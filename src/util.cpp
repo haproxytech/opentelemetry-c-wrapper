@@ -531,6 +531,68 @@ void *otelc_memdup(const void *s, size_t size)
 
 /***
  * NAME
+ *   otelc_strdup - duplicates a string
+ *
+ * SYNOPSIS
+ *   char *otelc_strdup(const char *s)
+ *
+ * ARGUMENTS
+ *   s - the string to be duplicated
+ *
+ * DESCRIPTION
+ *   Duplicates a null-terminated string into newly allocated storage.  Unlike
+ *   the standard strdup function, s may be a null pointer: no allocation is
+ *   performed and a null pointer is returned.  The non-debug OTELC_STRDUP()
+ *   macro maps to this function, so both builds of the library tolerate a null
+ *   argument in the same way.
+ *
+ * RETURN VALUE
+ *   Returns a pointer to the newly allocated string, or a null pointer if s
+ *   is a null pointer or memory allocation fails.
+ */
+char *otelc_strdup(const char *s)
+{
+	if (OTEL_NULL(s))
+		return nullptr;
+
+	return strdup(s);
+}
+
+
+/***
+ * NAME
+ *   otelc_strndup - duplicates a string with a specified length
+ *
+ * SYNOPSIS
+ *   char *otelc_strndup(const char *s, size_t size)
+ *
+ * ARGUMENTS
+ *   s    - the string to be duplicated
+ *   size - the maximum number of characters to copy from the source string
+ *
+ * DESCRIPTION
+ *   Duplicates no more than size characters of a string into a newly allocated
+ *   buffer that is always terminated with a null byte.  Unlike the standard
+ *   strndup function, s may be a null pointer: no allocation is performed and
+ *   a null pointer is returned.  The non-debug OTELC_STRNDUP() macro maps to
+ *   this function, so both builds of the library tolerate a null argument in
+ *   the same way.
+ *
+ * RETURN VALUE
+ *   Returns a pointer to the newly allocated string, or a null pointer if s
+ *   is a null pointer or memory allocation fails.
+ */
+char *otelc_strndup(const char *s, size_t size)
+{
+	if (OTEL_NULL(s))
+		return nullptr;
+
+	return strndup(s, size);
+}
+
+
+/***
+ * NAME
  *   otelc_sprintf - formats a string and allocates memory for the result
  *
  * SYNOPSIS
@@ -1098,6 +1160,10 @@ struct otelc_text_map *otelc_text_map_new(OTELC_DBG_IFDEF(OTELC_ARGS(const char 
  *   corresponding data will be released when the entry is removed or when the
  *   text map is destroyed.  These flags are typically used when ownership of
  *   dynamically allocated memory is transferred to the text map.
+ *
+ *   For a given datum the DUP flag takes precedence over FREE: when both are
+ *   set, the map duplicates the data and later releases only that duplicate,
+ *   while the caller-supplied original is never stored nor released.
  *
  *   On failure the text map takes no ownership of the supplied data: only the
  *   duplicates it created itself are released, while pointers stored directly

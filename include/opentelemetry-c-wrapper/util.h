@@ -36,6 +36,14 @@ __CPLUSPLUS_DECL_BEGIN
 #define OTELC_TEXT_MAP_NEW(t,s)           otelc_text_map_new(OTELC_DBG_ARGS (t), (s))
 #define OTELC_TEXT_MAP_ADD(t,k,K,v,V,f)   otelc_text_map_add(OTELC_DBG_ARGS (t), (k), (K), (v), (V), (f))
 
+/***
+ * Ownership flags for text map entries.  For a given datum the DUP flag takes
+ * precedence over FREE: when both are set, the map duplicates the data and
+ * later releases only that duplicate, while the caller-supplied original is
+ * never stored nor released.  The OTELC_TEXT_MAP_AUTO combination therefore
+ * lets the map manage its own copies while the originals remain the caller's
+ * property.
+ */
 typedef enum {
 	OTELC_TEXT_MAP_DUP_KEY    = 0x01, /* Duplicate the key data; the map releases the duplicate. */
 	OTELC_TEXT_MAP_DUP_VALUE  = 0x02, /* Duplicate the value data; the map releases the duplicate. */
@@ -231,6 +239,8 @@ void                   otelc_ext_init(otelc_ext_malloc_t func_malloc, otelc_ext_
 int64_t                otelc_runtime(void);
 void                   otelc_nsleep(time_t sec, long nsec);
 void                  *otelc_memdup(const void *s, size_t size);
+char                  *otelc_strdup(const char *s);
+char                  *otelc_strndup(const char *s, size_t size);
 int                    otelc_sprintf(char **ret, const char *format, ...) __attribute__((format(printf, 2, 3)));
 ssize_t                otelc_strlcpy(char *dst, size_t dst_size, const char *src, size_t src_size);
 bool                   otelc_strtoi(const char *str, char **endptr, bool flag_end, int base, int *retval, int val_min, int val_max, char **err);
