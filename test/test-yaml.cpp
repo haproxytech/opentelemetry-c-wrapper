@@ -17,7 +17,8 @@
 #include "test-util.h"
 
 
-#define TEMP_YAML_FILE   "__test_yaml_tmp.yml"
+#define TEMP_YAML_FILE       "__test_yaml_tmp.yml"
+#define TEMP_YAML_BAD_FILE   "__test_yaml_bad.yml"
 
 static const char temp_yaml_content[] =
 	"test:\n"
@@ -91,6 +92,39 @@ static int write_temp_yaml(const char *path)
 		return -1;
 
 	(void)fwrite(temp_yaml_content, 1, sizeof(temp_yaml_content) - 1, fp);
+	(void)fclose(fp);
+
+	return 0;
+}
+
+
+/***
+ * NAME
+ *   write_yaml_content - writes arbitrary YAML content to a file
+ *
+ * SYNOPSIS
+ *   static int write_yaml_content(const char *path, const char *content)
+ *
+ * ARGUMENTS
+ *   path    - path to the YAML file to write
+ *   content - null-terminated content to store in the file
+ *
+ * DESCRIPTION
+ *   Creates a YAML file with the supplied content for controlled testing of
+ *   the load-failure paths of the YAML parsing functions.
+ *
+ * RETURN VALUE
+ *   Returns 0 on success, or -1 on failure.
+ */
+static int write_yaml_content(const char *path, const char *content)
+{
+	FILE *fp;
+
+	fp = fopen(path, "w");
+	if (_NULL(fp))
+		return -1;
+
+	(void)fwrite(content, 1, strlen(content), fp);
 	(void)fclose(fp);
 
 	return 0;
@@ -200,6 +234,96 @@ static void test_yaml_open_nonexistent(void)
 
 	test_report("yaml_open nonexistent file", result);
 }
+
+
+/***
+ * NAME
+ *   test_yaml_open_malformed - tests opening a malformed YAML file
+ *
+ * SYNOPSIS
+ *   static void test_yaml_open_malformed(const char *path)
+ *
+ * ARGUMENTS
+ *   path - path of the temporary file used for the malformed document
+ *
+ * DESCRIPTION
+ *   Verifies that yaml_open() returns nullptr and sets an error message when
+ *   the document cannot be parsed, instead of aborting through the backend
+ *   error handler.
+ *
+ * RETURN VALUE
+ *   This function does not return a value.
+ */
+static void test_yaml_open_malformed(const char *path)
+{
+	OTEL_YAML_DOC *doc;
+	char          *err = nullptr;
+	int            result = TEST_FAIL;
+
+	if (write_yaml_content(path, "signals:\n  traces: [unclosed\n bad ::: value\n") == -1) {
+		test_report("yaml_open malformed file", result);
+
+		return;
+	}
+
+	doc = yaml_open(path, &err);
+	if (_NULL(doc) && _nNULL(err))
+		result = TEST_PASS;
+
+	yaml_close(&doc);
+
+	OTELC_SFREE(err);
+	(void)unlink(path);
+
+	test_report("yaml_open malformed file", result);
+}
+
+
+#ifndef HAVE_LIBFYAML_H
+
+/***
+ * NAME
+ *   test_yaml_open_duplicate_key - tests rejection of duplicate mapping keys
+ *
+ * SYNOPSIS
+ *   static void test_yaml_open_duplicate_key(const char *path)
+ *
+ * ARGUMENTS
+ *   path - path of the temporary file used for the duplicate-key document
+ *
+ * DESCRIPTION
+ *   Verifies that yaml_open() rejects a document whose mapping repeats a key
+ *   and reports the offending node path.  The duplicate-key scan exists only
+ *   in the rapidyaml build, so the test is compiled out with libfyaml.
+ *
+ * RETURN VALUE
+ *   This function does not return a value.
+ */
+static void test_yaml_open_duplicate_key(const char *path)
+{
+	OTEL_YAML_DOC *doc;
+	char          *err = nullptr;
+	int            result = TEST_FAIL;
+
+	if (write_yaml_content(path, "test:\n  key: one\n  key: two\n") == -1) {
+		test_report("yaml_open duplicate key", result);
+
+		return;
+	}
+
+	doc = yaml_open(path, &err);
+	if (_NULL(doc) && _nNULL(err) && _nNULL(strstr(err, "Duplicate")))
+		result = TEST_PASS;
+
+	yaml_close(&doc);
+
+	OTELC_SFREE(err);
+	(void)unlink(path);
+
+	test_report("yaml_open duplicate key", result);
+}
+
+#endif /* !HAVE_LIBFYAML_H */
 
 
 /***
@@ -1792,6 +1916,222 @@ static void test_otelc_deinit_reinit(const char *cfg_file)
 
 /***
  * NAME
+ *   test_otelc_close_cfg - tests early release of the configuration document
+ *
+ * SYNOPSIS
+ *   static void test_otelc_close_cfg(const char *cfg_file)
+ *
+ * ARGUMENTS
+ *   cfg_file - path to the YAML configuration file
+ *
+ * DESCRIPTION
+ *   Verifies that otelc_close_cfg() tolerates a NULL context, that closing the
+ *   configuration document of a context is idempotent, that the recorded name
+ *   states remain readable after the document is gone, that creating a signal
+ *   against a closed configuration fails with an error message, and that the
+ *   context is still released with otelc_deinit() afterwards.
+ *
+ * RETURN VALUE
+ *   This function does not return a value.
+ */
+static void test_otelc_close_cfg(const char *cfg_file)
+{
+	struct otelc_ctx    *ctx;
+	struct otelc_tracer *tracer;
+	char                *err = nullptr;
+	int                  result = TEST_PASS;
+
+	otelc_close_cfg(nullptr);
+
+	ctx = otelc_init(cfg_file, DEFAULT_CTX_NAME, &err);
+	if (_NULL(ctx))
+		result = TEST_FAIL;
+
+	otelc_close_cfg(ctx);
+	otelc_close_cfg(ctx);
+
+	if (otelc_ctx_nstate_get(ctx, OTELC_SIGNAL_TRACES, nullptr, 0) != OTELC_CTX_NAME_FOUND)
+		result = TEST_FAIL;
+
+	tracer = otelc_tracer_create(ctx, &err);
+	if (_nNULL(tracer) || _NULL(err))
+		result = TEST_FAIL;
+
+	otelc_deinit(&ctx, &tracer, nullptr, nullptr);
+	OTELC_SFREE(err);
+
+	test_report("otelc_close_cfg", result);
+}
+
+
+/* Number of invocations of the custom hooks registered by the shutdown test. */
+static int test_shutdown_hook_calls = 0;
+
+
+/***
+ * NAME
+ *   test_shutdown_ext_malloc - counting allocation callback for the shutdown test
+ *
+ * SYNOPSIS
+ *   static void *test_shutdown_ext_malloc(size_t size)
+ *
+ * ARGUMENTS
+ *   size - number of bytes to allocate
+ *
+ * DESCRIPTION
+ *   Counts the invocation and forwards to malloc().  In the OTELC_DBG_MEM
+ *   build the function takes the caller's function name and line number as
+ *   leading arguments, matching the otelc_ext_malloc_t callback type.
+ *
+ * RETURN VALUE
+ *   Returns the pointer returned by malloc().
+ */
+#ifdef OTELC_DBG_MEM
+static void *test_shutdown_ext_malloc(const char *func __maybe_unused, int line __maybe_unused, size_t size)
+#else
+static void *test_shutdown_ext_malloc(size_t size)
+#endif
+{
+	test_shutdown_hook_calls++;
+
+	return malloc(size);
+}
+
+
+/***
+ * NAME
+ *   test_shutdown_ext_free - counting deallocation callback for the shutdown test
+ *
+ * SYNOPSIS
+ *   static void test_shutdown_ext_free(void *ptr)
+ *
+ * ARGUMENTS
+ *   ptr - pointer to the memory block to release
+ *
+ * DESCRIPTION
+ *   Counts the invocation and forwards to free().  In the OTELC_DBG_MEM build
+ *   the function takes the caller's function name and line number as leading
+ *   arguments, matching the otelc_ext_free_t callback type.
+ *
+ * RETURN VALUE
+ *   This function does not return a value.
+ */
+#ifdef OTELC_DBG_MEM
+static void test_shutdown_ext_free(const char *func __maybe_unused, int line __maybe_unused, void *ptr)
+#else
+static void test_shutdown_ext_free(void *ptr)
+#endif
+{
+	test_shutdown_hook_calls++;
+	free(ptr);
+}
+
+
+/***
+ * NAME
+ *   test_shutdown_ext_thread_id - counting thread-ID callback for the shutdown test
+ *
+ * SYNOPSIS
+ *   static int test_shutdown_ext_thread_id(void)
+ *
+ * ARGUMENTS
+ *   This function takes no arguments.
+ *
+ * DESCRIPTION
+ *   Counts the invocation, matching the otelc_ext_thread_id_t callback type.
+ *
+ * RETURN VALUE
+ *   Always returns 0.
+ */
+static int test_shutdown_ext_thread_id(void)
+{
+	test_shutdown_hook_calls++;
+
+	return 0;
+}
+
+
+/***
+ * NAME
+ *   test_shutdown_log_handler - counting SDK log handler for the shutdown test
+ *
+ * SYNOPSIS
+ *   static void test_shutdown_log_handler(otelc_log_level_t level, const char *file, int line, const char *msg, const struct otelc_kv *attr, size_t attr_len, void *ctx)
+ *
+ * ARGUMENTS
+ *   level    - the SDK internal log severity level
+ *   file     - source file name where the log message originated
+ *   line     - source line number where the log message originated
+ *   msg      - log message text
+ *   attr     - key-value attributes associated with the log message
+ *   attr_len - number of elements in the attr array
+ *   ctx      - opaque pointer to the invocation counter
+ *
+ * DESCRIPTION
+ *   Counts the invocation in the int variable passed through ctx, matching
+ *   the otelc_log_handler_cb_t callback type.
+ *
+ * RETURN VALUE
+ *   This function does not return a value.
+ */
+static void test_shutdown_log_handler(otelc_log_level_t level __maybe_unused, const char *file __maybe_unused, int line __maybe_unused, const char *msg __maybe_unused, const struct otelc_kv *attr __maybe_unused, size_t attr_len __maybe_unused, void *ctx)
+{
+	(*OTEL_CAST_STATIC(int *, ctx))++;
+}
+
+
+/***
+ * NAME
+ *   test_otelc_lib_shutdown - tests the reset of the process-wide hooks
+ *
+ * SYNOPSIS
+ *   static void test_otelc_lib_shutdown(const char *cfg_file)
+ *
+ * ARGUMENTS
+ *   cfg_file - path to the YAML configuration file
+ *
+ * DESCRIPTION
+ *   Registers counting external malloc, free, and thread-ID callbacks
+ *   together with a counting SDK log handler, then calls otelc_lib_shutdown()
+ *   twice to verify that the reset is idempotent.  A subsequent init/deinit
+ *   cycle must succeed with the default hooks restored: the custom callbacks
+ *   must not be invoked after the shutdown and the custom log handler must
+ *   never fire.
+ *
+ * RETURN VALUE
+ *   This function does not return a value.
+ */
+static void test_otelc_lib_shutdown(const char *cfg_file)
+{
+	struct otelc_ctx *ctx;
+	char             *err = nullptr;
+	int               result = TEST_PASS, log_calls = 0, hook_calls;
+
+	otelc_ext_init(test_shutdown_ext_malloc, test_shutdown_ext_free, test_shutdown_ext_thread_id);
+	otelc_log_set_handler(test_shutdown_log_handler, &log_calls, false);
+
+	otelc_lib_shutdown();
+	otelc_lib_shutdown();
+
+	hook_calls = test_shutdown_hook_calls;
+
+	ctx = otelc_init(cfg_file, DEFAULT_CTX_NAME, &err);
+	if (_NULL(ctx))
+		result = TEST_FAIL;
+
+	otelc_deinit(&ctx, nullptr, nullptr, nullptr);
+
+	if ((test_shutdown_hook_calls != hook_calls) || (log_calls != 0))
+		result = TEST_FAIL;
+
+	OTELC_SFREE(err);
+
+	test_report("otelc_lib_shutdown", result);
+}
+
+
+/***
+ * NAME
  *   main - program entry point
  *
  * SYNOPSIS
@@ -1812,7 +2152,7 @@ int main(int argc, char **argv)
 {
 	OTEL_YAML_DOC *doc = nullptr;
 	const char    *cfg_file;
-	char          *otel_err = nullptr, temp_path[PATH_MAX];
+	char          *otel_err = nullptr, temp_path[PATH_MAX], bad_path[PATH_MAX];
 	int            retval;
 
 	retval = test_init(argc, argv, "YAML tests", &cfg_file);
@@ -1825,14 +2165,16 @@ int main(int argc, char **argv)
 	 * Build the temporary YAML file path relative to the config file.
 	 */
 	{
-		char *cfg_copy = OTELC_STRDUP(__func__, __LINE__, cfg_file);
+		char *cfg_copy = OTELC_STRDUP(__func__, __LINE__, cfg_file), *dir;
 
 		if (_NULL(cfg_copy)) {
 			OTELC_LOG(stderr, "ERROR: strdup() failed");
 			return EX_OSERR;
 		}
 
-		(void)snprintf(temp_path, sizeof(temp_path), "%s/%s", dirname(cfg_copy), TEMP_YAML_FILE);
+		dir = dirname(cfg_copy);
+		(void)snprintf(temp_path, sizeof(temp_path), "%s/%s", dir, TEMP_YAML_FILE);
+		(void)snprintf(bad_path, sizeof(bad_path), "%s/%s", dir, TEMP_YAML_BAD_FILE);
 		OTELC_SFREE(cfg_copy);
 	}
 
@@ -1852,6 +2194,10 @@ int main(int argc, char **argv)
 	test_yaml_open_valid(cfg_file);
 	test_yaml_open_null();
 	test_yaml_open_nonexistent();
+	test_yaml_open_malformed(bad_path);
+#ifndef HAVE_LIBFYAML_H
+	test_yaml_open_duplicate_key(bad_path);
+#endif
 	test_yaml_close_valid(cfg_file);
 	test_yaml_close_null();
 
@@ -1976,6 +2322,14 @@ int main(int argc, char **argv)
 	test_otelc_init_null_name(cfg_file);
 	test_otelc_init_nstate(cfg_file, temp_path);
 	test_otelc_deinit_reinit(cfg_file);
+
+	/***
+	 * otelc_close_cfg / otelc_lib_shutdown tests.
+	 */
+	OTELC_LOG(stdout, "");
+	OTELC_LOG(stdout, "[otelc_close_cfg / otelc_lib_shutdown]");
+	test_otelc_close_cfg(cfg_file);
+	test_otelc_lib_shutdown(cfg_file);
 
 	(void)unlink(temp_path);
 
