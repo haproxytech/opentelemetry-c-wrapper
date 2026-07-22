@@ -34,7 +34,7 @@ bool         otelc_dbg_trigger_throw = false;
 
 /***
  * NAME
- *   otelc_lib_constructor - performs library load-time initialization
+ *   otelc_lib_constructor - library load-time hook
  *
  * SYNOPSIS
  *   static void __attribute__((constructor)) otelc_lib_constructor(void)
@@ -44,8 +44,9 @@ bool         otelc_dbg_trigger_throw = false;
  *
  * DESCRIPTION
  *   This function is automatically invoked when the shared library is loaded.
- *   It performs one-time library initialization required before any other
- *   OpenTelemetry C wrapper functionality is used.
+ *   Compiled only into debug builds, it currently performs no work beyond the
+ *   entry/exit debug trace and is kept as a placeholder for future load-time
+ *   initialization.
  *
  * RETURN VALUE
  *   This function does not return a value.
@@ -60,7 +61,7 @@ static void __attribute__((constructor)) otelc_lib_constructor(void)
 
 /***
  * NAME
- *   otelc_lib_destructor - performs library unload-time cleanup
+ *   otelc_lib_destructor - library unload-time hook
  *
  * SYNOPSIS
  *   static void __attribute__((destructor)) otelc_lib_destructor(void)
@@ -70,8 +71,9 @@ static void __attribute__((constructor)) otelc_lib_constructor(void)
  *
  * DESCRIPTION
  *   This function is automatically invoked when the shared library is unloaded.
- *   It performs final cleanup and resource release for the OpenTelemetry C
- *   wrapper.
+ *   Compiled only into debug builds, it currently performs no work beyond the
+ *   entry/exit debug trace and is kept as a placeholder for future unload-time
+ *   cleanup.
  *
  * RETURN VALUE
  *   This function does not return a value.
@@ -402,7 +404,10 @@ void otel_log_handler::Handle(otel_sdk_internal_log::LogLevel level, const char 
  *   context pointer.  If forward_attr is true, SDK log attributes are
  *   converted to otelc_kv structures and passed to the callback; otherwise
  *   the attr and attr_len parameters are NULL and zero.  If handler is NULL,
- *   the default SDK log handler (stderr output) is restored.
+ *   the default SDK log handler (stderr output) is restored; when the default
+ *   handler cannot be allocated, an empty handler suppressing SDK diagnostic
+ *   output is installed instead.  Either way the previously installed handler
+ *   is released.
  *
  * RETURN VALUE
  *   This function does not return a value.
@@ -413,8 +418,15 @@ void otelc_log_set_handler(otelc_log_handler_cb_t handler, void *ctx, bool forwa
 
 	if (OTEL_NULL(handler)) {
 		std::shared_ptr<otel_sdk_internal_log::LogHandler> dfl = otel::make_shared_nothrow<otel_sdk_internal_log::DefaultLogHandler>();
-		if (!OTEL_NULL(dfl))
-			otel_sdk_internal_log::GlobalLogHandler::SetLogHandler(dfl);
+
+		/***
+		 * The handler is installed even when the allocation of the
+		 * default handler fails: the SDK dispatch macro tolerates an
+		 * empty handler, and installing it releases the previously
+		 * registered one, so no reference to a caller-supplied
+		 * callback can survive this call.
+		 */
+		otel_sdk_internal_log::GlobalLogHandler::SetLogHandler(dfl);
 	} else {
 		std::shared_ptr<otel_sdk_internal_log::LogHandler> custom = otel::make_shared_nothrow<otel_log_handler>(handler, ctx, forward_attr);
 		if (!OTEL_NULL(custom))
@@ -1975,14 +1987,15 @@ static int otelc_load_handle_map_shards(OTEL_YAML_DOC *fyd, char **err)
  *
  * DESCRIPTION
  *   Initializes the OpenTelemetry C wrapper library using the specified YAML
- *   configuration file.  This function must be called before any other library
- *   functions are used.  Each call allocates a new library context that owns
- *   the parsed YAML document and a duplicated copy of the supplied name.  The
- *   optional top-level handle_map_shards key is read here; the first
- *   otelc_init() call applies it to the span and span context handle maps,
- *   later calls validate but do not change the live setting.  The resolution
- *   state of the context name against each signal section is recorded in the
- *   context and can be read back with otelc_ctx_nstate_get().
+ *   configuration file.  Each call allocates a new library context that owns
+ *   the parsed YAML document and a duplicated copy of the supplied name; a
+ *   context must be created before any signal instance can be created against
+ *   it.  The optional top-level handle_map_shards key is read here; the first
+ *   otelc_init() call whose configuration carries a valid key applies it to
+ *   the span and span context handle maps, later calls validate the key but
+ *   do not change the live setting.  The resolution state of the context name
+ *   against each signal section is recorded in the context and can be read
+ *   back with otelc_ctx_nstate_get().
  *   An error message stored in *err is allocated by the library and must be
  *   released with OTELC_SFREE().
  *
@@ -2151,15 +2164,16 @@ void otelc_deinit(struct otelc_ctx **ctx, struct otelc_tracer **tracer, struct o
  *   This function takes no arguments.
  *
  * DESCRIPTION
- *   Reinstates the default SDK internal log handler and clears the external
- *   malloc, free, and thread-id callbacks registered via otelc_ext_init().
- *   These hooks are process-wide and shared across all library contexts, so
- *   this function must be called only after every otelc_ctx and every signal
- *   instance has been destroyed; calling it earlier would remove hooks on which
- *   live contexts still depend.  No references to caller-supplied callbacks
- *   remain inside the library after this call, allowing the caller to safely
- *   unload the code that owns them.  Calling it is optional; a process that
- *   exits immediately after the final otelc_deinit() may skip it.
+ *   Reinstates the default SDK internal log handler (or an empty handler when
+ *   its allocation fails) and clears the external malloc, free, and thread-id
+ *   callbacks registered via otelc_ext_init().  These hooks are process-wide
+ *   and shared across all library contexts, so this function must be called
+ *   only after every otelc_ctx and every signal instance has been destroyed;
+ *   calling it earlier would remove hooks on which live contexts still depend.
+ *   No references to caller-supplied callbacks remain inside the library after
+ *   this call, allowing the caller to safely unload the code that owns them.
+ *   Calling it is optional; a process that exits immediately after the final
+ *   otelc_deinit() may skip it.
  *
  * RETURN VALUE
  *   This function does not return a value.
