@@ -44,6 +44,6 @@ AC_DEFUN([AX_ENABLE_THREADS], [
 			AC_SUBST([THREADS_LDFLAGS])
 			AC_SUBST([THREADS_LIBS])
 		],
-		[echo "threads use not specified"]
+		[AC_MSG_NOTICE([threads not used])]
 	)
 ])

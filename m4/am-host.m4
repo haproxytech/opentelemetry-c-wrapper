@@ -5,7 +5,7 @@ AC_DEFUN([AX_HOST], [
 	dnl
 	DATE=`date`
 
-	dnl Get cannonical host.
+	dnl Get canonical host.
 	dnl
 	AC_CANONICAL_HOST
 	AC_DEFINE_UNQUOTED([OSTYPE], ["${host}"], [Guessed OS type.])

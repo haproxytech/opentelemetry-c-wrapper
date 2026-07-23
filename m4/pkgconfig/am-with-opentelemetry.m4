@@ -139,7 +139,7 @@ AC_DEFUN([AX_WITH_OPENTELEMETRY], [
 				[[fprintf(stderr, "%s", OPENTELEMETRY_VERSION);]]
 			)],
 			[OTELCPP_VERSION=$(./conftest$ac_exeext 2>&1)],
-			[AC_MSG_ERROR(Failed to compile test program)],
+			[AC_MSG_ERROR([Failed to run the OpenTelemetry version test program])],
 			[]
 		)
 		AC_SUBST([OTELCPP_VERSION])
@@ -265,5 +265,5 @@ AC_DEFUN([AX_WITH_OPENTELEMETRY], [
 		AC_SUBST([OPENTELEMETRY_LDFLAGS])
 		AC_SUBST([OPENTELEMETRY_LIBS])
 		AC_SUBST([OPENTELEMETRY_INCLUDEDIR])
-	], [echo "OpenTelemetry not specified"])
+	], [AC_MSG_NOTICE([OpenTelemetry not used])])
 ])

@@ -245,7 +245,7 @@ AC_DEFUN([AX_CHECK_NOEXCEPT], [
 		],
 		[AC_MSG_RESULT([ yes])],
 		[
-			CXXFLAGS="-std=gnu++11"
+			CXXFLAGS="${CXXFLAGS} -std=gnu++11"
 			AC_MSG_RESULT([ no])
 		]
 	)
@@ -265,7 +265,7 @@ AC_DEFUN([AX_CHECK___DATE__], [
 		],
 		[AC_MSG_RESULT([ yes])],
 		[
-			AC_DEFINE_UNQUOTED([__DATE__], ["`date`"], [Define if your C compiled doesn't have __DATE__ macro.])
+			AC_DEFINE_UNQUOTED([__DATE__], ["`date`"], [Define if your C compiler doesn't have __DATE__ macro.])
 			AC_MSG_RESULT([ no])
 		]
 	)
