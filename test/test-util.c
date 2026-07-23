@@ -332,9 +332,10 @@ void test_set_logger(struct otelc_logger **logger)
  *   otel_err - error string allocated by the library, or NULL
  *
  * DESCRIPTION
- *   Destroys any registered tracer, meter, or logger, deinitializes
- *   the OpenTelemetry library, frees the error string if it is
- *   non-NULL, and prints the test results summary.
+ *   Destroys any registered tracer, meter, or logger, releases the
+ *   registered context, deinitializes the OpenTelemetry library,
+ *   frees the error string if it is non-NULL, and prints the test
+ *   results summary.
  *
  * RETURN VALUE
  *   Returns EX_SOFTWARE if any tests failed, otherwise returns the

@@ -251,7 +251,7 @@ static int thread_id(void)
 }
 
 
-/*
+/***
  * NAME
  *   log_handler_cb - counts SDK internal diagnostic messages
  *
@@ -799,7 +799,7 @@ static void worker_thread(void *data)
  *   collected OpenTelemetry meter statistics for the instance.
  *
  * RETURN VALUE
- *   Returns EX_OK on success, or an appropriate exit code on failure.
+ *   Returns EX_OK in all cases; worker thread failures are only logged.
  */
 static int worker_run(int instance_id)
 {
