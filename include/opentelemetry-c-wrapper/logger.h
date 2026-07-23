@@ -54,7 +54,7 @@ __CPLUSPLUS_DECL_BEGIN
 
 #define OTELC_LOG_SEVERITY_DEF(a,b)   OTELC_LOG_SEVERITY_##a,
 typedef enum {
-        OTELC_LOG_SEVERITY_DEFINES
+	OTELC_LOG_SEVERITY_DEFINES
 } otelc_log_severity_t;
 #undef OTELC_LOG_SEVERITY_DEF
 
@@ -351,7 +351,9 @@ struct otelc_logger_ops {
 	 *   exporter-processor pairs and finally the provider.  When the YAML
 	 *   configuration specifies a sequence of processors (and optionally a
 	 *   matching sequence of exporters), each pair is created and passed to
-	 *   the provider.
+	 *   the provider.  The optional min_severity key of the subtree sets
+	 *   the initial minimum severity threshold; without it the current
+	 *   threshold is kept.
 	 *
 	 *   The caller must drain every concurrent operation on this logger
 	 *   instance before invoking start, including a repeated start: the

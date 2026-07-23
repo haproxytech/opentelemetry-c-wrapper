@@ -414,6 +414,10 @@ entry; any other name falls back to `default`.
 
 A complete example covering all three signals is in `test/otel-cfg.yml`.
 
+The `signals/logs` subtree accepts an optional `min_severity` key that sets
+the initial minimum log severity (for example `INFO`); the threshold can be
+changed at runtime with the logger's `set_min_severity` operation.
+
 ### Thread Settings
 
 Components that spawn background threads (batch processors, OTLP File and HTTP

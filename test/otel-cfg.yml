@@ -383,6 +383,8 @@ signals:
   logs:
     default:
       scope_name: "OTEL C wrapper - logs"
+      # Optional initial minimum log severity; TRACE (the default) allows all.
+      min_severity: TRACE
       exporters:
         - exporter_logs_ostream
         - exporter_logs_otlp_file

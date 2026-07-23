@@ -1515,9 +1515,9 @@ Logger instance structure:
   allowed) and can be overridden via YAML configuration or changed at runtime
   through set_min_severity().
 
-Severity levels (24 total):
+Severity levels:
 
-  The wrapper defines 24 severity levels matching the OpenTelemetry C++ SDK
+  The wrapper defines severity levels matching the OpenTelemetry C++ SDK
   otel_logs::Severity enum, generated from OTELC_LOG_SEVERITY_DEFINES:
 
     C Enum                       C++ Severity
@@ -1585,8 +1585,9 @@ Logger startup (otel_logger_start):
 
 Logger enabled check (otel_logger_enabled):
 
-  Unlike the meter (which reports the wrapper-level gate), the logger
-  delegates to the C++ SDK:
+  The logger honors the wrapper-level gate first and, unlike the meter
+  (which reports only the gate), then delegates the severity decision to
+  the C++ SDK:
 
     logger_ptr->Enabled(log_severity)
 
@@ -1630,8 +1631,8 @@ Log record creation and emission:
 
   The body variants (log_body, log_body_span) skip otel_logger_log_v() and
   vasprintf entirely: they call otel_logger_record_create() and set a typed
-  body from an otelc_value (string, integer, double, or boolean) via SetBody()
-  before emitting.
+  body from an otelc_value (string, data, integer, double, or boolean) via
+  SetBody() before emitting.
 
   C++ API calls used per log record:
 
@@ -1705,7 +1706,7 @@ Key differences from tracer and meter:
   Body formatting -- log() and log_span() produce the body as a printf-style
   string via vasprintf() and set it with SetBody(); log_body() and
   log_body_span() set a typed body directly from an otelc_value (string,
-  integer, double, or boolean).
+  data, integer, double, or boolean).
 
   Trace correlation -- log records can be associated with distributed traces
   either by providing raw span/trace IDs (log()) or by passing an otelc_span

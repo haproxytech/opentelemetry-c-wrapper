@@ -711,12 +711,14 @@ static int otel_logger_shutdown(struct otelc_logger *logger, const struct timesp
  *
  * DESCRIPTION
  *   Reads the configuration from the /signals/logs/<name> subtree of the
- *   YAML document owned by the logger's context and starts the logger. The
+ *   YAML document owned by the logger's context and starts the logger.  The
  *   function initializes the logger in such a way that the following components
  *   are initialized individually: one or more exporter-processor pairs and
  *   finally the provider.  When the YAML configuration specifies a sequence of
  *   processors (and optionally a matching sequence of exporters), each pair is
- *   created and passed to the provider.
+ *   created and passed to the provider.  The optional min_severity key of the
+ *   subtree sets the initial minimum severity threshold; without it the
+ *   current threshold is kept.
  *
  * RETURN VALUE
  *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR in case of an error.
