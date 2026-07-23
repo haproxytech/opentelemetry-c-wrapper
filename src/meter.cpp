@@ -472,7 +472,7 @@ static int64_t otel_meter_get_instrument(struct otelc_meter *meter, const char *
 
 	/* Search for an existing instrument by name and type. */
 	if ((instrument_id = otel_nolock_meter_find_instrument(meter, instrument_key)) != OTELC_RET_ERROR)
-		OTELC_RETURN_INT(instrument_id);
+		OTELC_RETURN_EX(instrument_id, int64_t, "%" PRId64);
 
 	OTEL_METER_RETURN_EX(_INT, OTELC_RET_ERROR, "Instrument not found: \"%s\" type %d", name, type);
 }
@@ -683,7 +683,7 @@ static int64_t otel_meter_create_instrument(struct otelc_meter *meter, const cha
 	OTEL_LOCK_METER_SHARED(instrument, rdguard_instrument);
 
 	if ((instrument_id = otel_nolock_meter_find_instrument(meter, instrument_key)) != OTELC_RET_ERROR)
-		OTELC_RETURN_INT(instrument_id);
+		OTELC_RETURN_EX(instrument_id, int64_t, "%" PRId64);
 
 	rdguard_instrument.unlock();
 
@@ -702,7 +702,7 @@ static int64_t otel_meter_create_instrument(struct otelc_meter *meter, const cha
 	 * the instrument after the shared-lock probe above was released.
 	 */
 	if ((instrument_id = otel_nolock_meter_find_instrument(meter, instrument_key)) != OTELC_RET_ERROR)
-		OTELC_RETURN_INT(instrument_id);
+		OTELC_RETURN_EX(instrument_id, int64_t, "%" PRId64);
 
 	rdguard_instrument_recheck.unlock();
 
@@ -795,7 +795,7 @@ static int64_t otel_meter_create_instrument(struct otelc_meter *meter, const cha
 
 	OTEL_DBG_INSTRUMENT();
 
-	OTELC_RETURN_INT(OTEL_METER_IMPL(meter)->instrument.id++);
+	OTELC_RETURN_EX(OTEL_METER_IMPL(meter)->instrument.id++, int64_t, "%" PRId64);
 }
 
 

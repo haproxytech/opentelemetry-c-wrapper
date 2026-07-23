@@ -278,7 +278,7 @@ struct otelc_meter_ops {
 	 *   failure.
 	 */
 	int64_t (*add_view)(struct otelc_meter *meter, const char *view_name, const char *view_desc, const char *instrument_name, const char *instrument_unit, otelc_metric_instrument_t instrument_type, otelc_metric_aggregation_type_t aggregation_type, const double *bounds, size_t bounds_num)
-		OTELC_NONNULL(1, 2, 3, 4, 5);
+		OTELC_NONNULL(1, 2, 4);
 
 	/***
 	 * NAME
