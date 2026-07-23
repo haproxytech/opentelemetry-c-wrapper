@@ -216,17 +216,18 @@ static int otel_exporter_set_otlp_grpc_options(const struct otelc_ctx *ctx, cons
  *
  * SYNOPSIS
  *   template <typename T, typename R>
- *   static int otel_exporter_set_otlp_http_options(const struct otelc_ctx *ctx, const char *desc, const char *path, char *endpoint, T &options, R &rt_options, char **err, const char *name)
+ *   static int otel_exporter_set_otlp_http_options(const struct otelc_ctx *ctx, const char *desc, const char *path, char *endpoint, T &options, R &rt_options, int64_t *thread_wait_time, char **err, const char *name)
  *
  * ARGUMENTS
- *   ctx        - library context providing the YAML configuration
- *   desc       - description of the exporter
- *   path       - the YAML configuration path
- *   endpoint   - the endpoint to connect to
- *   options    - exporter options structure to populate
- *   rt_options - runtime options structure to populate
- *   err        - address of a pointer to store an error message on failure
- *   name       - name of the exporter configuration node, or nullptr for default
+ *   ctx              - library context providing the YAML configuration
+ *   desc             - description of the exporter
+ *   path             - the YAML configuration path
+ *   endpoint         - the endpoint to connect to
+ *   options          - exporter options structure to populate
+ *   rt_options       - runtime options structure to populate
+ *   thread_wait_time - output for the background_thread_wait_for value, or NULL
+ *   err              - address of a pointer to store an error message on failure
+ *   name             - name of the exporter configuration node, or nullptr for default
  *
  * DESCRIPTION
  *   Reads and applies configuration values common to all OTLP HTTP exporters
@@ -234,7 +235,9 @@ static int otel_exporter_set_otlp_grpc_options(const struct otelc_ctx *ctx, cons
  *   structure.  This includes the exporter endpoint and other HTTP-related
  *   settings shared by trace, metric and logs exporters.  If a thread_name
  *   is specified in the YAML configuration, the function creates a thread
- *   instrumentation object and stores it in the runtime options.
+ *   instrumentation object and stores it in the runtime options.  The
+ *   background_thread_wait_for value read from the YAML configuration is
+ *   stored through thread_wait_time when that pointer is non-null.
  *
  *   The function is type-agnostic and relies on the options object exposing
  *   the expected OTLP HTTP fields rather than on inheritance or runtime type
@@ -391,7 +394,10 @@ static int otel_exporter_set_otlp_http_options(const struct otelc_ctx *ctx, cons
  * DESCRIPTION
  *   Reads and applies configuration values for an ostream exporter from a YAML
  *   document, opens the specified output stream, and creates the exporter.
- *   The created exporter is returned via the exporter parameter.
+ *   The created exporter is returned via the exporter parameter.  Each signal
+ *   instance owns a single logfile stream, so at most one file-backed ostream
+ *   exporter can exist per instance; the stdout and stderr variants are not
+ *   limited.
  *
  *   The function is type-agnostic and relies on the template parameter to
  *   determine the concrete exporter type to instantiate.

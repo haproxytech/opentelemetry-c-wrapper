@@ -147,6 +147,11 @@ struct otelc_text_map {
  * signal are reported as -1; the metric signal has no batch queue, so its
  * dropped, queue_depth, queue_capacity, records_ok, and records_fail fields
  * are always -1.
+ *
+ * The counters are process-wide and aggregate over all instances of a signal;
+ * queue_depth and queue_capacity reflect only the most recently created batch
+ * processor, and trace or log pipelines using the single processor type are
+ * not counted at all.
  */
 struct otelc_export_status {
 	int64_t dropped;        /* Records dropped because the batch queue was full, or -1 if not applicable. */

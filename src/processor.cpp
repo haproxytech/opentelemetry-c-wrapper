@@ -579,6 +579,12 @@ int64_t otel_counting_metric_exporter::last_export_age_ms() noexcept
  *   dropped, queue_depth, queue_capacity, records_ok, and records_fail fields
  *   are reported as -1.
  *
+ *   The counters are process-wide and aggregate over all instances of a
+ *   signal.  The queue_depth and queue_capacity fields reflect only the most
+ *   recently created batch processor, and trace or log pipelines that use the
+ *   single processor type bypass the counting wrappers, so their exports and
+ *   drops are not reflected in the status.
+ *
  * RETURN VALUE
  *   This function does not return a value.
  */

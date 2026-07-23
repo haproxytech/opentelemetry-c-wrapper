@@ -768,6 +768,9 @@ or a file).
 
   filename (string, default: "stdout")
       Output destination.  Accepted values: "stdout", "stderr", or a file path.
+      Each signal instance owns a single logfile stream, so at most one
+      file-backed ostream exporter can be configured per instance; the stdout
+      and stderr variants are not limited.
 
 
 In-Memory exporter (memory)
@@ -1355,6 +1358,12 @@ is the network-side counterpart to a queue-full drop: the queue drains, but the
 collector rejects or never receives the batches.  The export counts are Export()
 calls (batches); the record counts are the spans or log records those calls
 moved, so one export may carry many records.
+
+The counters are process-wide: every instance of a signal adds to the same
+totals.  Queue depth and capacity describe only the most recently created batch
+processor, and trace or log pipelines built with the single processor type skip
+the counting layer entirely, so their exports and drops do not appear in the
+status at all.
 
 Metrics are driven by a periodic reader rather than a batch processor and have
 no queue, so the dropped, queue_depth, and queue_capacity fields of the metrics
