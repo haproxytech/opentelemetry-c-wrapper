@@ -1,0 +1,59 @@
+#!/bin/sh -u
+#
+# fuzz-yaml.sh by Miroslav Zagorac <mzagorac@haproxy.com>
+#
+# Build and run the libFuzzer harness for the YAML configuration loader.
+# The library is built with clang into a separate out-of-tree directory,
+# instrumented with -fsanitize=address,fuzzer-no-link so the fuzzer gets
+# coverage feedback from the library code; the source tree stays intact.
+# The first argument limits the fuzzing time in seconds, all following
+# arguments are passed to the libFuzzer binary unchanged.
+#
+#   Usage: ./fuzz-yaml.sh [ time-limit [ libfuzzer-args ... ] ]
+#
+   SH_SRCDIR="$(realpath "$(dirname "${0}")/..")"
+   SH_LIBDIR="/opt"
+ SH_BUILDDIR="${TMPDIR:-/tmp}/otelc-fuzz"
+   SH_CORPUS="${SH_BUILDDIR}/corpus"
+    SH_CLANG="${CLANG:-clang++}"
+SH_ARG_TIME="${1:-60}"
+
+test ${#} -gt 0 && shift
+
+command -v "${SH_CLANG}" >/dev/null 2>&1 || { echo "ERROR: ${SH_CLANG} not found"; exit 69; }
+
+test -x "${SH_SRCDIR}/configure" || (cd "${SH_SRCDIR}" && sh scripts/bootstrap) || exit 70
+
+if test ! -e "${SH_BUILDDIR}/src/.libs/libopentelemetry-c-wrapper.so"; then
+	mkdir -p "${SH_BUILDDIR}" || exit 73
+	cd "${SH_BUILDDIR}" || exit 71
+
+	CC=clang \
+	CXX="${SH_CLANG}" \
+	CFLAGS="-O1 -g -fsanitize=address,fuzzer-no-link" \
+	CXXFLAGS="-O1 -g -fsanitize=address,fuzzer-no-link" \
+	LDFLAGS="-fsanitize=address" \
+		"${SH_SRCDIR}/configure" --prefix="${SH_LIBDIR}" --with-opentelemetry="${SH_LIBDIR}" || exit 78
+
+	make -j8 || exit 70
+fi
+
+"${SH_CLANG}" -O1 -g -fsanitize=fuzzer,address \
+	-I "${SH_SRCDIR}/include" -I "${SH_BUILDDIR}/include" \
+	-o "${SH_BUILDDIR}/fuzz-yaml" "${SH_SRCDIR}/test/fuzz-yaml.cpp" \
+	-L "${SH_BUILDDIR}/src/.libs" -lopentelemetry-c-wrapper || exit 70
+
+if test ! -d "${SH_CORPUS}"; then
+	mkdir -p "${SH_CORPUS}" || exit 73
+	cp "${SH_SRCDIR}/test/otel-cfg.yml" "${SH_CORPUS}/seed-otel-cfg.yml"
+	echo "contexts:" > "${SH_CORPUS}/seed-minimal.yml"
+	echo "  default:" >> "${SH_CORPUS}/seed-minimal.yml"
+	echo "handle_map_shards: 256" > "${SH_CORPUS}/seed-shards.yml"
+fi
+
+LD_LIBRARY_PATH="${SH_BUILDDIR}/src/.libs:${SH_LIBDIR}/lib" \
+	exec "${SH_BUILDDIR}/fuzz-yaml" \
+		"${SH_CORPUS}" \
+		-max_total_time="${SH_ARG_TIME}" \
+		-close_fd_mask=1 \
+		-artifact_prefix="${SH_BUILDDIR}/" "${@}"

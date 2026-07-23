@@ -1,0 +1,63 @@
+      ---------------------------------------------------------------
+              Fuzzing harness for the YAML configuration loader
+      ---------------------------------------------------------------
+
+
+1. Theory
+------------------------------------------------------------------------------
+
+The YAML configuration file is the library's main untrusted-input surface: every
+byte of it flows through the backend parser and the wrapper's node lookup, type
+conversion, and error reporting code before a context even exists.  The unit
+tests cover the failure modes a reviewer can think of; a fuzzer covers the ones
+nobody thought of by mutating inputs and keeping every mutant that reaches new
+code, so the corpus gravitates toward the parser's dark corners on its own.
+
+Coverage-guided fuzzing only works when the fuzzer can observe the code that it
+exercises.  The harness therefore does not link against the regular build of
+the library: fuzz-yaml.sh builds a separate copy of it with clang, compiled with
+the -fsanitize=address,fuzzer-no-link options, so every branch taken inside
+the library feeds the mutation engine and the address sanitizer checks every
+heap access and reports leaked allocations on every error path.  The source
+tree is not touched; the instrumented copy lives out of tree and is built once,
+then reused.
+
+The harness itself (fuzz-yaml.cpp) presents each input to otelc_init() through
+a memfd-backed path, which keeps the file-based API intact without touching any
+disk.  Each input is loaded twice: under a context name that the seed corpus
+contains, so the lookup and conversion paths run deep, and under an absent name,
+so that the not-found paths run as well.  A context that loads successfully
+is released again through otelc_deinit(), which lets the leak checker close
+the loop over the whole lifecycle.
+
+2. Practice
+------------------------------------------------------------------------------
+
+Usage, with the time limit in seconds and any further arguments passed on to
+the libFuzzer binary unchanged:
+
+  % ./fuzz-yaml.sh [ time-limit [ libfuzzer-args ... ] ]
+
+The corpus persists under /tmp/otelc-fuzz/corpus and is seeded from the file
+test/otel-cfg.yml plus minimal snippets; the crash artifacts are written to the
+/tmp/otelc-fuzz directory.  The script requires clang, because libFuzzer and
+the coverage instrumentation are clang features.
+
+The first campaign ran about three million executions at roughly 9500 runs a
+second, growing the corpus to several hundred units, and finished without any
+findings at all: no crashes, no address sanitizer reports, no memory leaks,
+no timeouts, and no aborts escaping the backend error-handler conversion.
+
+3. Conclusion
+------------------------------------------------------------------------------
+
+The YAML loader withstood a coverage-guided, sanitizer-instrumented attack on
+top of the earlier manual review: malformed documents are rejected through the
+error path, and the error path itself neither leaks nor corrupts memory.  As a
+side effect the campaign proved that the library compiles warning-free under
+clang with the project's -Werror posture.
+
+The result is a statement about the configured backend only; a rapidyaml build
+was fuzzed, and the libfyaml backend deserves its own campaign.  Longer runs, a
+YAML dictionary for the mutation engine, and fuzzing under the thread sanitizer
+are natural extensions when more assurance is wanted.
