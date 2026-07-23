@@ -97,11 +97,12 @@ void test_usage(const char *program_name)
  *   cfg_file - pointer to store the resolved configuration file path
  *
  * DESCRIPTION
- *   Parses command-line options (-c, -h, -V), resolves the YAML
+ *   Parses command-line options (-c, -h, -n, -V), resolves the YAML
  *   configuration file path relative to the binary location, verifies
  *   the file exists, prints the banner, and initializes the
  *   OpenTelemetry runtime.  If -h or -V is given, the corresponding
- *   output is produced and a non-negative exit code is returned.
+ *   output is produced and a non-negative exit code is returned; an
+ *   unknown option prints the usage and returns EX_USAGE.
  *
  * RETURN VALUE
  *   Returns -1 on success (caller should continue), or a non-negative
@@ -124,19 +125,26 @@ int test_init(int argc, char **argv, const char *banner, const char **cfg_file)
 	(void)setvbuf(stderr, NULL, _IOLBF, 0);
 
 	while ((c = getopt_long(argc, argv, "c:hn:V", longopts, NULL)) != EOF) {
-		if (c == 'c')
+		if (c == 'c') {
 			cfg = optarg;
+		}
 		else if (c == 'h') {
 			test_usage(basename(argv[0]));
 
 			return EX_OK;
 		}
-		else if (c == 'n')
+		else if (c == 'n') {
 			ctx_name = optarg;
+		}
 		else if (c == 'V') {
 			(void)printf("%s v%s\n", basename(argv[0]), OTELC_PACKAGE_VERSION);
 
 			return EX_OK;
+		}
+		else {
+			test_usage(basename(argv[0]));
+
+			return EX_USAGE;
 		}
 	}
 

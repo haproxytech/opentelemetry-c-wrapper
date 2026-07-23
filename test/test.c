@@ -847,7 +847,8 @@ static int worker_run(int instance_id)
 			OTELC_LOG(stdout, "worker %*d count: %" PRIu64, decimal_width(cfg.threads * cfg.otel.instance_cnt), prg.worker[i].id, prg.worker[i].count);
 
 		total_cnt += prg.worker[i].count;
-		total_cps += prg.worker[i].count / (prg.worker[i].runtime_ms / 1000.0);
+		if (prg.worker[i].runtime_ms > 0)
+			total_cps += prg.worker[i].count / (prg.worker[i].runtime_ms / 1000.0);
 	}
 
 	OTELC_LOG(stdout, "%d worker(s) total count: %" PRIu64", %.2f/sec", cfg.threads, total_cnt, total_cps);
@@ -1192,6 +1193,7 @@ int main(int argc, char **argv)
 		{ "pidfile",             required_argument, NULL, 'p' },
 		{ "runcount",            required_argument, NULL, 'R' },
 		{ "runtime",             required_argument, NULL, 'r' },
+		{ "random-seed",         required_argument, NULL, 's' },
 		{ "trigger-debug-throw", no_argument,       NULL, 'T' },
 		{ "threads",             required_argument, NULL, 't' },
 		{ "version",             no_argument,       NULL, 'V' },
@@ -1250,9 +1252,11 @@ int main(int argc, char **argv)
 #endif
 		else if (c == 'h')
 			cfg.opt_flags |= FLAG_OPT_HELP;
-#ifdef USE_THREADS
 		else if (c == 'i')
+#ifdef USE_THREADS
 			cfg.otel.instance_cnt = atoi(optarg);
+#else
+			/* Do nothing. */;
 #endif
 		else if (c == 'n')
 			cfg.otel.ctx_name = optarg;
@@ -1264,9 +1268,11 @@ int main(int argc, char **argv)
 			cfg.runtime_ms = atoi(optarg);
 		else if (c == 's')
 			cfg.random_seed = atoi(optarg);
-#ifdef USE_THREADS
 		else if (c == 't')
+#ifdef USE_THREADS
 			cfg.threads = atoi(optarg);
+#else
+			/* Do nothing. */;
 #endif
 		else if (c == 'V')
 			cfg.opt_flags |= FLAG_OPT_VERSION;
@@ -1336,6 +1342,11 @@ int main(int argc, char **argv)
 			/* Do nothing. */;
 		else if (cfg.runcount < 0)
 			cfg.runcount = DEFAULT_RUNCOUNT;
+
+		if (cfg.delay_ms < 0) {
+			OTELC_LOG(stderr, "ERROR: Invalid delay value '%d'", cfg.delay_ms);
+			flag_error = 1;
+		}
 
 #ifdef USE_THREADS
 		if (!OTELC_IN_RANGE(cfg.otel.instance_cnt, 1, MAX_INSTANCES)) {
