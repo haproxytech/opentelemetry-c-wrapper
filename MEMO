@@ -1839,8 +1839,10 @@ flag:
   ryml_get_node_by_path() traversal function that handles both map keys and
   numeric sequence indices.
 
-Every function has parallel implementations for both backends with identical
-semantics.  The OTEL_YAML_DOC typedef abstracts the document type.
+Every function has parallel implementations for both backends with matching
+semantics; the one intended difference is the duplicate-key rejection that
+only the rapidyaml build performs at load time.  The OTEL_YAML_DOC typedef
+abstracts the document type.
 
 Path traversal (rapidyaml backend):
 
@@ -1858,6 +1860,11 @@ Error handling:
 
   yaml_open() wraps tree allocation and parsing in a single try block.  On
   success the unique_ptr is released to transfer ownership to the caller.
+
+  In the rapidyaml build, yaml_open() additionally runs the duplicate-key scan
+  ryml_find_duplicate_keys(), which rejects a document whose mappings repeat
+  a key, reporting the full node path; the libfyaml build performs no such
+  check.
 
   yaml_read() uses OTEL_DEFER(yaml_close(&fyd)) for automatic document cleanup
   regardless of the exit path.
