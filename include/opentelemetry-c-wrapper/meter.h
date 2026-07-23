@@ -109,9 +109,11 @@ struct otelc_meter_ops {
 	 *   Creates and registers a metric instrument with the specified meter.
 	 *   The instrument type determines whether the instrument is synchronous or
 	 *   observable.  For observable instruments, the provided callback function is
-	 *   invoked to collect measurements.  For synchronous instruments, the callback
-	 *   is ignored.  This function encapsulates the common logic required to create
-	 *   different metric instrument types in the C wrapper library.
+	 *   invoked to collect measurements.  For synchronous instruments, the
+	 *   descriptor must be null; a non-null descriptor fails the call, as does
+	 *   a missing descriptor for an observable instrument.  This function
+	 *   encapsulates the common logic required to create different metric
+	 *   instrument types in the C wrapper library.
 	 *
 	 *   If an instrument with the same name and type already exists, its ID is
 	 *   returned and the data argument is ignored; use add_instrument_callback()
@@ -119,7 +121,9 @@ struct otelc_meter_ops {
 	 *
 	 * RETURN VALUE
 	 *   Returns a non-negative instrument ID on success, or OTELC_RET_ERROR on
-	 *   failure.
+	 *   failure.  Instrument IDs are assigned sequentially from zero and are
+	 *   passed back as the int idx argument of the update and callback
+	 *   operations.
 	 */
 	int64_t (*create_instrument)(struct otelc_meter *meter, const char *name, const char *desc, const char *unit, otelc_metric_instrument_t type, struct otelc_metric_observable_cb *data)
 		OTELC_NONNULL(1, 2);
@@ -423,6 +427,11 @@ struct otelc_meter_ops {
 	 *   concurrent calls snapshot the SDK meter and provider handles that
 	 *   start replaces, and such a snapshot racing with the replacement
 	 *   is a data race.
+	 *
+	 *   A repeated start does not clear the instrument and view registries:
+	 *   instruments created before the restart keep their IDs and are still
+	 *   returned by create_instrument, but they stay bound to the replaced
+	 *   pipeline and their updates are no longer exported.
 	 *
 	 * RETURN VALUE
 	 *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR in case of an

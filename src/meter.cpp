@@ -615,9 +615,11 @@ static int otel_meter_remove_instrument_callback(struct otelc_meter *meter, int 
  *   Creates and registers a metric instrument with the specified meter.
  *   The instrument type determines whether the instrument is synchronous or
  *   observable.  For observable instruments, the provided callback function is
- *   invoked to collect measurements.  For synchronous instruments, the callback
- *   is ignored.  This function encapsulates the common logic required to create
- *   different metric instrument types in the C wrapper library.
+ *   invoked to collect measurements.  For synchronous instruments, the
+ *   descriptor must be null; a non-null descriptor fails the call, as does a
+ *   missing descriptor for an observable instrument.  This function
+ *   encapsulates the common logic required to create different metric
+ *   instrument types in the C wrapper library.
  *
  *   If an instrument with the same name and type already exists, its ID is
  *   returned and the data argument is ignored; use add_instrument_callback()
@@ -625,7 +627,9 @@ static int otel_meter_remove_instrument_callback(struct otelc_meter *meter, int 
  *
  * RETURN VALUE
  *   Returns a non-negative instrument ID on success, or OTELC_RET_ERROR on
- *   failure.
+ *   failure.  Instrument IDs are assigned sequentially from zero and are
+ *   passed back as the int idx argument of the update and callback
+ *   operations.
  */
 static int64_t otel_meter_create_instrument(struct otelc_meter *meter, const char *name, const char *desc, const char *unit, otelc_metric_instrument_t type, struct otelc_metric_observable_cb *data)
 {

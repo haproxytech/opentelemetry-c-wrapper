@@ -1294,7 +1294,7 @@ Meter startup (otel_meter_start):
   This mirrors the multi-pipeline pattern already used by the tracer
   (processors/exporters) and logger (processors/exporters).
 
-Instrument types (14 total):
+Instrument types:
 
   Synchronous instruments -- the C wrapper calls Add() or Record() directly on
   the C++ instrument:

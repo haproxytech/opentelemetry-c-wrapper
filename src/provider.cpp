@@ -115,7 +115,7 @@ int otel_tracer_provider_get(struct otelc_tracer *tracer, otel_nostd::shared_ptr
  *   otel_meter_reader_create - creates a new periodic exporting metric reader
  *
  * SYNOPSIS
- *   static int otel_meter_reader_create(struct otelc_meter *meter, std::unique_ptr<otel_sdk_metrics::PushMetricExporter> &exporter, std::unique_ptr<otel_sdk_metrics::PeriodicExportingMetricReader> &reader, const char *name)
+ *   int otel_meter_reader_create(struct otelc_meter *meter, std::unique_ptr<otel_sdk_metrics::PushMetricExporter> &exporter, std::unique_ptr<otel_sdk_metrics::PeriodicExportingMetricReader> &reader, const char *name)
  *
  * ARGUMENTS
  *   meter    - meter instance

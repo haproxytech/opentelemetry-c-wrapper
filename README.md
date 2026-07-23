@@ -214,8 +214,19 @@ int main(void)
     int64_t             counter;
 
     ctx = otelc_init("otel-cfg.yml", "default", &err);
+    if (ctx == NULL) {
+        fprintf(stderr, "Failed to init: %s\n", err);
+        free(err);
+        return 1;
+    }
 
     meter = otelc_meter_create(ctx, &err);
+    if (meter == NULL) {
+        fprintf(stderr, "Failed to create meter: %s\n", err);
+        free(err);
+        otelc_deinit(&ctx, NULL, NULL, NULL);
+        return 1;
+    }
     meter->ops->start(meter);
 
     counter = meter->ops->create_instrument(meter, "requests", "Total request count", "1", OTELC_METRIC_INSTRUMENT_COUNTER_UINT64, NULL);
@@ -243,8 +254,19 @@ int main(void)
     char                *err = NULL;
 
     ctx = otelc_init("otel-cfg.yml", "default", &err);
+    if (ctx == NULL) {
+        fprintf(stderr, "Failed to init: %s\n", err);
+        free(err);
+        return 1;
+    }
 
     logger = otelc_logger_create(ctx, &err);
+    if (logger == NULL) {
+        fprintf(stderr, "Failed to create logger: %s\n", err);
+        free(err);
+        otelc_deinit(&ctx, NULL, NULL, NULL);
+        return 1;
+    }
     logger->ops->start(logger);
 
     logger->ops->log_span(logger, OTELC_LOG_SEVERITY_INFO, 0, NULL, NULL, NULL, NULL, NULL, 0, "Application started successfully");
