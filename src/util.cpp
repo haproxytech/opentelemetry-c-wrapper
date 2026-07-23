@@ -1802,11 +1802,13 @@ const char *otel_strerror(int errnum)
 	errno   = 0;
 #ifdef STRERROR_R_CHAR_P
 	retptr = strerror_r(errnum, retbuf, sizeof(retbuf));
-#else
-	(void)strerror_r(errnum, retbuf, sizeof(retbuf));
-#endif
 	if (errno != 0)
 		retptr = "Unknown error";
+#else
+	/* The XSI variant reports failure through its result, not errno. */
+	if (strerror_r(errnum, retbuf, sizeof(retbuf)) != 0)
+		retptr = "Unknown error";
+#endif
 
 	OTELC_RETURN_PTR(retptr);
 }
