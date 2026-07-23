@@ -39,8 +39,8 @@
 #define OTEL_INSTRUMENT_HANDLE(a)           otel_map_find(OTEL_METER_IMPL(meter)->instrument.shards[0].map, (a))
 #define OTEL_DBG_INSTRUMENT()                                                                              \
 	OTELC_DBG(_OTEL, OTEL_HANDLE_FMT("otel_instrument"),                                               \
-		OTEL_METER_IMPL(meter)->instrument.total_map_size(),                                       \
-		OTEL_METER_IMPL(meter)->instrument.max_bucket_count(),                                     \
+		OTEL_METER_IMPL(meter)->instrument.total_map_size_nolock(),                                \
+		OTEL_METER_IMPL(meter)->instrument.max_bucket_count_nolock(),                              \
 		OTEL_METER_IMPL(meter)->instrument.shards.size(),                                          \
 		OTEL_METER_IMPL(meter)->instrument.id.load(),                                              \
 		OTEL_METER_IMPL(meter)->instrument.peak_size.load(),                                       \

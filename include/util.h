@@ -45,7 +45,8 @@ extern std::atomic<size_t> otel_handle_map_shards;
 #endif
 #define OTEL_HANDLE_FMT(h)           h "{ < %zu/%zu/%zu > %" PRId64 " %zu %" PRId64 " %" PRId64 " %" PRId64 " }"
 #define OTEL_HANDLE_ARGS(p)          OTEL_HANDLE((p), total_map_size()), OTEL_HANDLE((p), max_bucket_count()), OTEL_HANDLE((p), shards.size()), OTEL_HANDLE((p), id).load(), OTEL_HANDLE((p), peak_size).load(), OTEL_HANDLE((p), alloc_fail_cnt).load(), OTEL_HANDLE((p), erase_cnt).load(), OTEL_HANDLE((p), destroy_cnt).load()
-#define OTEL_DBG_HANDLE(l,h,p)       OTELC_DBG(_##l, OTEL_HANDLE_FMT(h), OTEL_HANDLE_ARGS(p))
+#define OTEL_HANDLE_ARGS_NOLOCK(p)   OTEL_HANDLE((p), total_map_size_nolock()), OTEL_HANDLE((p), max_bucket_count_nolock()), OTEL_HANDLE((p), shards.size()), OTEL_HANDLE((p), id).load(), OTEL_HANDLE((p), peak_size).load(), OTEL_HANDLE((p), alloc_fail_cnt).load(), OTEL_HANDLE((p), erase_cnt).load(), OTEL_HANDLE((p), destroy_cnt).load()
+#define OTEL_DBG_HANDLE(l,h,p)       OTELC_DBG(_##l, OTEL_HANDLE_FMT(h), OTEL_HANDLE_ARGS_NOLOCK(p))
 #define OTEL_HANDLE_PEAK_SIZE(h,s)                                                                                                      \
 	do {                                                                                                                            \
 		size_t peak_size = OTEL_HANDLE(h, peak_size).load();                                                                    \
@@ -308,7 +309,7 @@ struct otel_handle {
 			otel_hash_function, /* Custom hash function for keys.       (class Hash = std::hash<Key>) */
 			otel_key_eq         /* Custom key equality comparator.      (class KeyEqual = std::equal_to<Key>) */
 		> map;                      /* Map storing active handles indexed by ID. */
-		M mutex;                    /* Mutex protecting concurrent access to the handle map. */
+		mutable M mutex;            /* Mutex protecting concurrent access to the handle map. */
 	};
 
 	std::atomic<int64_t>      id;             /* Unique identifier generator (current handle ID). */
@@ -369,7 +370,8 @@ struct otel_handle {
 	 * Calculate the total memory usage of this handle structure.  This
 	 * includes the struct itself, the vector's heap-allocated shard storage
 	 * and each unordered_map's buckets and nodes.  It does not account for
-	 * objects pointed to by stored values.
+	 * objects pointed to by stored values.  Each shard is sampled under
+	 * its mutex so the reader does not race concurrent map updates.
 	 */
 	size_t size_of() const noexcept
 	{
@@ -379,20 +381,73 @@ struct otel_handle {
 		retval += shards.capacity() * sizeof(struct shard);
 
 		for (const auto &it : shards) {
-			/* Bucket array of the unordered_map. */
-			retval += it.map.bucket_count() * sizeof(void *);
+			if constexpr (shared) {
+				const std::lock_guard<M> guard(it.mutex);
 
-			/* Each map node: next-pointer and key-value pair. */
-			retval += it.map.size() * (sizeof(void *) + sizeof(std::pair<const int64_t, T>));
+				/* Bucket array of the unordered_map. */
+				retval += it.map.bucket_count() * sizeof(void *);
+
+				/* Each map node: next-pointer and key-value pair. */
+				retval += it.map.size() * (sizeof(void *) + sizeof(std::pair<const int64_t, T>));
+			} else {
+				retval += it.map.bucket_count() * sizeof(void *);
+				retval += it.map.size() * (sizeof(void *) + sizeof(std::pair<const int64_t, T>));
+			}
 		}
 
 		return retval;
 	}
 
 	/***
-	 * Returns the total number of elements across all shards.
+	 * Returns the total number of elements across all shards.  Each shard
+	 * is sampled under its mutex so the reader does not race concurrent
+	 * map updates.
 	 */
 	size_t total_map_size() const noexcept
+	{
+		size_t retval = 0;
+
+		for (const auto &it : shards) {
+			if constexpr (shared) {
+				const std::lock_guard<M> guard(it.mutex);
+
+				retval += it.map.size();
+			} else {
+				retval += it.map.size();
+			}
+		}
+
+		return retval;
+	}
+
+	/***
+	 * Returns the maximum bucket count among all shards.  Each shard is
+	 * sampled under its mutex so the reader does not race concurrent map
+	 * updates.
+	 */
+	size_t max_bucket_count() const noexcept
+	{
+		size_t retval = 0;
+
+		for (const auto &it : shards) {
+			if constexpr (shared) {
+				const std::lock_guard<M> guard(it.mutex);
+
+				retval = std::max(retval, it.map.bucket_count());
+			} else {
+				retval = std::max(retval, it.map.bucket_count());
+			}
+		}
+
+		return retval;
+	}
+
+	/***
+	 * Returns the total number of elements across all shards without
+	 * taking the shard mutexes.  Only for callers that already hold the
+	 * shard lock, like the debug logging inside a locked section.
+	 */
+	size_t total_map_size_nolock() const noexcept
 	{
 		size_t retval = 0;
 
@@ -403,9 +458,11 @@ struct otel_handle {
 	}
 
 	/***
-	 * Returns the maximum bucket count among all shards.
+	 * Returns the maximum bucket count among all shards without taking
+	 * the shard mutexes.  Only for callers that already hold the shard
+	 * lock, like the debug logging inside a locked section.
 	 */
-	size_t max_bucket_count() const noexcept
+	size_t max_bucket_count_nolock() const noexcept
 	{
 		size_t retval = 0;
 
