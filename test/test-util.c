@@ -97,7 +97,9 @@ void test_usage(const char *program_name)
  *   cfg_file - pointer to store the resolved configuration file path
  *
  * DESCRIPTION
- *   Parses command-line options (-c, -h, -n, -V), resolves the YAML
+ *   Verifies first that the library and the header files carry the
+ *   same version and returns EX_SOFTWARE on a mismatch.  Then parses
+ *   command-line options (-c, -h, -n, -V), resolves the YAML
  *   configuration file path relative to the binary location, verifies
  *   the file exists, prints the banner, and initializes the
  *   OpenTelemetry runtime.  If -h or -V is given, the corresponding
@@ -120,6 +122,12 @@ int test_init(int argc, char **argv, const char *banner, const char **cfg_file)
 	static char  cfg_path[PATH_MAX];
 	const char  *cfg = DEFAULT_CFG_FILE;
 	int          c;
+
+	if (!OTELC_IS_VALID_VERSION()) {
+		OTELC_LOG(stderr, "ERROR: OpenTelemetry C Wrapper version mismatch: library (%s) does not match header files (%s).  Please ensure both are the same version.", otelc_version(), OTELC_VERSION);
+
+		return EX_SOFTWARE;
+	}
 
 	(void)setvbuf(stdout, NULL, _IOLBF, 0);
 	(void)setvbuf(stderr, NULL, _IOLBF, 0);
