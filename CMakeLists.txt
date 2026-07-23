@@ -74,10 +74,12 @@ set(OPENTELEMETRY_DIR "" CACHE PATH "OpenTelemetry C++ SDK install prefix")
 set(LIBFYAML_DIR      "" CACHE PATH "libfyaml install prefix")
 set(RAPIDYAML_DIR     "" CACHE PATH "rapidyaml install prefix")
 
+## WITH_RAPIDYAML defaults to ON, so a plain -DWITH_LIBFYAML=ON must win
+## over that default, mirroring the autotools --with-libfyaml behaviour.
 if(WITH_LIBFYAML AND WITH_RAPIDYAML)
-    message(FATAL_ERROR
-        "Options WITH_LIBFYAML and WITH_RAPIDYAML cannot be used"
-        " at the same time")
+    set(WITH_RAPIDYAML OFF)
+    message(STATUS
+        "WITH_LIBFYAML selected; disabling the default WITH_RAPIDYAML")
 endif()
 
 ## ---------------------------------------------------------------------------
