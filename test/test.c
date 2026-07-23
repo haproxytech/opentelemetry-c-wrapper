@@ -758,10 +758,10 @@ static void worker_thread(void *data)
 #ifndef OTELC_USE_THREAD_SHARED_HANDLE
 	int otelc_status  = otelc_statistics_check(NULL, 0, 0, worker->count * 5, 0, worker->count * 5, worker->count * 5);
 	otelc_status     |= otelc_statistics_check(NULL, 1, 0, worker->count * 2, 0, worker->count * 2, worker->count * 2);
-	otelc_status     |= otelc_statistics_check(prg.otel.meter, 2, 5, 5, 0, 0, 0);
-	otelc_status     |= otelc_statistics_check(prg.otel.meter, 3, 1, 1, 0, 0, 0);
+	otelc_status     |= otelc_statistics_check(worker->otel->meter, 2, 5, 5, 0, 0, 0);
+	otelc_status     |= otelc_statistics_check(worker->otel->meter, 3, 1, 1, 0, 0, 0);
 
-	otelc_statistics(prg.otel.meter, otel_infbuf, sizeof(otel_infbuf));
+	otelc_statistics(worker->otel->meter, otel_infbuf, sizeof(otel_infbuf));
 	OTELC_LOG(stdout, "[%4d] %s traces: %" PRIu64 ", %s", worker->id, otelc_status ? "ERROR" : "OK", worker->count, otel_infbuf);
 #endif
 
