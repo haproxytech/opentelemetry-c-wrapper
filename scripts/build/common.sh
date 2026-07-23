@@ -64,7 +64,7 @@ sh_make ()
 {
 	local _var_cpu="$(grep "^processor" /proc/cpuinfo | wc -l)"
 
-	make -j${_var_cpu} all
+	make -j${_var_cpu} all || return 1
 	make DESTDIR="${SH_ARG_INSTDIR}" -j${_var_cpu} install
 }
 
@@ -72,7 +72,7 @@ sh_archive ()
 {
 	test -f "${SH_PKG}.tar.gz" || wget "${SH_PKG_URL}" -O "${SH_PKG}.tar.gz"
 	tar xf "${SH_PKG}.tar.gz"
-	cd "${SH_PKG}"
+	cd "${SH_PKG}" || exit 1
 	find .. -maxdepth 1 -name "*${SH_PKG}.patch" -type f | grep -q . && {
 		local _var_file=
 

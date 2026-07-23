@@ -6,10 +6,10 @@
 # aclocal, autoheader, automake, and autoconf.
 #
 mkdir -p config
-libtoolize
+libtoolize || exit
 aclocal -I m4 || exit
-autoheader
-automake --add-missing --copy
-autoconf
+autoheader || exit
+automake --add-missing --copy || exit
+autoconf || exit
 
 rm -rf autom4te.cache

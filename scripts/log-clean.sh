@@ -7,7 +7,6 @@
 SH_FILE="${1:-_log}"
 
 
-test -z "${SH_FILE}" && exit 64
 test -f "${SH_FILE}" || exit 74
 
 sed '

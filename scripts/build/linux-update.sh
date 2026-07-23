@@ -52,7 +52,7 @@ sh_cmake_install ()
 
 	test "${ID}" = "ubuntu" || {
 		echo "Unfortunately, there is no Kitware package repository for the used linux distribution (${ID} ${VERSION})"
-		return 70
+		return 0
 	}
 
 	sh_input "Do you want to install the latest version of cmake utility, using Kitware repository" || return 0
@@ -135,7 +135,7 @@ sh_system_update ()
 		;;
 
 	  rhel-8.* | almalinux-8.* | rocky-8.*)
-		yum install gcc-toolset-10.x86_64
+		yum install -y gcc-toolset-10.x86_64
 		;;
 	esac
 }
