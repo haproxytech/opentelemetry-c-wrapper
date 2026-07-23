@@ -107,7 +107,9 @@ struct otelc_tracer_ops {
 	 * DESCRIPTION
 	 *   Extracts a span context from the given text map carrier, allowing
 	 *   for the propagation of trace context across process boundaries.
-	 *   This is a key mechanism for distributed tracing.
+	 *   This is a key mechanism for distributed tracing.  A carrier without
+	 *   trace headers still yields a span context whose is_valid()
+	 *   operation returns false.
 	 *
 	 * RETURN VALUE
 	 *   Returns a pointer to the extracted span context on success,
@@ -130,7 +132,8 @@ struct otelc_tracer_ops {
 	 * DESCRIPTION
 	 *   Extracts a span context from the given HTTP headers carrier,
 	 *   which is a common method for propagating trace context in web
-	 *   applications.
+	 *   applications.  A carrier without trace headers still yields a span
+	 *   context whose is_valid() operation returns false.
 	 *
 	 * RETURN VALUE
 	 *   Returns a pointer to the extracted span context on success,

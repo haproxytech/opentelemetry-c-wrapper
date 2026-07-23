@@ -605,6 +605,8 @@ static int otel_tracer_extract_carrier_cb(void *arg, const char *key, const char
  *   Extracts a span context from the given carrier, allowing for the
  *   propagation of trace context across process boundaries.  This template
  *   consolidates the common logic for text map and HTTP headers extraction.
+ *   A carrier without trace headers still yields a span context whose
+ *   is_valid() operation returns false.
  *
  * RETURN VALUE
  *   Returns a pointer to the extracted span context on success, or nullptr
@@ -712,7 +714,8 @@ static struct otelc_span_context *otel_tracer_extract_carrier(struct otelc_trace
  * DESCRIPTION
  *   Extracts a span context from the given text map carrier, allowing for the
  *   propagation of trace context across process boundaries.  This is a key
- *   mechanism for distributed tracing.
+ *   mechanism for distributed tracing.  A carrier without trace headers still
+ *   yields a span context whose is_valid() operation returns false.
  *
  * RETURN VALUE
  *   Returns a pointer to the extracted span context on success, or nullptr
@@ -737,7 +740,9 @@ static struct otelc_span_context *otel_tracer_extract_text_map(struct otelc_trac
  *
  * DESCRIPTION
  *   Extracts a span context from the given HTTP headers carrier, which is a
- *   common method for propagating trace context in web applications.
+ *   common method for propagating trace context in web applications.  A
+ *   carrier without trace headers still yields a span context whose
+ *   is_valid() operation returns false.
  *
  * RETURN VALUE
  *   Returns a pointer to the extracted span context on success, or nullptr

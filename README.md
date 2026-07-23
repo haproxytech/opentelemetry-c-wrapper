@@ -187,8 +187,10 @@ int main(void)
 
     /* Start a span, do work, end the span */
     span = tracer->ops->start_span(tracer, "my-operation");
-    /* ... */
-    span->ops->end(&span);
+    if (span != NULL) {
+        /* ... */
+        span->ops->end(&span);
+    }
 
     /* Clean up the tracer and the context */
     otelc_deinit(&ctx, &tracer, NULL, NULL);
@@ -430,8 +432,9 @@ does not provide runtime options for gRPC exporter threads.
 ## Thread Safety
 
 All data-plane operations (creating spans, recording metrics, emitting logs) are
-thread-safe and can be called concurrently.  Spans are stored in a 64-shard map
-with independent locks to distribute contention.
+thread-safe and can be called concurrently.  Spans are stored in a sharded map
+whose independently locked shards distribute contention; the shard count is set
+with the top-level `handle_map_shards` YAML key.
 
 The lifecycle operations (`otelc_init`, `otelc_*_create`, `start`, `destroy`,
 `otelc_deinit`, and `otelc_lib_shutdown`) must be called from a single thread,

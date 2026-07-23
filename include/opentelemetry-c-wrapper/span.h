@@ -137,7 +137,9 @@ struct otelc_span_context_ops {
 	 *   from the span context.  Any of the output pointers can be null if
 	 *   that specific identifier is not needed.  The provided buffers for
 	 *   span_id and trace_id must be large enough to hold the respective
-	 *   identifiers.
+	 *   identifiers.  A buffer smaller than its identifier is skipped
+	 *   silently: the buffer is left unmodified and the function still
+	 *   reports success.
 	 *
 	 * RETURN VALUE
 	 *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR on failure.
@@ -188,7 +190,9 @@ struct otelc_span_context_ops {
 	 *
 	 * DESCRIPTION
 	 *   Iterates over all key-value pairs in the W3C trace state and
-	 *   appends them to the provided text map.  The caller is responsible
+	 *   appends them to the provided text map.  The text map must be
+	 *   initialized before the call, either created by
+	 *   otelc_text_map_new() or zero-filled.  The caller is responsible
 	 *   for freeing the text map contents with otelc_text_map_destroy()
 	 *   when done.
 	 *
@@ -269,7 +273,10 @@ struct otelc_span_context_ops {
 	 *   header_size-1 characters plus a NUL terminator when header_size
 	 *   is greater than zero, and always returns the total length of the
 	 *   header regardless of the buffer size.  The header and header_size
-	 *   arguments can be zero/null when only the length is needed.
+	 *   arguments can be zero/null when only the length is needed.  A key
+	 *   or value that fails W3C validation makes the SDK return the empty
+	 *   trace state, so the function returns 0 with an empty header; this
+	 *   outcome is indistinguishable from a genuinely empty trace state.
 	 *
 	 * RETURN VALUE
 	 *   Returns the length of the resulting header string (excluding NUL),
@@ -300,7 +307,10 @@ struct otelc_span_context_ops {
 	 *   NUL terminator when header_size is greater than zero, and always
 	 *   returns the total length of the header regardless of the buffer
 	 *   size.  The header and header_size arguments can be zero/null when
-	 *   only the length is needed.
+	 *   only the length is needed.  A key that fails W3C validation makes
+	 *   the SDK return the empty trace state, so the function returns 0
+	 *   with an empty header; this outcome is indistinguishable from a
+	 *   genuinely empty trace state.
 	 *
 	 * RETURN VALUE
 	 *   Returns the length of the resulting header string (excluding NUL),
@@ -369,7 +379,9 @@ struct otelc_span_ops {
 	 *   single trace.  Any of the output pointers can be null if that
 	 *   specific identifier is not needed.  The provided buffers for
 	 *   span_id and trace_id must be large enough to hold the respective
-	 *   identifiers.
+	 *   identifiers.  A buffer smaller than its identifier is skipped
+	 *   silently: the buffer is left unmodified and the function still
+	 *   reports success.
 	 *
 	 * RETURN VALUE
 	 *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR in case of an
@@ -410,11 +422,12 @@ struct otelc_span_ops {
 	 *   void (*end)(struct otelc_span **span)
 	 *
 	 * ARGUMENTS
-	 *   span - span instance
+	 *   span - address of a span instance pointer to be ended and destroyed
 	 *
 	 * DESCRIPTION
 	 *   Finalizes the operations with span.  It must be the last call
-	 *   for the span instance.  This function calls the function
+	 *   for the span instance.  The span handle is destroyed and the
+	 *   *span pointer is set to null.  This function calls the function
 	 *   end_with_options(), which offers additional control over span
 	 *   finalization.
 	 *
@@ -432,18 +445,19 @@ struct otelc_span_ops {
 	 *   void (*end_with_options)(struct otelc_span **span, const struct timespec *ts_steady, otelc_span_status_t status, const char *desc)
 	 *
 	 * ARGUMENTS
-	 *   span      - span instance
+	 *   span      - address of a span instance pointer to be ended and destroyed
 	 *   ts_steady - time when the span finished (monotonic clock)
 	 *   status    - status code of a finished span
 	 *   desc      - description of the status
 	 *
 	 * DESCRIPTION
 	 *   Finalizes the operations with span.  It must be the last call for
-	 *   the span instance.  The optional <ts_steady> argument sets the end
-	 *   time of the span.  <status> is used to set the status of the span
-	 *   and its setting can be avoided if OTELC_SPAN_STATUS_IGNORE is used
-	 *   as the argument.  <desc> is used as a text description that can be
-	 *   set for the span status.
+	 *   the span instance.  The span handle is destroyed and the *span
+	 *   pointer is set to null.  The optional <ts_steady> argument sets
+	 *   the end time of the span.  <status> is used to set the status of
+	 *   the span and its setting can be avoided if OTELC_SPAN_STATUS_IGNORE
+	 *   is used as the argument.  <desc> is used as a text description
+	 *   that can be set for the span status.
 	 *
 	 * RETURN VALUE
 	 *   This function does not return a value.
@@ -939,12 +953,13 @@ struct otelc_span_ops {
 	 *   void (*destroy)(struct otelc_span **span)
 	 *
 	 * ARGUMENTS
-	 *   span - span instance
+	 *   span - address of a span instance pointer to be destroyed
 	 *
 	 * DESCRIPTION
 	 *   Destroys all references associated with a specific span, as well
 	 *   as deleting the span from the otel_span handle map.  After this
-	 *   function is executed, all data related to the span is deleted.
+	 *   function is executed, all data related to the span is deleted and
+	 *   the *span pointer is set to null.
 	 *
 	 * RETURN VALUE
 	 *   This function does not return a value.
@@ -984,13 +999,17 @@ struct otelc_span {
  *   bytes.  This allows callers to link to external spans or restore context
  *   from storage without round-tripping through text map propagation.  The
  *   optional trace_state_header argument is parsed as a W3C tracestate header
- *   string.  At least one tracer must exist at the time of the call because
- *   span context handles live in the handle maps that are created together
- *   with the first tracer and destroyed together with the last one.  An error
- *   message stored in *err is allocated by the library and must be released
- *   with OTELC_SFREE(); on entry, *err must be a null pointer or a pointer
- *   from a previous call, since any previous message is released before being
- *   replaced.
+ *   string.  A trace_id or span_id argument that is null or whose size is
+ *   smaller than the documented identifier size leaves that identifier
+ *   zero-filled, producing a span context whose is_valid() returns false
+ *   without an error; a malformed trace_state_header is replaced by an empty
+ *   trace state.  At least one tracer must exist at the time of the call
+ *   because span context handles live in the handle maps that are created
+ *   together with the first tracer and destroyed together with the last one.
+ *   An error message stored in *err is allocated by the library and must be
+ *   released with OTELC_SFREE(); on entry, *err must be a null pointer or a
+ *   pointer from a previous call, since any previous message is released
+ *   before being replaced.
  *
  * RETURN VALUE
  *   Returns a pointer to a newly created span context on success, or nullptr
