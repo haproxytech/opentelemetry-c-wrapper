@@ -123,6 +123,22 @@ AC_DEFUN([AX_PROG_CC_SET], [
 			[CFLAGS="${CFLAGS} ${_loop_cflags}"]
 		)
 	done
+	dnl The sanitizer instrumentation defeats the gcc uninitialized-value
+	dnl analysis and produces spurious maybe-uninitialized reports in the
+	dnl libstdc++ headers, which -Werror turns into build failures.  The
+	dnl suppression must follow -Wall, which would re-enable the warning.
+	AS_IF(
+		[test "${enable_asan}" = "yes" -o "${enable_tsan}" = "yes"],
+		[
+			AX_CHECK_COMPILE_FLAG(
+				[-Wno-maybe-uninitialized],
+				[CFLAGS="${CFLAGS} -Wno-maybe-uninitialized"],
+				[],
+				[-Werror]
+			)
+		],
+		[]
+	)
 	AC_LANG_POP([C])
 	SET_CFLAGS="${SET_CFLAGS} ${CFLAGS}"
 	CFLAGS="${_var_tmp_cflags}"
@@ -224,6 +240,19 @@ AC_DEFUN([AX_PROG_CXX_SET], [
 			[CXXFLAGS="${CXXFLAGS} ${_loop_cxxflags}"]
 		)
 	done
+	dnl See the matching sanitizer suppression in AX_PROG_CC_SET.
+	AS_IF(
+		[test "${enable_asan}" = "yes" -o "${enable_tsan}" = "yes"],
+		[
+			AX_CHECK_COMPILE_FLAG(
+				[-Wno-maybe-uninitialized],
+				[CXXFLAGS="${CXXFLAGS} -Wno-maybe-uninitialized"],
+				[],
+				[-Werror]
+			)
+		],
+		[]
+	)
 	AC_LANG_POP([C++])
 	SET_CXXFLAGS="${SET_CXXFLAGS} ${CXXFLAGS}"
 	CXXFLAGS="${_var_tmp_cxxflags}"
@@ -453,6 +482,47 @@ AC_DEFUN([AX_ENABLE_GPROF], [
 					CFLAGS="${CFLAGS} -pg"
 					CXXFLAGS="${CXXFLAGS} -pg"
 					LDFLAGS="${LDFLAGS} -pg"
+				],
+				[]
+			)
+		]
+	)
+])
+
+AC_DEFUN([AX_ENABLE_ASAN], [
+	AC_ARG_ENABLE(
+		[asan],
+		[AS_HELP_STRING([--enable-asan], [build with the address sanitizer])],
+		[
+			AS_IF(
+				[test "${enableval}" = "yes"],
+				[
+					CFLAGS="${CFLAGS} -fsanitize=address -fno-omit-frame-pointer"
+					CXXFLAGS="${CXXFLAGS} -fsanitize=address -fno-omit-frame-pointer"
+					LDFLAGS="${LDFLAGS} -fsanitize=address"
+				],
+				[]
+			)
+		]
+	)
+])
+
+AC_DEFUN([AX_ENABLE_TSAN], [
+	AC_ARG_ENABLE(
+		[tsan],
+		[AS_HELP_STRING([--enable-tsan], [build with the thread sanitizer])],
+		[
+			AS_IF(
+				[test "${enableval}" = "yes"],
+				[
+					AS_IF(
+						[test "${enable_asan}" = "yes"],
+						[AC_MSG_ERROR([--enable-asan and --enable-tsan are mutually exclusive])],
+						[]
+					)
+					CFLAGS="${CFLAGS} -fsanitize=thread -fno-omit-frame-pointer"
+					CXXFLAGS="${CXXFLAGS} -fsanitize=thread -fno-omit-frame-pointer"
+					LDFLAGS="${LDFLAGS} -fsanitize=thread"
 				],
 				[]
 			)

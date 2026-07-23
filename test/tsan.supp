@@ -1,0 +1,30 @@
+# ThreadSanitizer suppressions for the uninstrumented OpenTelemetry C++
+# SDK.  The SDK hands data between threads through lock-free structures
+# (the batch processor circular buffer, the observable registry) whose
+# atomics ThreadSanitizer cannot observe in an uninstrumented library,
+# so every handoff through them is reported as a data race.  The
+# wrapper's own synchronization is fully visible and stays unsuppressed.
+#
+# Rebuild the SDK with -fsanitize=thread to lift these suppressions.
+#
+# Usage:
+#   TSAN_OPTIONS="suppressions=$PWD/tsan.supp" setarch $(uname -m) -R \
+#       ./test-tracer
+#
+# The setarch -R wrapper disables address space randomization; the
+# ThreadSanitizer runtime rejects the high ASLR entropy of recent Linux
+# kernels ("unexpected memory mapping") without it.
+race:^opentelemetry::v2::sdk::
+race:libopentelemetry_trace.so
+race:libopentelemetry_metrics.so
+race:libopentelemetry_logs.so
+race:libopentelemetry_common.so
+race:libopentelemetry_resources.so
+race:libopentelemetry_exporter_ostream_span.so
+race:libopentelemetry_exporter_ostream_metrics.so
+race:libopentelemetry_exporter_ostream_logs.so
+
+# The protobuf descriptor pool and the libstdc++ regex scanner privately
+# synchronize their lazy initialization; both libraries are uninstrumented.
+race:libprotobuf.so
+race:std::__detail::_Scanner
