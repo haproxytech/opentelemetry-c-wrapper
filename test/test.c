@@ -80,7 +80,7 @@ enum WORKER_SPAN_enum {
 struct prg_otel {
 #ifdef USE_THREADS
 	pthread_t            thread;
-	volatile bool_t      flag_run;
+	atomic_bool          flag_run;
 #endif
 	struct otelc_ctx    *ctx;
 	struct otelc_tracer *tracer;
