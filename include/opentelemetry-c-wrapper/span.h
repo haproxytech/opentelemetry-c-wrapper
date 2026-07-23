@@ -488,8 +488,11 @@ struct otelc_span_ops {
 	 * DESCRIPTION
 	 *   Stores data in a baggage key-value store that can be propagated
 	 *   alongside context.  The baggage name and value can be any valid
-	 *   UTF-8 character string, with the restriction that the name cannot
-	 *   be an empty character string.
+	 *   UTF-8 character string, with the restriction that neither the
+	 *   name nor the value may be a null pointer or an empty character
+	 *   string.  A pair that the SDK rejects as invalid W3C baggage
+	 *   (e.g. a name containing invalid characters) is dropped silently
+	 *   and is still included in the returned count.
 	 *
 	 * RETURN VALUE
 	 *   Returns the number of saved key-value pairs, or OTELC_RET_ERROR in
@@ -513,8 +516,11 @@ struct otelc_span_ops {
 	 * DESCRIPTION
 	 *   Stores data in a baggage key-value store that can be propagated
 	 *   alongside context.  The baggage name and value can be any valid
-	 *   UTF-8 character string, with the restriction that the name cannot
-	 *   be an empty character string.
+	 *   UTF-8 character string, with the restriction that neither the
+	 *   name nor the value may be a null pointer or an empty character
+	 *   string.  A pair that the SDK rejects as invalid W3C baggage
+	 *   (e.g. a name containing invalid characters) is dropped silently
+	 *   and is still included in the returned count.
 	 *
 	 * RETURN VALUE
 	 *   Returns the number of saved key-value pairs, or OTELC_RET_ERROR in
@@ -538,8 +544,11 @@ struct otelc_span_ops {
 	 * DESCRIPTION
 	 *   Stores data in a baggage key-value store that can be propagated
 	 *   alongside context.  The baggage name and value can be any valid
-	 *   UTF-8 character string, with the restriction that the name cannot
-	 *   be an empty character string.
+	 *   UTF-8 character string, with the restriction that neither the
+	 *   name nor the value may be a null pointer or an empty character
+	 *   string.  A pair that the SDK rejects as invalid W3C baggage
+	 *   (e.g. a name containing invalid characters) is dropped silently
+	 *   and is still included in the returned count.
 	 *
 	 * RETURN VALUE
 	 *   Returns the number of saved key-value pairs, or OTELC_RET_ERROR in
@@ -563,7 +572,10 @@ struct otelc_span_ops {
 	 * DESCRIPTION
 	 *   Stores a single entry in the baggage key-value store.  Unlike
 	 *   set_baggage_var which accepts a NULL-terminated variadic list,
-	 *   this function sets exactly one key-value pair per call.
+	 *   this function sets exactly one key-value pair per call.  A pair
+	 *   that the SDK rejects as invalid W3C baggage (e.g. a name
+	 *   containing invalid characters) is dropped silently while the
+	 *   function still reports success.
 	 *
 	 * RETURN VALUE
 	 *   Returns the number of saved key-value pairs (1),

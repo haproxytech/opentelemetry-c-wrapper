@@ -447,8 +447,10 @@ static void otel_span_set_operation_name(const struct otelc_span *span, const ch
  * DESCRIPTION
  *   Stores data in a baggage key-value store that can be propagated alongside
  *   context.  The baggage name and value can be any valid UTF-8 character
- *   string, with the restriction that the name cannot be an empty character
- *   string.
+ *   string, with the restriction that neither the name nor the value may be
+ *   a null pointer or an empty character string.  A pair that the SDK rejects
+ *   as invalid W3C baggage (e.g. a name containing invalid characters) is
+ *   dropped silently and is still included in the returned count.
  *
  * RETURN VALUE
  *   Returns the number of saved key-value pairs, or OTELC_RET_ERROR in case of
@@ -475,6 +477,11 @@ static int otel_span_set_baggage_var(const struct otelc_span *span, const char *
 	/* Iterate over the variadic key-value pairs and set each in baggage. */
 	OTEL_VA_AUTO(ap, value);
 	for (retval = 0; !OTEL_NULL(key) && !OTEL_NULL(value); retval++) {
+		if (!OTELC_STR_IS_VALID(key))
+			OTEL_SPAN_RETURN_INT(OTEL_ERROR_MSG_INVALID_BAGGAGE_NAME);
+		else if (!OTELC_STR_IS_VALID(value))
+			OTEL_SPAN_RETURN_INT(OTEL_ERROR_MSG_INVALID_BAGGAGE_VALUE);
+
 		baggage = baggage->Set(key, value);
 
 		key = va_arg(ap, decltype(key));
@@ -501,8 +508,10 @@ static int otel_span_set_baggage_var(const struct otelc_span *span, const char *
  * DESCRIPTION
  *   Stores data in a baggage key-value store that can be propagated alongside
  *   context.  The baggage name and value can be any valid UTF-8 character
- *   string, with the restriction that the name cannot be an empty character
- *   string.
+ *   string, with the restriction that neither the name nor the value may be
+ *   a null pointer or an empty character string.  A pair that the SDK rejects
+ *   as invalid W3C baggage (e.g. a name containing invalid characters) is
+ *   dropped silently and is still included in the returned count.
  *
  * RETURN VALUE
  *   Returns the number of saved key-value pairs, or OTELC_RET_ERROR in case of
@@ -527,10 +536,19 @@ static int otel_span_set_baggage_kv_var(const struct otelc_span *span, const str
 	/* Iterate over the variadic kv pairs and set each in baggage. */
 	OTEL_VA_AUTO(ap, kv);
 	for (retval = 0; !OTEL_NULL(kv); retval++) {
-		if (kv->value.u_type == OTELC_VALUE_STRING) {
+		if (!OTELC_STR_IS_VALID(kv->key)) {
+			OTEL_SPAN_RETURN_INT(OTEL_ERROR_MSG_INVALID_BAGGAGE_NAME);
+		}
+		else if (kv->value.u_type == OTELC_VALUE_STRING) {
+			if (!OTELC_STR_IS_VALID(kv->value.u.value_string))
+				OTEL_SPAN_RETURN_INT(OTEL_ERROR_MSG_INVALID_BAGGAGE_VALUE);
+
 			baggage = baggage->Set(kv->key, kv->value.u.value_string);
 		}
 		else if (kv->value.u_type == OTELC_VALUE_DATA) {
+			if (!OTELC_STR_IS_VALID(OTEL_CAST_REINTERPRET(const char *, kv->value.u.value_data)))
+				OTEL_SPAN_RETURN_INT(OTEL_ERROR_MSG_INVALID_BAGGAGE_VALUE);
+
 			baggage = baggage->Set(kv->key, OTEL_CAST_REINTERPRET(const char *, kv->value.u.value_data));
 		}
 		else {
@@ -561,8 +579,10 @@ static int otel_span_set_baggage_kv_var(const struct otelc_span *span, const str
  * DESCRIPTION
  *   Stores data in a baggage key-value store that can be propagated alongside
  *   context.  The baggage name and value can be any valid UTF-8 character
- *   string, with the restriction that the name cannot be an empty character
- *   string.
+ *   string, with the restriction that neither the name nor the value may be
+ *   a null pointer or an empty character string.  A pair that the SDK rejects
+ *   as invalid W3C baggage (e.g. a name containing invalid characters) is
+ *   dropped silently and is still included in the returned count.
  *
  * RETURN VALUE
  *   Returns the number of saved key-value pairs, or OTELC_RET_ERROR in case of
@@ -587,10 +607,19 @@ static int otel_span_set_baggage_kv_n(const struct otelc_span *span, const struc
 
 	/* Iterate over the kv array and set each entry in baggage. */
 	for (retval = 0; retval < OTEL_CAST_STATIC(int, kv_len); retval++)
-		if (kv[retval].value.u_type == OTELC_VALUE_STRING) {
+		if (!OTELC_STR_IS_VALID(kv[retval].key)) {
+			OTEL_SPAN_RETURN_INT(OTEL_ERROR_MSG_INVALID_BAGGAGE_NAME);
+		}
+		else if (kv[retval].value.u_type == OTELC_VALUE_STRING) {
+			if (!OTELC_STR_IS_VALID(kv[retval].value.u.value_string))
+				OTEL_SPAN_RETURN_INT(OTEL_ERROR_MSG_INVALID_BAGGAGE_VALUE);
+
 			baggage = baggage->Set(kv[retval].key, kv[retval].value.u.value_string);
 		}
 		else if (kv[retval].value.u_type == OTELC_VALUE_DATA) {
+			if (!OTELC_STR_IS_VALID(OTEL_CAST_REINTERPRET(const char *, kv[retval].value.u.value_data)))
+				OTEL_SPAN_RETURN_INT(OTEL_ERROR_MSG_INVALID_BAGGAGE_VALUE);
+
 			baggage = baggage->Set(kv[retval].key, OTEL_CAST_REINTERPRET(const char *, kv[retval].value.u.value_data));
 		}
 		else {
@@ -618,7 +647,9 @@ static int otel_span_set_baggage_kv_n(const struct otelc_span *span, const struc
  * DESCRIPTION
  *   Stores a single entry in the baggage key-value store.  Unlike
  *   set_baggage_var which accepts a NULL-terminated variadic list, this
- *   function sets exactly one key-value pair per call.
+ *   function sets exactly one key-value pair per call.  A pair that the SDK
+ *   rejects as invalid W3C baggage (e.g. a name containing invalid
+ *   characters) is dropped silently while the function still reports success.
  *
  * RETURN VALUE
  *   Returns the number of saved key-value pairs (1), or OTELC_RET_ERROR in
