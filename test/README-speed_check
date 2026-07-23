@@ -1,0 +1,64 @@
+      ---------------------------------------------------------------
+            Throughput regression checking for the wrapper API
+      ---------------------------------------------------------------
+
+
+1. Purpose
+------------------------------------------------------------------------------
+
+The speed sweep (test/speed.sh) measures the wrapper's throughput but keeps no
+memory: a run only helps if somebody remembers what the numbers used to be.
+The speed-check.sh script supplies that memory in the form of a machine-local
+baseline and turns the comparison into an exit code, so a performance regression
+can fail a validation run the same way a compiler warning fails test-rebase.sh.
+
+Two checks run on every invocation.  The per-group check compares the rate of
+every measured combination against the recorded baseline and it tolerates a
+configurable drop, which absorbs the run-to-run noise of a developer machine.
+The scaling check divides the rate of the last thread group by the rate of the
+first within every instance count and requires a minimum ratio; this guards
+the lock-scaling property that is documented in README-meter_performance without
+depending on any absolute numbers, so that it holds on any hardware even when
+the baseline is stale.
+
+
+2. Usage
+------------------------------------------------------------------------------
+
+  % ./speed-check.sh [-b baseline] [-c test-cfg] [-g groups] [-h]
+                     [-i instances] [-R] [-r runtime_ms] [-s min_scale]
+                     [-T tolerance_pct] [-t test-program]
+
+The first run, or any run with -R, records the baseline; later runs compare
+against it.  The default settings measure the 1, 2 and 4 instance counts in
+combination with the 1, 4, 32 and 256 thread groups for ten seconds each, with
+a fifteen percent tolerance and a minimum scaling ratio of 1.2.  The measured
+program is test/otel-c-wrapper-test when it exists, the debug variant otherwise,
+or the program named with -t, treated as the debug variant when its name ends
+in _dbg, and it loads test/otel-cfg.yml unless -c names another configuration;
+the baseline records the producing variant, the CPU model of the machine and the
+wrapper version-build; a comparison across variants is refused while a differing
+CPU model only produces a warning, because the results are then probably not
+comparable.
+
+The baseline lives in test/_speed_baseline by default, which the underscore
+pattern of scripts/distclean removes: after a distclean the next run records a
+fresh baseline instead of comparing.  A re-record with -R keeps the previous
+baseline under a dated -old suffix instead of overwriting it, and a comparison
+run writes the rates it measured to a dated file next to the baseline, in the
+baseline format, so an interesting run can later serve as a baseline via -b.
+Exit codes follow sysexits.h: 70 for a detected regression, 78 for a baseline
+that does not cover the request, 73 for a baseline rotation that failed, 69
+for a missing test program, and 64 for a usage error.
+
+
+3. Interpretation
+------------------------------------------------------------------------------
+
+A REGRESSION verdict on a thread group means that the throughput dropped beyond
+the tolerance against the recorded past of this machine; a REGRESSION on the
+scaling line means worker parallelism collapsed, which points at a newly added
+serialization point rather than at general slowdown.  Re-record the baseline
+with -R after an intended performance change, after a hardware or toolchain
+change, and treat any single-group failures on a loaded machine with suspicion
+before believing them.
