@@ -784,7 +784,9 @@ bool otelc_strtoi(const char *str, char **endptr, bool flag_end, int base, int *
  *
  * RETURN VALUE
  *   Returns a pointer to a null-terminated string containing the hexadecimal
- *   representation of the input data.
+ *   representation of the input data.  The returned pointer refers to a
+ *   thread-local buffer that is overwritten on each call from the same
+ *   thread.
  */
 const char *otelc_strhex(const void *data, size_t size)
 {
@@ -826,7 +828,9 @@ const char *otelc_strhex(const void *data, size_t size)
  *
  * RETURN VALUE
  *   Returns a pointer to a null-terminated string containing a printable
- *   representation of the input data.
+ *   representation of the input data.  The returned pointer refers to a
+ *   thread-local buffer that is overwritten on each call from the same
+ *   thread.
  */
 const char *otelc_strctrl(const void *data, size_t size)
 {
@@ -1780,12 +1784,13 @@ void otelc_kv_destroy(struct otelc_kv **kv, size_t n)
  *
  * DESCRIPTION
  *   Returns a human-readable string describing the specified error code.
- *   The string is stored in a statically allocated buffer owned by the
+ *   The string is stored in a thread-local buffer owned by the
  *   implementation.  The caller must not modify or free the returned string.
  *
- *   Because the buffer is static, each call to otel_strerror() may overwrite
- *   the contents of the previous result.  If multiple error strings need to be
- *   preserved simultaneously, the caller should copy them to separate storage.
+ *   Because the buffer is thread-local, each call to otel_strerror() from the
+ *   same thread may overwrite the contents of the previous result.  If
+ *   multiple error strings need to be preserved simultaneously, the caller
+ *   should copy them to separate storage.
  *
  * RETURN VALUE
  *   Returns a pointer to a null-terminated string describing the error code,

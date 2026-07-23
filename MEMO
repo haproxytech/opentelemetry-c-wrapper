@@ -810,8 +810,11 @@ Why other approaches were rejected:
     handle lookups are infrequent relative to actual span recording operations.
 
   std::shared_mutex for per-shard locks:
-    Overkill.  Single-key operations are short (hash lookup, insert), so a
-    reader/writer distinction has nothing to parallelize within a shard.
+    Overkill for the span and span context maps.  Single-key operations are
+    short (hash lookup, insert), so a reader/writer distinction has nothing
+    to parallelize within a shard.  The meter maps are the exception: their
+    single shard is guarded by otel_shared_mutex so that instrument updates
+    can run in parallel (see section 17 and README-meter_performance).
 
   Compile-time (template parameter) shard count:
     Rejected in favor of a constructor argument.  The vector indirection is
@@ -963,9 +966,10 @@ Provider/exporter/processor stack:
        (src/processor.cpp)
        Wraps the exporter in a Batch or Simple processor.  Batch mode
        is configured via max_queue_size, schedule_delay, export_timeout,
-       and max_export_batch_size.  Wraps with otel_counting_span_exporter
-       and otel_counting_span_processor (or their log counterparts) for
-       drop and export tracking.
+       and max_export_batch_size.  Batch pipelines are additionally
+       wrapped with otel_counting_span_exporter and
+       otel_counting_span_processor (or their log counterparts) for drop
+       and export tracking; the Simple processor is not counted.
 
     3. otel_sampler_create (src/sampler.cpp)
        Tracer-only.  Creates AlwaysOn, AlwaysOff, TraceIdRatioBased, or
@@ -1047,8 +1051,6 @@ Overall deinitialization flow:
     |
     +-- reinstate the default SDK log handler
     +-- reset external malloc/free/thread-ID callbacks
-    |
-    +-- reset external callbacks and log handlers
 
 
 ------------------------------------------------------------------------
@@ -1747,19 +1749,22 @@ Allocation infrastructure:
   already taken ownership and deletes the pointer before propagating, so
   deleting it again would be a double free.
 
-  Deferred cleanup (OTELC_DEFER) -- provides RAII-style scope cleanup in C via
-  GCC __attribute__((cleanup)).
+  Deferred cleanup (OTEL_DEFER) -- provides RAII-style scope cleanup through a
+  C++ helper object whose destructor runs the deferred expression at scope
+  exit.
 
 Allocation patterns by signal:
 
   Tracer -- the otelc_tracer struct is allocated with OTELC_CALLOC in
   otel_tracer_new() and freed with OTELC_SFREE_CLEAR in otel_tracer_destroy().
-  String members (err, scope_name) are allocated with OTELC_STRDUP and freed
-  with OTELC_SFREE.  Span and span context C handles are allocated with
-  OTEL_EXT_MALLOC and freed with OTEL_EXT_FREE_CLEAR.  C++ handle objects
+  The scope_name and yaml_prefix strings are allocated with OTELC_STRDUP or
+  OTELC_MALLOC and freed with OTELC_SFREE, while the err member is produced by
+  otelc_sprintf() (see below).  Span and span context C handles are allocated
+  with OTEL_EXT_MALLOC and freed with OTEL_EXT_FREE_CLEAR.  C++ handle objects
   (otel_span_handle, otel_span_context_handle) are allocated with
-  new(std::nothrow) and deleted via the handle map's clear_locked() in destroy,
-  or explicitly in error paths before map insertion.
+  new(std::nothrow) and deleted during the handle map teardown in destroy
+  (clear_locked() or the for_each_locked() span walk), or explicitly in error
+  paths before map insertion.
 
   Meter -- same struct pattern as tracer.  Instrument and view handles are
   allocated with new(std::nothrow) and tracked in single-shard handle maps.
@@ -1789,7 +1794,7 @@ Text map memory management:
 
 Error path cleanup in span creation:
 
-  otel_tracer_start_span_with_options() has four distinct failure points after
+  otel_tracer_start_span_with_options() has several failure points after
   otel_span_new() returns.  Each calls span->End() to prevent SDK-level resource
   leaks (the SDK may have already started export timers), followed by
   otel_nolock_span_destroy() to clean up the C handle.  A copy of the span
