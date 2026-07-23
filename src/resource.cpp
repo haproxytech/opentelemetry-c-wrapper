@@ -123,10 +123,11 @@ static int otel_resource_detector(otel_sdk_resource::ResourceAttributes &attribu
  * DESCRIPTION
  *   Creates a resource by combining attributes detected from the environment
  *   (via otel_resource_detector) with attributes specified in a YAML
- *   configuration file.
+ *   configuration file.  On a duplicate key the YAML attribute takes
+ *   precedence over the environment value.
  *
  * RETURN VALUE
- *   Returns the number of attributes added from the YAML file,
+ *   Returns the number of attributes applied from the YAML file,
  *   or OTELC_RET_ERROR on failure.
  */
 int otel_resource_create(const struct otelc_ctx *ctx, const char *desc, const char *path, otel_sdk_resource::Resource &resource, char **err)
@@ -153,18 +154,18 @@ int otel_resource_create(const struct otelc_ctx *ctx, const char *desc, const ch
 
 	if (!OTEL_NULL(resources))
 		for (size_t i = 0; i < resources->count; i++) {
-			std::pair<std::unordered_map<std::string, otel_sdk_common::OwnedAttributeValue>::iterator, bool> emplace_status{};
+			std::pair<std::unordered_map<std::string, otel_sdk_common::OwnedAttributeValue>::iterator, bool> assign_status{};
 
 			try {
 				OTEL_DBG_THROW();
-				emplace_status = res_attr.emplace(std::string{resources->key[i]}, std::string{resources->value[i]});
+				assign_status = res_attr.insert_or_assign(std::string{resources->key[i]}, std::string{resources->value[i]});
 			}
 			OTEL_CATCH_SIGNAL_RETURN( , OTEL_ERR_RETURN_INT, "Unable to add resource attribute")
 
-			if (emplace_status.second)
-				retval++;
-			else
-				OTELC_DBG(DEBUG, "Unable to add resource attribute: duplicate id '%s'", resources->key[i]);
+			retval++;
+
+			if (!assign_status.second)
+				OTELC_DBG(DEBUG, "Resource attribute '%s' overrode the environment value", resources->key[i]);
 		}
 
 	otel_debug_attributes(res_attr, "provider attributes");
