@@ -423,6 +423,9 @@ static int otel_exporter_set_ostream_options(const struct otelc_ctx *ctx, const 
 		exporter = otel::make_unique_nothrow<C>(std::cerr);
 	}
 	else {
+		if (stream.is_open())
+			OTEL_ERR_RETURN_INT("'%s': the instance logfile stream is already in use", filename);
+
 		stream.open(filename, std::ios::out);
 		if (stream.fail())
 			OTEL_ERR_RETURN_INT("'%s': %s", filename, otel_strerror(errno));
