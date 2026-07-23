@@ -7,6 +7,8 @@ SH_PKG_URL="https://github.com/open-telemetry/opentelemetry-cpp/archive/refs/tag
 . "$(realpath "$(dirname "${0}")")/common.sh"
 
 
+SH_ARG_LIB_TYPE="${SH_ARG_LIB_TYPE:-dynamic}"
+
 test "${SH_ARG_LIB_TYPE}" = "dynamic" && SH_SHARED_LIBS="ON"
 test "${SH_ARG_LIB_TYPE}" = "static"  && SH_SHARED_LIBS="OFF"
 
@@ -62,5 +64,5 @@ if test -n "${SH_LIBDIR_EXT}"; then
 	mv "${SH_LIBDIR}/pkgconfig/"* "${SH_LIBDIR}${SH_LIBDIR_EXT}/pkgconfig"
 	mv "${SH_LIBDIR}/"*.so*       "${SH_LIBDIR}${SH_LIBDIR_EXT}"
 	mv "${SH_LIBDIR}/"*.a         "${SH_LIBDIR}${SH_LIBDIR_EXT}"
-	rmdir -p "${SH_LIBDIR}/*"
+	rmdir -p "${SH_LIBDIR}/"*
 fi
