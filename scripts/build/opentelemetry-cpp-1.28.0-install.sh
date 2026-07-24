@@ -2,7 +2,7 @@
 #
 # Copyright 2026 HAProxy Technologies, Miroslav Zagorac <mzagorac@haproxy.com>
 #
-SH_PKG_URL="https://github.com/open-telemetry/opentelemetry-cpp/archive/refs/tags/v1.26.0.tar.gz"
+SH_PKG_URL="https://github.com/open-telemetry/opentelemetry-cpp/archive/refs/tags/v1.28.0.tar.gz"
 
 . "$(realpath "$(dirname "${0}")")/common.sh"
 
@@ -18,7 +18,7 @@ test "${SH_ARG_LIB_TYPE}" = "static"  && SH_SHARED_LIBS="OFF"
 sh_configure_cmake \
 	-DBUILD_PACKAGE=ON \
 	-DCMAKE_POSITION_INDEPENDENT_CODE=ON \
-	-DCMAKE_CXX_STANDARD=14 \
+	-DCMAKE_CXX_STANDARD=17 \
 	-DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
 	-DOPENSSL_ROOT_DIR="${SH_ARG_PREFIX}" \
 	-DCURL_LIBRARY="${SH_SYS_LIBDIR}/libcurl.so" \

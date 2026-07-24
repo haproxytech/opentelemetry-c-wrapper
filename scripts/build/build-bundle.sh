@@ -22,7 +22,7 @@ SH_DIR="$(realpath "$(dirname "${0}")")"
 #
 #"${SH_DIR}/aws-lc-AWS-LC-FIPS-3.0.0-install.sh"
 #"${SH_DIR}/curl-curl-8_19_0-install.sh"
-"${SH_DIR}/opentelemetry-cpp-1.26.0-install.sh"
+"${SH_DIR}/opentelemetry-cpp-1.28.0-install.sh"
 #"${SH_DIR}/libfyaml-0.9-install.sh"
 
 sh_ldd_check

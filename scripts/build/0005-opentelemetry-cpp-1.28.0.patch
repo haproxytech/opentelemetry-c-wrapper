@@ -1,8 +1,7 @@
-From d9d28263c3b4ec41d54c14606c7be6c74b0e0ae5 Mon Sep 17 00:00:00 2001
+From 8ed70319dc51bf7ca39796b3981dbfeb5996e8b4 Mon Sep 17 00:00:00 2001
 From: Miroslav Zagorac <mzagorac@haproxy.com>
 Date: Wed, 15 Apr 2026 21:18:21 +0200
-Subject: [PATCH 5/5] [EXPORTERS] Add MaybeSpawnBackgroundThread() to OTLP gRPC
- exporters
+Subject: [PATCH 5/6] Add MaybeSpawnBackgroundThread() to OTLP gRPC exporters
 
 The gRPC channel stays in IDLE state until the first RPC is issued,
 deferring DNS resolution, TCP handshake, TLS negotiation and HTTP/2
@@ -26,10 +25,10 @@ construction.
  8 files changed, 71 insertions(+)
 
 diff --git a/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_grpc_client.h b/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_grpc_client.h
-index 2a60a28a..23f5654c 100644
+index 5ce6e1e2..c9ebf277 100644
 --- a/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_grpc_client.h
 +++ b/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_grpc_client.h
-@@ -235,6 +235,13 @@ class OtlpGrpcClient
+@@ -248,6 +248,13 @@ class OtlpGrpcClient
            &&result_callback) noexcept;
  #endif
  
@@ -62,10 +61,10 @@ index f698b8fb..92256841 100644
     * Get the Client object
     *
 diff --git a/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_grpc_log_record_exporter.h b/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_grpc_log_record_exporter.h
-index 888c368b..422d0a4b 100644
+index 9b6dc5c1..e24a2250 100644
 --- a/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_grpc_log_record_exporter.h
 +++ b/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_grpc_log_record_exporter.h
-@@ -92,6 +92,13 @@ class OtlpGrpcLogRecordExporter : public opentelemetry::sdk::logs::LogRecordExpo
+@@ -98,6 +98,13 @@ class OtlpGrpcLogRecordExporter : public opentelemetry::sdk::logs::LogRecordExpo
    bool Shutdown(
        std::chrono::microseconds timeout = (std::chrono::microseconds::max)()) noexcept override;
  
@@ -98,10 +97,10 @@ index 4272bf21..2221e61e 100644
     * Get the Client object
     *
 diff --git a/exporters/otlp/src/otlp_grpc_client.cc b/exporters/otlp/src/otlp_grpc_client.cc
-index 9e065bc0..56f697b2 100644
+index a64355d5..c9e53403 100644
 --- a/exporters/otlp/src/otlp_grpc_client.cc
 +++ b/exporters/otlp/src/otlp_grpc_client.cc
-@@ -708,6 +708,19 @@ bool OtlpGrpcClient::IsShutdown() const noexcept
+@@ -724,6 +724,19 @@ bool OtlpGrpcClient::IsShutdown() const noexcept
    return is_shutdown_.load(std::memory_order_acquire);
  }
  
@@ -122,10 +121,10 @@ index 9e065bc0..56f697b2 100644
      OPENTELEMETRY_MAYBE_UNUSED std::chrono::microseconds timeout) noexcept
  {
 diff --git a/exporters/otlp/src/otlp_grpc_exporter.cc b/exporters/otlp/src/otlp_grpc_exporter.cc
-index fa665ed4..396e6ec2 100644
+index c275798b..83e7c3ec 100644
 --- a/exporters/otlp/src/otlp_grpc_exporter.cc
 +++ b/exporters/otlp/src/otlp_grpc_exporter.cc
-@@ -226,6 +226,16 @@ bool OtlpGrpcExporter::isShutdown() const noexcept
+@@ -243,6 +243,16 @@ bool OtlpGrpcExporter::isShutdown() const noexcept
    return is_shutdown_;
  }
  
@@ -143,10 +142,10 @@ index fa665ed4..396e6ec2 100644
  {
    return client_;
 diff --git a/exporters/otlp/src/otlp_grpc_log_record_exporter.cc b/exporters/otlp/src/otlp_grpc_log_record_exporter.cc
-index 712db424..37865cfd 100644
+index 1a59db73..fa4bdaaf 100644
 --- a/exporters/otlp/src/otlp_grpc_log_record_exporter.cc
 +++ b/exporters/otlp/src/otlp_grpc_log_record_exporter.cc
-@@ -222,6 +222,16 @@ bool OtlpGrpcLogRecordExporter::isShutdown() const noexcept
+@@ -241,6 +241,16 @@ bool OtlpGrpcLogRecordExporter::isShutdown() const noexcept
    return is_shutdown_;
  }
  
@@ -164,10 +163,10 @@ index 712db424..37865cfd 100644
  {
    return client_;
 diff --git a/exporters/otlp/src/otlp_grpc_metric_exporter.cc b/exporters/otlp/src/otlp_grpc_metric_exporter.cc
-index f73eb1ab..2f354b3f 100644
+index 2e60e6a7..2c47a49f 100644
 --- a/exporters/otlp/src/otlp_grpc_metric_exporter.cc
 +++ b/exporters/otlp/src/otlp_grpc_metric_exporter.cc
-@@ -232,6 +232,16 @@ bool OtlpGrpcMetricExporter::isShutdown() const noexcept
+@@ -251,6 +251,16 @@ bool OtlpGrpcMetricExporter::isShutdown() const noexcept
    return is_shutdown_;
  }
  

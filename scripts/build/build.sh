@@ -27,7 +27,7 @@ SH_DIR="$(realpath "$(dirname "${0}")")"
 "${SH_DIR}/benchmark-1.9.4-install.sh"
 "${SH_DIR}/grpc-1.70.2-install.sh"
 #"${SH_DIR}/rapidyaml-0.10.0-src-install.sh"
-"${SH_DIR}/opentelemetry-cpp-1.26.0-install.sh"
+"${SH_DIR}/opentelemetry-cpp-1.28.0-install.sh"
 #"${SH_DIR}/libfyaml-0.9-install.sh"
 
 sh_ldd_check

@@ -1,4 +1,4 @@
-From a3eca26ce187d66e201434048887d3ff7b926f5d Mon Sep 17 00:00:00 2001
+From 8102ce86a143f7d8b152c212a0c0f434d2c5bdab Mon Sep 17 00:00:00 2001
 From: Miroslav Zagorac <mzagorac@haproxy.com>
 Date: Thu, 16 Apr 2026 07:25:46 +0200
 Subject: [PATCH 6/6] Exposed SetBackgroundWaitFor() through OTLP/HTTP
@@ -32,10 +32,10 @@ immediately after starting.
  11 files changed, 53 insertions(+), 3 deletions(-)
 
 diff --git a/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_http_client.h b/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_http_client.h
-index 410656a..9371750 100644
+index f744c4ca..f3d1104e 100644
 --- a/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_http_client.h
 +++ b/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_http_client.h
-@@ -230,6 +230,13 @@ class OtlpHttpClient
+@@ -229,6 +229,13 @@ class OtlpHttpClient
     */
    bool MaybeSpawnBackgroundThread() noexcept;
  
@@ -50,10 +50,10 @@ index 410656a..9371750 100644
     * Get options of current OTLP http client.
     * @return options of current OTLP http client.
 diff --git a/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_http_exporter.h b/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_http_exporter.h
-index dcccde0..27bb8cc 100644
+index 585604cd..5725207b 100644
 --- a/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_http_exporter.h
 +++ b/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_http_exporter.h
-@@ -80,6 +80,13 @@ class OPENTELEMETRY_EXPORT OtlpHttpExporter final : public opentelemetry::sdk::t
+@@ -117,6 +117,13 @@ class OPENTELEMETRY_EXPORT OtlpHttpExporter final : public opentelemetry::sdk::t
     */
    bool MaybeSpawnBackgroundThread() noexcept;
  
@@ -68,10 +68,10 @@ index dcccde0..27bb8cc 100644
    // The configuration options associated with this exporter.
    OtlpHttpExporterOptions options_;
 diff --git a/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_http_log_record_exporter.h b/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_http_log_record_exporter.h
-index 9384877..b0cc50c 100644
+index 7e721698..405f1503 100644
 --- a/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_http_log_record_exporter.h
 +++ b/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_http_log_record_exporter.h
-@@ -81,6 +81,13 @@ class OtlpHttpLogRecordExporter final : public opentelemetry::sdk::logs::LogReco
+@@ -126,6 +126,13 @@ class OtlpHttpLogRecordExporter final : public opentelemetry::sdk::logs::LogReco
     */
    bool MaybeSpawnBackgroundThread() noexcept;
  
@@ -86,10 +86,10 @@ index 9384877..b0cc50c 100644
    // Configuration options for the exporter
    OtlpHttpLogRecordExporterOptions options_;
 diff --git a/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_http_metric_exporter.h b/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_http_metric_exporter.h
-index 4b13b81..df713f7 100644
+index dcc41a4e..5a7cc01f 100644
 --- a/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_http_metric_exporter.h
 +++ b/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_http_metric_exporter.h
-@@ -71,6 +71,13 @@ class OtlpHttpMetricExporter final : public opentelemetry::sdk::metrics::PushMet
+@@ -109,6 +109,13 @@ class OtlpHttpMetricExporter final : public opentelemetry::sdk::metrics::PushMet
     */
    bool MaybeSpawnBackgroundThread() noexcept;
  
@@ -104,10 +104,10 @@ index 4b13b81..df713f7 100644
    // Configuration options for the exporter
    OtlpHttpMetricExporterOptions options_;
 diff --git a/exporters/otlp/src/otlp_http_client.cc b/exporters/otlp/src/otlp_http_client.cc
-index 7b8cb7e..8e88cfc 100644
+index a62c5df0..1c0d5f1d 100644
 --- a/exporters/otlp/src/otlp_http_client.cc
 +++ b/exporters/otlp/src/otlp_http_client.cc
-@@ -1051,6 +1051,11 @@ bool OtlpHttpClient::cleanupGCSessions() noexcept
+@@ -1113,6 +1113,11 @@ bool OtlpHttpClient::cleanupGCSessions() noexcept
    return !gc_sessions_.empty();
  }
  
@@ -120,10 +120,10 @@ index 7b8cb7e..8e88cfc 100644
  {
    return is_shutdown_.load(std::memory_order_acquire);
 diff --git a/exporters/otlp/src/otlp_http_exporter.cc b/exporters/otlp/src/otlp_http_exporter.cc
-index b0f2a2c..72719ea 100644
+index 76f2b1dd..3f50f0f4 100644
 --- a/exporters/otlp/src/otlp_http_exporter.cc
 +++ b/exporters/otlp/src/otlp_http_exporter.cc
-@@ -223,6 +223,11 @@ bool OtlpHttpExporter::MaybeSpawnBackgroundThread() noexcept
+@@ -394,6 +394,11 @@ bool OtlpHttpExporter::MaybeSpawnBackgroundThread() noexcept
    return http_client_->MaybeSpawnBackgroundThread();
  }
  
@@ -136,10 +136,10 @@ index b0f2a2c..72719ea 100644
  }  // namespace exporter
  OPENTELEMETRY_END_NAMESPACE
 diff --git a/exporters/otlp/src/otlp_http_log_record_exporter.cc b/exporters/otlp/src/otlp_http_log_record_exporter.cc
-index 3689075..520d422 100644
+index 216dfe12..03875dec 100644
 --- a/exporters/otlp/src/otlp_http_log_record_exporter.cc
 +++ b/exporters/otlp/src/otlp_http_log_record_exporter.cc
-@@ -222,6 +222,11 @@ bool OtlpHttpLogRecordExporter::MaybeSpawnBackgroundThread() noexcept
+@@ -398,6 +398,11 @@ bool OtlpHttpLogRecordExporter::MaybeSpawnBackgroundThread() noexcept
    return http_client_->MaybeSpawnBackgroundThread();
  }
  
@@ -152,10 +152,10 @@ index 3689075..520d422 100644
  }  // namespace exporter
  OPENTELEMETRY_END_NAMESPACE
 diff --git a/exporters/otlp/src/otlp_http_metric_exporter.cc b/exporters/otlp/src/otlp_http_metric_exporter.cc
-index e64a299..9cbd8ab 100644
+index e55edb60..16d4654b 100644
 --- a/exporters/otlp/src/otlp_http_metric_exporter.cc
 +++ b/exporters/otlp/src/otlp_http_metric_exporter.cc
-@@ -231,6 +231,11 @@ bool OtlpHttpMetricExporter::MaybeSpawnBackgroundThread() noexcept
+@@ -413,6 +413,11 @@ bool OtlpHttpMetricExporter::MaybeSpawnBackgroundThread() noexcept
    return http_client_->MaybeSpawnBackgroundThread();
  }
  
@@ -168,7 +168,7 @@ index e64a299..9cbd8ab 100644
  }  // namespace exporter
  OPENTELEMETRY_END_NAMESPACE
 diff --git a/ext/include/opentelemetry/ext/http/client/curl/http_client_curl.h b/ext/include/opentelemetry/ext/http/client/curl/http_client_curl.h
-index aaaebcb..db20ebb 100644
+index 49342b4a..eca5d03f 100644
 --- a/ext/include/opentelemetry/ext/http/client/curl/http_client_curl.h
 +++ b/ext/include/opentelemetry/ext/http/client/curl/http_client_curl.h
 @@ -352,7 +352,7 @@ class HttpClient : public opentelemetry::ext::http::client::HttpClient
@@ -181,10 +181,10 @@ index aaaebcb..db20ebb 100644
    void WaitBackgroundThreadExit();
  
 diff --git a/ext/include/opentelemetry/ext/http/client/http_client.h b/ext/include/opentelemetry/ext/http/client/http_client.h
-index cc2b65b..8a2cdbd 100644
+index c6425780..916a3010 100644
 --- a/ext/include/opentelemetry/ext/http/client/http_client.h
 +++ b/ext/include/opentelemetry/ext/http/client/http_client.h
-@@ -416,6 +416,8 @@ class HttpClient
+@@ -415,6 +415,8 @@ class HttpClient
  
    virtual bool MaybeSpawnBackgroundThread() noexcept { return false; }
  
@@ -194,7 +194,7 @@ index cc2b65b..8a2cdbd 100644
  };
  
 diff --git a/ext/src/http/client/curl/http_client_curl.cc b/ext/src/http/client/curl/http_client_curl.cc
-index 551a0cf..f025024 100644
+index 551a0cfd..f0250249 100644
 --- a/ext/src/http/client/curl/http_client_curl.cc
 +++ b/ext/src/http/client/curl/http_client_curl.cc
 @@ -577,7 +577,7 @@ bool HttpClient::MaybeSpawnBackgroundThread() noexcept

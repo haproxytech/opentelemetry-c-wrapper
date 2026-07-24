@@ -1,8 +1,7 @@
-From 896a3afe53b76d1493c765369f2437fb84b91386 Mon Sep 17 00:00:00 2001
+From cda95203cba3f53ee3960196c13f92e222d0d805 Mon Sep 17 00:00:00 2001
 From: Miroslav Zagorac <mzagorac@haproxy.com>
 Date: Wed, 15 Apr 2026 21:17:35 +0200
-Subject: [PATCH 4/5] [EXPORTERS] Add MaybeSpawnBackgroundThread() to OTLP File
- exporters
+Subject: [PATCH 4/6] Add MaybeSpawnBackgroundThread() to OTLP File exporters
 
 The file system backend's background flush thread is started lazily on the
 first Export() call via the private SpawnBackgroundWorkThread() method.
@@ -27,7 +26,7 @@ no-op since it has no background thread.
  9 files changed, 57 insertions(+)
 
 diff --git a/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_file_client.h b/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_file_client.h
-index 891657e0..d657dd99 100644
+index 55385b8d..d432d5c3 100644
 --- a/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_file_client.h
 +++ b/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_file_client.h
 @@ -68,6 +68,12 @@ class OtlpFileClient
@@ -74,10 +73,10 @@ index cc25ca66..3d1bb89d 100644
    // The configuration options associated with this exporter.
    OtlpFileExporterOptions options_;
 diff --git a/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_file_log_record_exporter.h b/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_file_log_record_exporter.h
-index 77426163..720257c9 100644
+index 3584a8b8..5ad004d6 100644
 --- a/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_file_log_record_exporter.h
 +++ b/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_file_log_record_exporter.h
-@@ -75,6 +75,12 @@ class OtlpFileLogRecordExporter final : public opentelemetry::sdk::logs::LogReco
+@@ -81,6 +81,12 @@ class OtlpFileLogRecordExporter final : public opentelemetry::sdk::logs::LogReco
    bool Shutdown(
        std::chrono::microseconds timeout = (std::chrono::microseconds::max)()) noexcept override;
  
@@ -108,10 +107,10 @@ index 73ae412f..e3968328 100644
    friend class OtlpFileMetricExporterTestPeer;
  
 diff --git a/exporters/otlp/src/otlp_file_client.cc b/exporters/otlp/src/otlp_file_client.cc
-index c1c00cd0..c9eed4be 100644
+index f7c757fe..c9712da9 100644
 --- a/exporters/otlp/src/otlp_file_client.cc
 +++ b/exporters/otlp/src/otlp_file_client.cc
-@@ -1137,6 +1137,12 @@ class OPENTELEMETRY_LOCAL_SYMBOL OtlpFileSystemBackend : public OtlpFileAppender
+@@ -1140,6 +1140,12 @@ class OPENTELEMETRY_LOCAL_SYMBOL OtlpFileSystemBackend : public OtlpFileAppender
      return result;
    }
  
@@ -124,7 +123,7 @@ index c1c00cd0..c9eed4be 100644
  private:
    void Initialize()
    {
-@@ -1673,6 +1679,16 @@ opentelemetry::sdk::common::ExportResult OtlpFileClient::Export(
+@@ -1677,6 +1683,16 @@ opentelemetry::sdk::common::ExportResult OtlpFileClient::Export(
    return ::opentelemetry::sdk::common::ExportResult::kFailure;
  }
  
@@ -142,10 +141,10 @@ index c1c00cd0..c9eed4be 100644
  {
    if (backend_)
 diff --git a/exporters/otlp/src/otlp_file_exporter.cc b/exporters/otlp/src/otlp_file_exporter.cc
-index 158f152f..395e7a5d 100644
+index 862dbed9..a83e4ed7 100644
 --- a/exporters/otlp/src/otlp_file_exporter.cc
 +++ b/exporters/otlp/src/otlp_file_exporter.cc
-@@ -109,6 +109,11 @@ bool OtlpFileExporter::Shutdown(std::chrono::microseconds timeout) noexcept
+@@ -107,6 +107,11 @@ bool OtlpFileExporter::Shutdown(std::chrono::microseconds timeout) noexcept
    return file_client_->Shutdown(timeout);
  }
  
@@ -158,10 +157,10 @@ index 158f152f..395e7a5d 100644
  }  // namespace exporter
  OPENTELEMETRY_END_NAMESPACE
 diff --git a/exporters/otlp/src/otlp_file_log_record_exporter.cc b/exporters/otlp/src/otlp_file_log_record_exporter.cc
-index 8767a7fd..e60c9ecf 100644
+index d40c66e2..5483c2a2 100644
 --- a/exporters/otlp/src/otlp_file_log_record_exporter.cc
 +++ b/exporters/otlp/src/otlp_file_log_record_exporter.cc
-@@ -111,6 +111,11 @@ bool OtlpFileLogRecordExporter::Shutdown(std::chrono::microseconds timeout) noex
+@@ -110,6 +110,11 @@ bool OtlpFileLogRecordExporter::Shutdown(std::chrono::microseconds timeout) noex
    return file_client_->Shutdown(timeout);
  }
  
@@ -174,10 +173,10 @@ index 8767a7fd..e60c9ecf 100644
  }  // namespace exporter
  OPENTELEMETRY_END_NAMESPACE
 diff --git a/exporters/otlp/src/otlp_file_metric_exporter.cc b/exporters/otlp/src/otlp_file_metric_exporter.cc
-index 76c1fd0b..0156eefe 100644
+index dfd59210..2abcefe2 100644
 --- a/exporters/otlp/src/otlp_file_metric_exporter.cc
 +++ b/exporters/otlp/src/otlp_file_metric_exporter.cc
-@@ -118,6 +118,11 @@ bool OtlpFileMetricExporter::Shutdown(std::chrono::microseconds timeout) noexcep
+@@ -116,6 +116,11 @@ bool OtlpFileMetricExporter::Shutdown(std::chrono::microseconds timeout) noexcep
    return file_client_->Shutdown(timeout);
  }
  
