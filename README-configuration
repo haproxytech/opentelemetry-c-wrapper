@@ -22,8 +22,11 @@ When OTELC_USER_CONFIG is not defined, the following defaults apply:
   OTELC_USE_MULTIPLE_PROCESSORS        defined
   OTELC_USE_RUNTIME_CONTEXT            undefined
 
-One additional macro, OTELC_USE_INSTRUMENT_VALIDATOR, is defined outside the
-OTELC_USER_CONFIG block and is always undefined.
+The macro definitions outside the OTELC_USER_CONFIG block are not configurable:
+OTELC_USE_INSTRUMENT_VALIDATOR is always undefined, OTELC_USE_INTERNAL_INCLUDES
+is always defined, and a DEBUG build defines OTEL_CPP_USE_DEBUG_OUTPUT together
+with OTELC_DBG_MEM, the macro that gates the debug memory ABI of the public
+headers.
 
 
 2. OTELC_USE_THREAD_SHARED_HANDLE
@@ -67,12 +70,17 @@ otel_tracer_handle_init() function is compiled out entirely because the
 handles already exist.
 
 When undefined, handle maps are declared as pointers initialized to nullptr.
-The OTEL_HANDLE(h, m) macro expands to ((h)->m), accessing the handle via
-the arrow operator.  The otel_tracer_handle_init() function allocates both
-otel_span and otel_span_context handle maps on first use via new(std::nothrow).
-In the shared-handle model it is called only once, from otelc_tracer_create();
-in the thread-local model each thread calls it on its first handle access, from
-otel_tracer_start_span_with_options() and otel_tracer_extract_carrier().
+The OTEL_HANDLE(h, m) macro expands to ((h)->m), accessing the handle via the
+arrow operator.  The otel_tracer_handle_init() function allocates both otel_span
+and otel_span_context handle maps through otel::new_nothrow(), which converts
+a constructor exception into a nullptr result as well.  The function is invoked
+on every otelc_tracer_create() call in the shared-handle model and on every
+otel_tracer_start_span_with_options() and otel_tracer_extract_carrier() call
+in the thread-local model, but only the first invocation, per process or per
+thread, allocates.  A newly allocated map continues the handle numbering of
+the previous map generation, and in the thread-local model the initialization
+also arms a thread-exit reaper that releases the calling thread's maps when
+the thread terminates.
 
 The dynamic model avoids constructing handle maps for threads that never create
 spans.  The static model avoids the null-pointer check and the allocation call
