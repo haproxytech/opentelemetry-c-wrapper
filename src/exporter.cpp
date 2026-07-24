@@ -331,7 +331,7 @@ static int otel_exporter_set_otlp_http_options(const struct otelc_ctx *ctx, cons
 		for (size_t i = 0; i < http_headers->count; i++) {
 			try {
 				OTEL_DBG_THROW();
-				otlp_http_headers.emplace(std::string{http_headers->key[i]}, std::string{http_headers->value[i]});
+				(void)otlp_http_headers.emplace(std::string{http_headers->key[i]}, std::string{http_headers->value[i]});
 			}
 			OTEL_CATCH_SIGNAL_RETURN( , OTEL_ERR_RETURN_INT, OTEL_ERROR_MSG_ADD_HTTP_HEADER)
 		}
@@ -713,7 +713,7 @@ int otel_logger_exporter_create(struct otelc_logger *logger, std::unique_ptr<ote
 			for (size_t i = 0; i < http_headers->count; i++) {
 				try {
 					OTEL_DBG_THROW();
-					es_http_headers.emplace(std::string{http_headers->key[i]}, std::string{http_headers->value[i]});
+					(void)es_http_headers.emplace(std::string{http_headers->key[i]}, std::string{http_headers->value[i]});
 				}
 				OTEL_CATCH_SIGNAL_RETURN( , OTEL_LOGGER_RETURN_INT, OTEL_ERROR_MSG_ADD_HTTP_HEADER)
 			}

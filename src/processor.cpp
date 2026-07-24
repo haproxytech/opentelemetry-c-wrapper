@@ -87,17 +87,17 @@ std::unique_ptr<otel_sdk_trace::Recordable> otel_counting_span_exporter::MakeRec
 
 otel_sdk_common::ExportResult otel_counting_span_exporter::Export(const otel_nostd::span<std::unique_ptr<otel_sdk_trace::Recordable>> &spans) noexcept
 {
-	consumed_->fetch_add(spans.size(), std::memory_order_relaxed);
+	(void)consumed_->fetch_add(spans.size(), std::memory_order_relaxed);
 
 	otel_sdk_common::ExportResult result = inner_->Export(spans);
 
 	if (result == otel_sdk_common::ExportResult::kSuccess) {
-		export_ok_.fetch_add(1, std::memory_order_relaxed);
-		records_ok_.fetch_add(spans.size(), std::memory_order_relaxed);
+		(void)export_ok_.fetch_add(1, std::memory_order_relaxed);
+		(void)records_ok_.fetch_add(spans.size(), std::memory_order_relaxed);
 		last_export_ms_.store(otel_steady_now_ms(), std::memory_order_relaxed);
 	} else {
-		export_fail_.fetch_add(1, std::memory_order_relaxed);
-		records_fail_.fetch_add(spans.size(), std::memory_order_relaxed);
+		(void)export_fail_.fetch_add(1, std::memory_order_relaxed);
+		(void)records_fail_.fetch_add(spans.size(), std::memory_order_relaxed);
 	}
 
 	return result;
@@ -177,7 +177,7 @@ otel_counting_span_processor::~otel_counting_span_processor()
 	otel_counting_span_processor     *self = this;
 	const std::lock_guard<std::mutex> guard(instance_mutex_);
 
-	instance_.compare_exchange_strong(self, nullptr, std::memory_order_acq_rel);
+	(void)instance_.compare_exchange_strong(self, nullptr, std::memory_order_acq_rel);
 }
 
 
@@ -253,9 +253,9 @@ void otel_counting_span_processor::OnEnd(std::unique_ptr<otel_sdk_trace::Recorda
 	uint64_t cons = consumed_->load(std::memory_order_relaxed);
 
 	if ((prod > cons) && ((prod - cons) >= max_queue_size_))
-		dropped_count_.fetch_add(1, std::memory_order_relaxed);
+		(void)dropped_count_.fetch_add(1, std::memory_order_relaxed);
 	else
-		produced_.fetch_add(1, std::memory_order_relaxed);
+		(void)produced_.fetch_add(1, std::memory_order_relaxed);
 
 	inner_->OnEnd(std::move(span));
 }
@@ -302,17 +302,17 @@ std::unique_ptr<otel_sdk_logs::Recordable> otel_counting_log_exporter::MakeRecor
 
 otel_sdk_common::ExportResult otel_counting_log_exporter::Export(const otel_nostd::span<std::unique_ptr<otel_sdk_logs::Recordable>> &records) noexcept
 {
-	consumed_->fetch_add(records.size(), std::memory_order_relaxed);
+	(void)consumed_->fetch_add(records.size(), std::memory_order_relaxed);
 
 	otel_sdk_common::ExportResult result = inner_->Export(records);
 
 	if (result == otel_sdk_common::ExportResult::kSuccess) {
-		export_ok_.fetch_add(1, std::memory_order_relaxed);
-		records_ok_.fetch_add(records.size(), std::memory_order_relaxed);
+		(void)export_ok_.fetch_add(1, std::memory_order_relaxed);
+		(void)records_ok_.fetch_add(records.size(), std::memory_order_relaxed);
 		last_export_ms_.store(otel_steady_now_ms(), std::memory_order_relaxed);
 	} else {
-		export_fail_.fetch_add(1, std::memory_order_relaxed);
-		records_fail_.fetch_add(records.size(), std::memory_order_relaxed);
+		(void)export_fail_.fetch_add(1, std::memory_order_relaxed);
+		(void)records_fail_.fetch_add(records.size(), std::memory_order_relaxed);
 	}
 
 	return result;
@@ -394,7 +394,7 @@ otel_counting_log_processor::~otel_counting_log_processor()
 	otel_counting_log_processor      *self = this;
 	const std::lock_guard<std::mutex> guard(instance_mutex_);
 
-	instance_.compare_exchange_strong(self, nullptr, std::memory_order_acq_rel);
+	(void)instance_.compare_exchange_strong(self, nullptr, std::memory_order_acq_rel);
 }
 
 
@@ -465,9 +465,9 @@ void otel_counting_log_processor::OnEmit(std::unique_ptr<otel_sdk_logs::Recordab
 	uint64_t cons = consumed_->load(std::memory_order_relaxed);
 
 	if ((prod > cons) && ((prod - cons) >= max_queue_size_))
-		dropped_count_.fetch_add(1, std::memory_order_relaxed);
+		(void)dropped_count_.fetch_add(1, std::memory_order_relaxed);
 	else
-		produced_.fetch_add(1, std::memory_order_relaxed);
+		(void)produced_.fetch_add(1, std::memory_order_relaxed);
 
 	inner_->OnEmit(std::move(record));
 }
@@ -507,10 +507,10 @@ otel_sdk_common::ExportResult otel_counting_metric_exporter::Export(const otel_s
 	otel_sdk_common::ExportResult result = inner_->Export(data);
 
 	if (result == otel_sdk_common::ExportResult::kSuccess) {
-		export_ok_.fetch_add(1, std::memory_order_relaxed);
+		(void)export_ok_.fetch_add(1, std::memory_order_relaxed);
 		last_export_ms_.store(otel_steady_now_ms(), std::memory_order_relaxed);
 	} else {
-		export_fail_.fetch_add(1, std::memory_order_relaxed);
+		(void)export_fail_.fetch_add(1, std::memory_order_relaxed);
 	}
 
 	return result;

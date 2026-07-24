@@ -1435,7 +1435,7 @@ void otel_nolock_span_destroy(struct otelc_span **span)
 	if (!OTEL_NULL(handle)) {
 		delete handle;
 
-		OTEL_HANDLE(otel_span, get_shard((*span)->idx).map).erase((*span)->idx);
+		(void)OTEL_HANDLE(otel_span, get_shard((*span)->idx).map).erase((*span)->idx);
 		OTEL_HANDLE(otel_span, erase_cnt++);
 
 		OTELC_DBG(OTEL, "otel_span[%" PRId64 "] erased", (*span)->idx);
@@ -1808,7 +1808,7 @@ static int otel_span_context_trace_state_entries(const struct otelc_span_context
 	const auto &ts = span_ctx.trace_state();
 	int count = 0;
 
-	ts->GetAllEntries([&](otel_nostd::string_view key, otel_nostd::string_view val) -> bool {
+	(void)ts->GetAllEntries([&](otel_nostd::string_view key, otel_nostd::string_view val) -> bool {
 		if (OTELC_TEXT_MAP_ADD(text_map, key.data(), key.size(), val.data(), val.size(), OTELC_TEXT_MAP_AUTO) != OTELC_RET_ERROR)
 			count++;
 
@@ -2081,7 +2081,7 @@ void otel_nolock_span_context_destroy(struct otelc_span_context **context)
 	if (!OTEL_NULL(handle)) {
 		delete handle;
 
-		OTEL_HANDLE(otel_span_context, get_shard((*context)->idx).map).erase((*context)->idx);
+		(void)OTEL_HANDLE(otel_span_context, get_shard((*context)->idx).map).erase((*context)->idx);
 		OTEL_HANDLE(otel_span_context, erase_cnt++);
 
 		OTELC_DBG(OTEL, "otel_span_context[%" PRId64 "] erased", (*context)->idx);

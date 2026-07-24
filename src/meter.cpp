@@ -157,7 +157,7 @@ static std::string otel_meter_instrument_key(const char *name, otelc_metric_inst
 			retval.push_back(((*ptr >= 'A') && (*ptr <= 'Z')) ? OTEL_CAST_STATIC(char, *ptr + ('a' - 'A')) : *ptr);
 
 		retval.push_back('/');
-		retval.append(std::to_string(OTEL_CAST_STATIC(int, type)));
+		(void)retval.append(std::to_string(OTEL_CAST_STATIC(int, type)));
 	}
 	catch (...) {
 		retval.clear();
@@ -357,7 +357,7 @@ static int64_t otel_meter_add_view(struct otelc_meter *meter, const char *view_n
 		for (size_t i = 0; i < bounds_num; i++)
 			try {
 				OTEL_DBG_THROW();
-				config->boundaries_.emplace_back(bounds[i]);
+				config->boundaries_.push_back(bounds[i]);
 			}
 			OTEL_CATCH_SIGNAL_RETURN( , OTEL_METER_RETURN_INT, "Unable to add histogram view boundaries")
 	}
@@ -771,7 +771,7 @@ static int64_t otel_meter_create_instrument(struct otelc_meter *meter, const cha
 			/* Do nothing. */
 		}
 		else if (otel_nolock_meter_add_instrument_callback(meter, instrument_handle, data) == OTELC_RET_ERROR) {
-			OTEL_METER_IMPL(meter)->instrument.shards[0].map.erase(OTEL_METER_IMPL(meter)->instrument.id);
+			(void)OTEL_METER_IMPL(meter)->instrument.shards[0].map.erase(OTEL_METER_IMPL(meter)->instrument.id);
 
 			delete instrument_handle;
 
@@ -789,7 +789,7 @@ static int64_t otel_meter_create_instrument(struct otelc_meter *meter, const cha
 	}
 	OTEL_CATCH_SIGNAL_RETURN({
 		if (emplace_status.second)
-			OTEL_METER_IMPL(meter)->instrument.shards[0].map.erase(OTEL_METER_IMPL(meter)->instrument.id);
+			(void)OTEL_METER_IMPL(meter)->instrument.shards[0].map.erase(OTEL_METER_IMPL(meter)->instrument.id);
 
 		delete instrument_handle;
 		}, OTEL_METER_RETURN_INT, "Unable to create meter instrument"
@@ -1102,6 +1102,11 @@ static int otel_meter_shutdown(struct otelc_meter *meter, const struct timespec 
  *   pairs, and finally provider.  When the YAML configuration specifies a
  *   sequence of exporters (and optionally a matching sequence of readers),
  *   each pair is created and passed to the provider.
+ *
+ *   A restart of an already started meter must not run concurrently with the
+ *   instrument or flush operations of that meter, because those operations
+ *   snapshot the installed SDK meter and provider handles without taking the
+ *   create_mutex.
  *
  * RETURN VALUE
  *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR in case of an error.

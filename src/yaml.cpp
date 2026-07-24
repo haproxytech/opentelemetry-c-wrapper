@@ -142,12 +142,12 @@ static std::string ryml_node_path(const ryml::Tree *tree, ryml::id_type id)
 		if (tree->has_key(id)) {
 			const auto key = tree->key(id);
 
-			segment.append(key.str, key.len);
+			(void)segment.append(key.str, key.len);
 		} else {
 			const auto parent = tree->parent(id);
 
 			if ((parent != ryml::NONE) && tree->is_seq(parent))
-				segment.append(std::to_string(tree->child_pos(parent, id)));
+				(void)segment.append(std::to_string(tree->child_pos(parent, id)));
 		}
 
 		path = segment + path;
@@ -266,10 +266,10 @@ OTEL_YAML_DOC *yaml_open(const char *file, char **err)
 	try {
 		std::string content;
 		std::ifstream ifs(file, std::ios::in | std::ios::binary);
-		if (!ifs)
+		if (ifs.fail())
 			OTEL_ERR_RETURN_PTR(OTEL_ERROR_MSG_YAML_OPEN_FILE, file);
 
-		content.assign((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
+		(void)content.assign((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
 
 		auto callbacks = ryml::get_callbacks();
 		callbacks.m_error = ryml_throw_error;

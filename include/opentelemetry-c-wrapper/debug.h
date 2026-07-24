@@ -74,10 +74,10 @@ enum OTELC_DBG_LEVEL_enum {
 #  endif
 
 #  define OTELC_LOG(s,f, ...)      (void)fprintf((s), OTELC_DBG_FMT(f "\n"), ##__VA_ARGS__)
-#  define OTELC_DBG(l,f, ...)                                     \
-	do {                                                      \
-		if (otelc_dbg_level & (1 << OTELC_DBG_LEVEL_##l)) \
-			OTELC_LOG(stdout, f, ##__VA_ARGS__);      \
+#  define OTELC_DBG(l,f, ...)                                            \
+	do {                                                             \
+		if ((otelc_dbg_level & (1 << OTELC_DBG_LEVEL_##l)) != 0) \
+			OTELC_LOG(stdout, f, ##__VA_ARGS__);             \
 	} while (0)
 #  define OTELC_DBG_STRUCT(l,f,F,p, ...)                        \
 	do {                                                    \
@@ -90,13 +90,13 @@ enum OTELC_DBG_LEVEL_enum {
 	const int dbg_ = otelc_dbg_level & (1 << OTELC_DBG_LEVEL_##l);   \
 	do {                                                             \
 		OTELC_DBG(_##l, "%s(" f ") {", __func__, ##__VA_ARGS__); \
-		if (dbg_)                                                \
+		if (dbg_ != 0)                                           \
 			otelc_dbg_indent += OTELC_DBG_INDENT_STEP;       \
 	} while (0)
 #  define OTELC_FUNC(f, ...)       OTELC_FUNC_EX(FUNC, f, ##__VA_ARGS__)
 #  define OTELC_FUNC_END(f, ...)                                   \
 	do {                                                       \
-		if (dbg_) {                                        \
+		if (dbg_ != 0) {                                   \
 			otelc_dbg_indent -= OTELC_DBG_INDENT_STEP; \
 			OTELC_LOG(stdout, f, ##__VA_ARGS__);       \
 		}                                                  \

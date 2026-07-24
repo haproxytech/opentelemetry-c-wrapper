@@ -21,7 +21,7 @@
 	const int dbg_ = otelc_dbg_level & (1 << OTELC_DBG_LEVEL_##l);          \
 	do {                                                                    \
 		OTELC_DBG(_##l, "%s::%s(" f ") {", c, __func__, ##__VA_ARGS__); \
-		if (dbg_)                                                       \
+		if (dbg_ != 0)                                                  \
 			otelc_dbg_indent += OTELC_DBG_INDENT_STEP;              \
 	} while (0)
 #  define OTELCPP_FUNC(f,c, ...)   OTELCPP_FUNC_EX(FUNC, f, c, ##__VA_ARGS__)

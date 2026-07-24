@@ -78,20 +78,20 @@
 #endif /* HAVE_OTEL_EXPORTER_OSTREAM */
 
 #ifdef HAVE_OTEL_EXPORTER_OTLP_FILE
-  #define OTEL_EXPORTER_CASE_OTLP_FILE(arg_sig, arg_base, arg_ptr, arg_path)                                      \
-	else if (strcasecmp(type, OTEL_EXPORTER_OTLP_FILE) == 0) {                                                \
-		otel_exporter_otlp::arg_base##Options        options{};                                           \
-		otel_exporter_otlp::arg_base##RuntimeOptions rt_options{};                                        \
-		                                                                                                  \
-		if (otel_exporter_set_otlp_file_options((arg_ptr)->ctx, OTEL_##arg_sig##_EXPORTER_DESC,           \
-		                                        (arg_path), options, rt_options,                          \
-		                                        &((arg_ptr)->err), name) == OTELC_RET_ERROR)              \
-			OTELC_RETURN_INT(OTELC_RET_ERROR);                                                        \
-		exporter_maybe = otel::make_unique_nothrow<otel_exporter_otlp::arg_base>(options, rt_options);    \
-		if (OTEL_NULL(exporter_maybe))                                                                    \
-			OTEL_##arg_sig##_ERROR(OTEL_##arg_sig##_EXPORTER_FAILED("OTLP File"));                    \
-		else                                                                                              \
-			OTEL_CAST_STATIC(otel_exporter_otlp::arg_base *, exporter_maybe.get())->MaybeSpawnBackgroundThread(); \
+  #define OTEL_EXPORTER_CASE_OTLP_FILE(arg_sig, arg_base, arg_ptr, arg_path)                                                        \
+	else if (strcasecmp(type, OTEL_EXPORTER_OTLP_FILE) == 0) {                                                                  \
+		otel_exporter_otlp::arg_base##Options        options{};                                                             \
+		otel_exporter_otlp::arg_base##RuntimeOptions rt_options{};                                                          \
+		                                                                                                                    \
+		if (otel_exporter_set_otlp_file_options((arg_ptr)->ctx, OTEL_##arg_sig##_EXPORTER_DESC,                             \
+		                                        (arg_path), options, rt_options,                                            \
+		                                        &((arg_ptr)->err), name) == OTELC_RET_ERROR)                                \
+			OTELC_RETURN_INT(OTELC_RET_ERROR);                                                                          \
+		exporter_maybe = otel::make_unique_nothrow<otel_exporter_otlp::arg_base>(options, rt_options);                      \
+		if (OTEL_NULL(exporter_maybe))                                                                                      \
+			OTEL_##arg_sig##_ERROR(OTEL_##arg_sig##_EXPORTER_FAILED("OTLP File"));                                      \
+		else                                                                                                                \
+			(void)OTEL_CAST_STATIC(otel_exporter_otlp::arg_base *, exporter_maybe.get())->MaybeSpawnBackgroundThread(); \
 	}
 #else
   #define OTEL_EXPORTER_CASE_OTLP_FILE(arg_sig, arg_base, arg_ptr, arg_path)                  \
@@ -102,20 +102,20 @@
 
 /* <opentelemetry/exporters/otlp/otlp_grpc_client_options.h> */
 #ifdef HAVE_OTEL_EXPORTER_OTLP_GRPC
-  #define OTEL_EXPORTER_CASE_OTLP_GRPC(arg_sig, arg_base, arg_ptr, arg_path)                                                     \
-	else if (strcasecmp(type, OTEL_EXPORTER_OTLP_GRPC) == 0) {                                                               \
-		otel_exporter_otlp::arg_base##Options options{};                                                                 \
-		char                                  endpoint[OTEL_YAML_BUFSIZ] = OTEL_##arg_sig##_EXPORTER_OTLP_GRPC_ENDPOINT; \
-		                                                                                                                 \
-		if (otel_exporter_set_otlp_grpc_options((arg_ptr)->ctx, OTEL_##arg_sig##_EXPORTER_DESC,                          \
-		                                        (arg_path),                                                              \
-		                                        endpoint, options, &((arg_ptr)->err), name) == OTELC_RET_ERROR)          \
-			OTELC_RETURN_INT(OTELC_RET_ERROR);                                                                       \
-		exporter_maybe = otel::make_unique_nothrow<otel_exporter_otlp::arg_base>(options);                               \
-		if (OTEL_NULL(exporter_maybe))                                                                                   \
-			OTEL_##arg_sig##_ERROR(OTEL_##arg_sig##_EXPORTER_FAILED("OTLP gRPC"));                                   \
-		else                                                                                                             \
-			OTEL_CAST_STATIC(otel_exporter_otlp::arg_base *, exporter_maybe.get())->MaybeSpawnBackgroundThread();    \
+  #define OTEL_EXPORTER_CASE_OTLP_GRPC(arg_sig, arg_base, arg_ptr, arg_path)                                                        \
+	else if (strcasecmp(type, OTEL_EXPORTER_OTLP_GRPC) == 0) {                                                                  \
+		otel_exporter_otlp::arg_base##Options options{};                                                                    \
+		char                                  endpoint[OTEL_YAML_BUFSIZ] = OTEL_##arg_sig##_EXPORTER_OTLP_GRPC_ENDPOINT;    \
+		                                                                                                                    \
+		if (otel_exporter_set_otlp_grpc_options((arg_ptr)->ctx, OTEL_##arg_sig##_EXPORTER_DESC,                             \
+		                                        (arg_path),                                                                 \
+		                                        endpoint, options, &((arg_ptr)->err), name) == OTELC_RET_ERROR)             \
+			OTELC_RETURN_INT(OTELC_RET_ERROR);                                                                          \
+		exporter_maybe = otel::make_unique_nothrow<otel_exporter_otlp::arg_base>(options);                                  \
+		if (OTEL_NULL(exporter_maybe))                                                                                      \
+			OTEL_##arg_sig##_ERROR(OTEL_##arg_sig##_EXPORTER_FAILED("OTLP gRPC"));                                      \
+		else                                                                                                                \
+			(void)OTEL_CAST_STATIC(otel_exporter_otlp::arg_base *, exporter_maybe.get())->MaybeSpawnBackgroundThread(); \
 	}
 #else
   #define OTEL_EXPORTER_CASE_OTLP_GRPC(arg_sig, arg_base, arg_ptr, arg_path)                  \
@@ -148,7 +148,7 @@
 			auto *exporter_ptr = OTEL_CAST_STATIC(otel_exporter_otlp::arg_base *, exporter_maybe.get());                    \
 			exporter_ptr->SetBackgroundWaitFor(std::chrono::milliseconds((background_thread_wait_for > 0) ?                 \
 			                                   background_thread_wait_for : std::chrono::milliseconds::max().count()));     \
-			exporter_ptr->MaybeSpawnBackgroundThread();                                                                     \
+			(void)exporter_ptr->MaybeSpawnBackgroundThread();                                                               \
 		}                                                                                                                       \
 	}
 #else

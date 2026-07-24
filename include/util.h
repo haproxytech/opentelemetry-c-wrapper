@@ -74,7 +74,7 @@ extern std::atomic<size_t> otel_handle_map_shards;
 		}                                                                            \
 		OTEL_CATCH_SIGNAL_RETURN({                                                   \
 			if (emplace_ok)                                                      \
-				OTEL_HANDLE(map_name, get_shard(idx).map).erase(idx);        \
+				(void)OTEL_HANDLE(map_name, get_shard(idx).map).erase(idx);  \
 			                                                                     \
 			cleanup;                                                             \
 			}, err_macro, exc_msg                                                \
@@ -564,7 +564,7 @@ extern otelc_ext_free_t   otelc_ext_free;
 #  define OTEL_DBG_BAGGAGE(b)   while (0)
 #endif
 
-#ifdef DEBUG
+#ifdef OTELC_DBG_MEM
 bool                      otel_get_kv_cb(otel_nostd::string_view key, otel_nostd::string_view value);
 #endif
 bool                      otel_baggage_get_all_entries(const otel_nostd::shared_ptr<otel_baggage::Baggage> &baggage, std::function<bool(otel_nostd::string_view, otel_nostd::string_view)> f);

@@ -96,9 +96,7 @@ public:
 
 		OTELC_DBG(OTEL, "'%s' -> '%s'", std::string(key).c_str(), std::string(retval).c_str());
 
-		OTELC_FUNC_END("}");
-
-		return retval;
+		OTELCPP_RETURN_OBJ(retval);
 	}
 
 	/***
@@ -156,7 +154,7 @@ public:
 		OTELCPP_FUNC("<f>", OTELC_STRINGIFY(OTEL_MAP_CARRIER));
 
 		for (const auto &it : tm_data) {
-			if (!f)
+			if (!static_cast<bool>(f))
 				OTELC_DBG(OTEL, "'%s' -> '%s'", it.first.c_str(), it.second.c_str());
 			else if (!f(it.first))
 				OTELC_RETURN_EX(false, bool, "%hhu");
@@ -188,7 +186,7 @@ public:
 		OTELCPP_FUNC("<f>", OTELC_STRINGIFY(OTEL_MAP_CARRIER));
 
 		for (const auto &it : tm_data) {
-			if (!f)
+			if (!static_cast<bool>(f))
 				OTELC_DBG(OTEL, "'%s' -> '%s'", it.first.c_str(), it.second.c_str());
 			else if (!f(it.first, it.second))
 				OTELC_RETURN_EX(false, bool, "%hhu");
@@ -296,9 +294,7 @@ public:
 
 		OTELC_DBG(OTEL, "'%s' -> '%s'", std::string(key).c_str(), std::string(retval).c_str());
 
-		OTELC_FUNC_END("}");
-
-		return retval;
+		OTELCPP_RETURN_OBJ(retval);
 	}
 
 	/***
@@ -356,7 +352,7 @@ public:
 		OTELCPP_FUNC("<f>", OTELC_STRINGIFY(OTEL_HTTP_CARRIER));
 
 		for (const auto &it : headers_data) {
-			if (!f)
+			if (!static_cast<bool>(f))
 				OTELC_DBG(OTEL, "'%s' -> '%s'", it.first.c_str(), it.second.c_str());
 			else if (!f(it.first))
 				OTELC_RETURN_EX(false, bool, "%hhu");
@@ -388,7 +384,7 @@ public:
 		OTELCPP_FUNC("<f>", OTELC_STRINGIFY(OTEL_HTTP_CARRIER));
 
 		for (const auto &it : headers_data) {
-			if (!f)
+			if (!static_cast<bool>(f))
 				OTELC_DBG(OTEL, "'%s' -> '%s'", it.first.c_str(), it.second.c_str());
 			else if (!f(it.first, it.second))
 				OTELC_RETURN_EX(false, bool, "%hhu");

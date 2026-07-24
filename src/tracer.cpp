@@ -379,7 +379,7 @@ static struct otelc_span *otel_tracer_start_span_with_options(struct otelc_trace
 
 			try {
 				OTEL_DBG_THROW();
-				links_vec.emplace_back(link_ctx, std::move(link_attr));
+				(void)links_vec.emplace_back(link_ctx, std::move(link_attr));
 			}
 			OTEL_CATCH_SIGNAL_RETURN( , OTEL_TRACER_RETURN_PTR, "Unable to add link entry")
 		}
@@ -1332,7 +1332,7 @@ struct otelc_tracer *otelc_tracer_create(const struct otelc_ctx *ctx, char **err
 	 * safe, only mixed create/destroy sequences need external
 	 * serialisation.
 	 */
-	otel_tracer_count.fetch_add(1, std::memory_order_relaxed);
+	(void)otel_tracer_count.fetch_add(1, std::memory_order_relaxed);
 
 	if (yaml_resolve_prefix(ctx->fyd, err, OTEL_YAML_TRACER_PREFIX, ctx->name, OTEL_YAML_NAME_DEFAULT, &(retptr->yaml_prefix)) == OTELC_RET_ERROR) {
 		/* yaml_resolve_prefix already populated *err. */

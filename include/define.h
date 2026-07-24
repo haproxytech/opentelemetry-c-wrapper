@@ -57,7 +57,7 @@ using otel_attributes                 = std::vector<std::pair<otel_nostd::string
 template <typename T> void otel_print_type();
 #define OTEL_ERR_PRINT_TYPE(t)        otel_print_type<decltype(t)>()
 #define OTEL_DBG_PRINT_TYPE(t)        OTELC_DBG(DEBUG, "typeof " #t ": '%s'", typeid(decltype(t)).name())
-#define OTEL_DBG_THROW()              OTELC_DBG_IFDEF(if (otelc_dbg_trigger_throw && !(random() % 100)) throw std::runtime_error(">>> Debug-only thrown exception"), )
+#define OTEL_DBG_THROW()              OTELC_DBG_IFDEF(if (otelc_dbg_trigger_throw && ((random() % 100) == 0)) throw std::runtime_error(">>> Debug-only thrown exception"), )
 
 template <typename T> struct otel_defer_struct { T fn; ~otel_defer_struct() { fn(); } };
 template <typename T> otel_defer_struct<T>make_defer(T fn) { return { fn }; }
