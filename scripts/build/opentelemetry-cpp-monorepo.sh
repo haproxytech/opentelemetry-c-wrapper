@@ -65,3 +65,8 @@ printf '%s\n' "${SH_TAG_REPO}" | while read _var_branch _var_tag _var_sub _var_r
 	test -n "${_var_branch}" && \
 		sh_get "${_var_repo}" "${_var_branch}" "${_var_tag}" "${_var_dir}" "${_var_sub}"
 done
+
+# The marker tells the install scripts (see sh_archive() in common.sh) that
+# this is a fully assembled source tree that is built offline, as is.
+#
+echo "assembled by opentelemetry-cpp-monorepo.sh" > "${SH_PWD}/.monorepo"

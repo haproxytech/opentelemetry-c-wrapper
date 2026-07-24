@@ -70,16 +70,48 @@ sh_make ()
 
 sh_archive ()
 {
-	test -f "${SH_PKG}.tar.gz" || wget "${SH_PKG_URL}" -O "${SH_PKG}.tar.gz"
-	tar xf "${SH_PKG}.tar.gz"
+	if test ! -f "${SH_PKG}"; then
+		test -f "${SH_PKG}.tar.gz" || wget "${SH_PKG_URL}" -O "${SH_PKG}.tar.gz"
+		tar xf "${SH_PKG}.tar.gz"
+	fi
 	cd "${SH_PKG}" || exit 1
-	find .. -maxdepth 1 -name "*${SH_PKG}.patch" -type f | grep -q . && {
-		local _var_file=
 
-		for _var_file in ../*"${SH_PKG}.patch"; do
-			patch -p1 < "${_var_file}"
-		done
-	}
+	if test -f ".monorepo"; then
+		#
+		# A source tree carrying the .monorepo marker, assembled by the
+		# opentelemetry-cpp-monorepo.sh script, is built as is: cmake uses
+		# the bundled dependency sources unchanged instead of cloning them
+		# again, and the dependencies bundled in the tree are never taken
+		# from an installed package, so that a stale installation cannot
+		# hijack the build.  The sources are first restored to the pristine
+		# tag state so that a repeated run always patches and builds the
+		# same tree.
+		#
+		SH_CMAKE_ARGS="${SH_CMAKE_ARGS} -DFETCHCONTENT_FULLY_DISCONNECTED=ON"
+		SH_CMAKE_ARGS="${SH_CMAKE_ARGS} -DCMAKE_FIND_USE_PACKAGE_REGISTRY=OFF"
+		SH_CMAKE_ARGS="${SH_CMAKE_ARGS} -DCMAKE_FIND_USE_SYSTEM_PACKAGE_REGISTRY=OFF"
+		SH_CMAKE_ARGS="${SH_CMAKE_ARGS} -DCMAKE_DISABLE_FIND_PACKAGE_ryml=ON"
+		SH_CMAKE_ARGS="${SH_CMAKE_ARGS} -DCMAKE_DISABLE_FIND_PACKAGE_gRPC=ON"
+		SH_CMAKE_ARGS="${SH_CMAKE_ARGS} -DCMAKE_DISABLE_FIND_PACKAGE_Protobuf=ON"
+		SH_CMAKE_ARGS="${SH_CMAKE_ARGS} -DCMAKE_DISABLE_FIND_PACKAGE_absl=ON"
+
+		git checkout -- . || exit 1
+		find .. -maxdepth 1 -name "*${SH_PKG}.patch" -type f | grep -q . && {
+			local _var_file=
+
+			for _var_file in ../*"${SH_PKG}.patch"; do
+				git apply "${_var_file}" || exit 1
+			done
+		}
+	else
+		find .. -maxdepth 1 -name "*${SH_PKG}.patch" -type f | grep -q . && {
+			local _var_file=
+
+			for _var_file in ../*"${SH_PKG}.patch"; do
+				patch -p1 < "${_var_file}"
+			done
+		}
+	fi
 
 	mkdir -p build && cd build || exit 1
 }
