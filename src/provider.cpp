@@ -207,7 +207,8 @@ int otel_meter_reader_create(struct otelc_meter *meter, std::unique_ptr<otel_sdk
  * DESCRIPTION
  *   Creates a new meter provider and attaches one or more metric readers.
  *   The provider is responsible for creating and managing meter instances, and
- *   it is configured with resource attributes and views from the YAML file.
+ *   it is configured with resource attributes detected from the environment and
+ *   the YAML configuration file.
  *
  * RETURN VALUE
  *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR in case of an error.
@@ -259,7 +260,8 @@ int otel_meter_provider_create(struct otelc_meter *meter, std::vector<std::uniqu
  * DESCRIPTION
  *   Creates a new logger provider with the specified log record processors.
  *   The provider is responsible for creating and managing logger instances,
- *   and it is configured with resource attributes from the YAML file.
+ *   and it is configured with resource attributes detected from the environment
+ *   and the YAML configuration file.
  *
  * RETURN VALUE
  *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR in case of an error.

@@ -120,7 +120,7 @@ struct otelc_value {
  * adding a key member that identifies the data.
  */
 struct otelc_kv {
-	char               *key;            /* null-terminated key string identifying the value. */
+	char               *key;            /* Null-terminated key string identifying the value. */
 	bool                key_is_dynamic; /* True if the key is dynamically allocated. */
 	struct otelc_value  value;          /* Stored value associated with the key. */
 };

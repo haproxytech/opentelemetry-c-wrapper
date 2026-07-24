@@ -656,8 +656,7 @@ static int otel_span_set_baggage_kv_n(const struct otelc_span *span, const struc
  *   characters) is dropped silently while the function still reports success.
  *
  * RETURN VALUE
- *   Returns the number of saved key-value pairs (1), or OTELC_RET_ERROR in
- *   case of an error.
+ *   Returns 1 on success, or OTELC_RET_ERROR in case of an error.
  */
 static int otel_span_set_baggage(const struct otelc_span *span, const char *key, const char *value)
 {

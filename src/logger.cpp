@@ -41,7 +41,7 @@ struct otel_logs_logger : public otel_logs::Logger {
  *   static otel_logs::Severity otel_logger_severity(struct otelc_logger *logger, otelc_log_severity_t severity)
  *
  * ARGUMENTS
- *   logger   - logger instance used for error reporting
+ *   logger   - logger instance
  *   severity - C wrapper log severity level to convert
  *
  * DESCRIPTION

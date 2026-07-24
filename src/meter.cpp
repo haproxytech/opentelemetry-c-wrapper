@@ -90,7 +90,7 @@ static void otel_meter_observable_double_cb(otel_metrics::ObserverResult observe
  *   static int64_t otel_meter_get_view_id(struct otelc_meter *meter, const char *name)
  *
  * ARGUMENTS
- *   meter - meter instance whose view registry is queried
+ *   meter - meter instance
  *   name  - name of the view to look up
  *
  * DESCRIPTION
@@ -442,8 +442,8 @@ static int64_t otel_meter_add_view(struct otelc_meter *meter, const char *view_n
  *
  * ARGUMENTS
  *   meter - meter instance
- *   name  - name of the instrument to look up (case-insensitive)
- *   type  - instrument type to match
+ *   name  - name of the instrument
+ *   type  - instrument type
  *
  * DESCRIPTION
  *   Searches the internal instrument registry for an instrument with the given
@@ -813,7 +813,7 @@ static int64_t otel_meter_create_instrument(struct otelc_meter *meter, const cha
  * ARGUMENTS
  *   meter - meter instance
  *   value - value to validate
- *   type  - instrument type to validate against
+ *   type  - instrument type
  *
  * DESCRIPTION
  *   Checks that the value type stored in value matches the type expected by

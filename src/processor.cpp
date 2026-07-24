@@ -70,8 +70,8 @@ static int64_t otel_steady_now_ms()
  *   which the delegating processor overestimates queue depth, since the batch
  *   processor frees its circular buffer slots before invoking the exporter.
  *
- *   All SpanExporter interface methods are forwarded to the wrapped exporter
- *   unchanged.
+ *   The other SpanExporter interface methods are forwarded to the wrapped
+ *   exporter unchanged.
  */
 otel_counting_span_exporter::otel_counting_span_exporter(std::unique_ptr<otel_sdk_trace::SpanExporter> &&exporter, std::shared_ptr<std::atomic<uint64_t>> consumed)
 	: inner_(std::move(exporter)), consumed_(std::move(consumed))
@@ -285,8 +285,8 @@ bool otel_counting_span_processor::Shutdown(std::chrono::microseconds timeout) n
  *   window in which the delegating processor overestimates queue depth, since
  *   the batch processor frees its buffer slots before invoking the exporter.
  *
- *   All LogRecordExporter interface methods are forwarded to the wrapped
- *   exporter unchanged.
+ *   The other LogRecordExporter interface methods are forwarded to the
+ *   wrapped exporter unchanged.
  */
 otel_counting_log_exporter::otel_counting_log_exporter(std::unique_ptr<otel_sdk_logs::LogRecordExporter> &&exporter, std::shared_ptr<std::atomic<uint64_t>> consumed)
 	: inner_(std::move(exporter)), consumed_(std::move(consumed))

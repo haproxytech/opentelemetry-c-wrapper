@@ -95,7 +95,7 @@ struct otelc_text_map_reader {
 	 *   function is used to extract propagated context from a carrier.
 	 *
 	 * RETURN VALUE
-	 *   Returns an error code indicating success or failure.
+	 *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR on failure.
 	 */
 	int (*foreach_key)(const struct otelc_text_map_reader *reader, int (*handler)(void *arg, const char *key, const char *value), void *arg)
 		OTELC_NONNULL(1, 2);
@@ -161,7 +161,7 @@ struct otelc_http_headers_reader {
 	 *   function is used to extract propagated context from a carrier.
 	 *
 	 * RETURN VALUE
-	 *   Returns an error code indicating success or failure.
+	 *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR on failure.
 	 */
 	int (*foreach_key)(const struct otelc_http_headers_reader *reader, int (*handler)(void *arg, const char *key, const char *value), void *arg)
 		OTELC_NONNULL(1, 2);

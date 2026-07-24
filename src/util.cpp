@@ -784,9 +784,9 @@ bool otelc_strtoi(const char *str, char **endptr, bool flag_end, int base, int *
  *
  * RETURN VALUE
  *   Returns a pointer to a null-terminated string containing the hexadecimal
- *   representation of the input data.  The returned pointer refers to a
- *   thread-local buffer that is overwritten on each call from the same
- *   thread.
+ *   representation of the input data; a null pointer yields "(null)" and a zero
+ *   size yields "()".  The returned pointer refers to a thread-local buffer
+ *   that is overwritten on each call from the same thread.
  */
 const char *otelc_strhex(const void *data, size_t size)
 {
@@ -812,7 +812,7 @@ const char *otelc_strhex(const void *data, size_t size)
 
 /***
  * NAME
- *   otelc_strctrl - converts binary data to a printable string with control characters escaped
+ *   otelc_strctrl - converts binary data to a printable string with control characters masked
  *
  * SYNOPSIS
  *   const char *otelc_strctrl(const void *data, size_t size)
@@ -822,15 +822,16 @@ const char *otelc_strhex(const void *data, size_t size)
  *   size - number of bytes in the input buffer
  *
  * DESCRIPTION
- *   Converts the given binary data buffer into a printable string by escaping
- *   non-printable and control characters (for example, newline, tab, or
- *   non-ASCII bytes).  This is intended for safe logging or diagnostic output.
+ *   Converts the given binary data buffer into a printable string by replacing
+ *   each non-printable or control byte (for example, newline, tab, or a
+ *   non-ASCII byte) with a '.' placeholder.  This is intended for safe logging
+ *   or diagnostic output.
  *
  * RETURN VALUE
  *   Returns a pointer to a null-terminated string containing a printable
- *   representation of the input data.  The returned pointer refers to a
- *   thread-local buffer that is overwritten on each call from the same
- *   thread.
+ *   representation of the input data; a null pointer yields "(null)" and a zero
+ *   size yields "()".  The returned pointer refers to a thread-local buffer
+ *   that is overwritten on each call from the same thread.
  */
 const char *otelc_strctrl(const void *data, size_t size)
 {
@@ -938,8 +939,8 @@ bool otel_get_kv_cb(otel_nostd::string_view key, otel_nostd::string_view value)
  *   casting it appropriately.
  *
  * RETURN VALUE
- *   Returns the result of Baggage::GetAllEntries (true on success, false if
- *   callback returned false).
+ *   Returns the result of Baggage::GetAllEntries (true on success, false if the
+ *   callback returned false), or false when the baggage pointer is null.
  */
 bool otel_baggage_get_all_entries(const otel_nostd::shared_ptr<otel_baggage::Baggage> &baggage, std::function<bool(otel_nostd::string_view, otel_nostd::string_view)> f)
 {
@@ -1936,7 +1937,7 @@ int otelc_statistics_check(const struct otelc_meter *meter, int type, size_t siz
  *   static int otelc_load_handle_map_shards(OTEL_YAML_DOC *fyd, char **err)
  *
  * ARGUMENTS
- *   fyd - parsed YAML configuration document
+ *   fyd - pointer to the YAML document
  *   err - address of a pointer to store an error message on failure
  *
  * DESCRIPTION
@@ -1951,7 +1952,7 @@ int otelc_statistics_check(const struct otelc_meter *meter, int type, size_t siz
  *
  * RETURN VALUE
  *   Returns OTELC_RET_OK on success or when the key is absent, or
- *   OTELC_RET_ERROR if the value is malformed or out of range.
+ *   OTELC_RET_ERROR on a YAML lookup error or an invalid value.
  */
 static int otelc_load_handle_map_shards(OTEL_YAML_DOC *fyd, char **err)
 {

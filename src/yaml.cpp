@@ -341,7 +341,7 @@ void yaml_close(OTEL_YAML_DOC **fyd)
  *   static bool yaml_node_exists(OTEL_YAML_DOC *fyd, const char *path)
  *
  * ARGUMENTS
- *   fyd  - parsed YAML configuration document
+ *   fyd  - pointer to the YAML document
  *   path - slash-separated path of the node to probe
  *
  * DESCRIPTION
@@ -370,7 +370,7 @@ static bool yaml_node_exists(OTEL_YAML_DOC *fyd, const char *path)
  *   otelc_ctx_name_t yaml_probe_nstate(OTEL_YAML_DOC *fyd, const char *base, const char *name, bool name_set)
  *
  * ARGUMENTS
- *   fyd      - parsed YAML configuration document
+ *   fyd      - pointer to the YAML document
  *   base     - base path of the signal section (e.g., "/signals/traces")
  *   name     - effective context name to look for under base
  *   name_set - true when the caller supplied the name explicitly
@@ -388,7 +388,8 @@ static bool yaml_node_exists(OTEL_YAML_DOC *fyd, const char *path)
  *   yields the corresponding not-found state.
  *
  * RETURN VALUE
- *   Returns the otelc_ctx_name_t value describing the resolution state.
+ *   Returns one of the otelc_ctx_name_t values (OTELC_CTX_NAME_*) describing
+ *   the resolution state.
  */
 otelc_ctx_name_t yaml_probe_nstate(OTEL_YAML_DOC *fyd, const char *base, const char *name, bool name_set)
 {
@@ -441,7 +442,7 @@ otelc_ctx_name_t yaml_probe_nstate(OTEL_YAML_DOC *fyd, const char *base, const c
  *   int yaml_resolve_prefix(OTEL_YAML_DOC *fyd, char **err, const char *base, const char *name, const char *fallback, char **prefix)
  *
  * ARGUMENTS
- *   fyd      - parsed YAML configuration document
+ *   fyd      - pointer to the YAML document
  *   err      - address of a pointer to store an error message on failure
  *   base     - base path of the signal section (e.g., "/signals/traces")
  *   name     - preferred named entry to look for under base
