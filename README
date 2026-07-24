@@ -45,6 +45,10 @@ to simplify the analysis of software performance and behavior.
 
 This library is a C wrapper for the official OTel C++ client, with the source
 repository available at https://github.com/open-telemetry/opentelemetry-cpp .
+The version of the OTel C++ client used by the wrapper is set to 1.26.0 (see
+https://github.com/open-telemetry/opentelemetry-cpp/releases/tag/v1.26.0 ).
+This exact release is required by the patch set that the build applies to the
+client sources; the reasons are described in section 2.2.
 
 
 2. Build instructions
@@ -90,7 +94,7 @@ setting up all required libraries, with the most important ones being:
   * Kitware CMake
   * various developer packages of the system libraries (libc, curl, ssl, zlib,
     lzma, systemd)
-  * various utilities for downloading source code repositories (git, wget, curl)
+  * various utilities for downloading source code repositories (git, wget)
 
 
 2.2. Compiling and installing the OTel C++ client
@@ -110,12 +114,21 @@ following two scripts:
 
 It is strongly recommended to use the provided build scripts rather than relying
 on system-installed dependency packages, which are likely outdated or compiled
-with options incompatible with the OTel C wrapper.
+with options incompatible with the OTel C wrapper.  The version of the OTel
+C++ client used is set to 1.26.0 because the *-opentelemetry-cpp-1.26.0.patch
+set in scripts/build/ is prepared for exactly that SDK release.  Besides build
+adjustments, the patches extend the SDK exporters with methods that the wrapper
+requires: MaybeSpawnBackgroundThread() pre-spawns the exporter's background
+threads and connections, which the unpatched SDK creates lazily on the first
+export, so that no thread creation or connection setup is deferred until then,
+while SetBackgroundWaitFor() makes the idle timeout of the OTLP/HTTP exporter
+background thread configurable.  Another SDK release cannot be used without
+porting the patch set.
 
-If none of the attached build-*.sh scripts is used, the patches in
-scripts/build/ must be applied to the OpenTelemetry C++ source tree before
-compilation and the same CMake configuration options found in
-scripts/build/opentelemetry-cpp-1.26.0-install.sh must be used.
+If none of the attached build-*.sh scripts is used, then the opentelemetry-cpp
+patches in scripts/build/ must be applied to the OpenTelemetry C++ source tree
+before the compilation and the same CMake configuration options found in the
+scripts/build/opentelemetry-cpp-1.26.0-install.sh script must be used.
 
 Whichever script is used, the result should be the same.  However, it is
 recommended to use the build-bundle.sh script for this task.  In that script,
@@ -554,6 +567,9 @@ The OTLP/gRPC exporter accepts these settings in the YAML file for
 configuration consistency, but they are not applied because the OTel
 C++ SDK does not provide runtime options for gRPC exporter threads.
 
+The Elasticsearch log exporter also spawns a background thread, but accepts
+neither setting; its thread runs with the process defaults.
+
 
 6.2. Exporters
 ------------------------------------------------------------------------------
@@ -843,9 +859,10 @@ Sends log records to an Elasticsearch cluster.  Supported for logs only.
 
 Samplers control which traces are recorded and exported.  They are configured
 in the top-level 'samplers' section and referenced from the traces signal.  Only
-one sampler is active per tracer.
+one sampler is active per tracer.  When the traces signal references no sampler
+at all, a trace_id_ratio_based sampler with a ratio of 1.0 is used.
 
-  type (string, default: "trace_id_ratio_based")
+  type (string, mandatory)
       Sampler type.  Accepted values: "always_on", "always_off",
       "trace_id_ratio_based", "parent_based".
 
@@ -1380,8 +1397,8 @@ installed with otelc_log_set_handler(), not in export_fail.
 Additional limitations:
   * Span lifecycle: Spans are stored in a shared map accessible from any thread.
     It is the caller's responsibility to end all spans before destroying the
-    tracer.  If any spans remain when the tracer is destroyed, they are ended
-    implicitly.
+    tracer.  The span maps are shared by all tracers, so any spans left open
+    are ended implicitly only when the last tracer is destroyed.
   * ABI compatibility: The library must be built against an OTel C++ client
     compiled with ABI version 2; both build systems verify this at configuration
     time and reject any other ABI version.  `AddLink` (an ABI version 2 feature)
