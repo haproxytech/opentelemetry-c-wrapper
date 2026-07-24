@@ -10,7 +10,10 @@ official
 [OpenTelemetry C++ client](https://github.com/open-telemetry/opentelemetry-cpp).
 It was developed by [HAProxy Technologies](https://www.haproxy.com/) for use in
 the HAProxy OTel filter, but is suitable for any C application that needs to
-export telemetry data.
+export telemetry data.  The version of the underlying OTel C++ client is set to
+[1.26.0](https://github.com/open-telemetry/opentelemetry-cpp/releases/tag/v1.26.0);
+this exact release is required by the patch set that the build applies to the
+SDK, as described in the [Build Instructions](#build-instructions) section.
 
 The library supports three OTel signals:
 
@@ -56,12 +59,21 @@ By default, libraries are installed under `/opt`.  A sequential alternative
 
 **Important:** Use the provided build scripts rather than relying on
 system-installed dependency packages, which are likely outdated or compiled
-with options incompatible with the OTel C wrapper.
+with options incompatible with the OTel C wrapper.  The version of the OTel
+C++ SDK used is set to 1.26.0 because the `*-opentelemetry-cpp-1.26.0.patch`
+set in `scripts/build/` is prepared for exactly that SDK release.  Besides build
+adjustments, the patches extend the SDK exporters with methods that the wrapper
+requires: `MaybeSpawnBackgroundThread()` pre-spawns the exporter's background
+threads and connections, which the unpatched SDK creates lazily on the first
+export, so that no thread creation or connection setup is deferred until then,
+while `SetBackgroundWaitFor()` makes the idle timeout of the OTLP/HTTP exporter
+background thread configurable.  Another SDK release cannot be used without
+porting the patch set.
 
-If none of the attached `build-*.sh` scripts is used, the patches in
-`scripts/build/` must be applied to the OpenTelemetry C++ source tree
-before compilation and the same CMake configuration options found in
-`scripts/build/opentelemetry-cpp-1.26.0-install.sh` must be used.
+If none of the attached `build-*.sh` scripts is used, the opentelemetry-cpp
+patches in `scripts/build/` must be applied to the OpenTelemetry C++ source
+tree before compilation and the same CMake configuration options found in the
+`scripts/build/opentelemetry-cpp-1.26.0-install.sh` script must be used.
 
 In particular, the wrapper requires an OTel C++ SDK built with ABI version 2
 (`-DWITH_ABI_VERSION_2=ON`); the wrapper build verifies this at configuration
@@ -141,7 +153,7 @@ cd test
 The test program uses `otel-cfg.yml` as its library configuration file.
 
 Signal-specific test programs (`test-tracer`, `test-meter`, `test-logger`,
-`test-yaml`) are also built by `make test`.
+`test-yaml`, `test-multi`) are also built by `make test`.
 
 For integration testing with an OTel Collector and a backend such as
 Elasticsearch/Kibana, use the Docker Compose setup in `test/elastic-apm/`.
@@ -230,10 +242,11 @@ int main(void)
     meter->ops->start(meter);
 
     counter = meter->ops->create_instrument(meter, "requests", "Total request count", "1", OTELC_METRIC_INSTRUMENT_COUNTER_UINT64, NULL);
-
-    value.u_type         = OTELC_VALUE_UINT64;
-    value.u.value_uint64 = 1;
-    meter->ops->update_instrument(meter, counter, &value);
+    if (counter != OTELC_RET_ERROR) {
+        value.u_type         = OTELC_VALUE_UINT64;
+        value.u.value_uint64 = 1;
+        meter->ops->update_instrument(meter, counter, &value);
+    }
 
     otelc_deinit(&ctx, NULL, &meter, NULL);
     return 0;
@@ -442,6 +455,9 @@ The `cpu_id` setting uses `pthread_setaffinity_np()` and is only effective on
 Linux (requires `sched.h`).  The OTLP/gRPC exporter accepts both settings for
 configuration consistency, but they are not applied because the OTel C++ SDK
 does not provide runtime options for gRPC exporter threads.
+
+The Elasticsearch log exporter also spawns a background thread, but accepts
+neither setting; its thread runs with the process defaults.
 
 ### Supported Exporters
 
