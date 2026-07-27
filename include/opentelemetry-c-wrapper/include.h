@@ -32,6 +32,7 @@
 #  include "opentelemetry-c-wrapper/logger.h"
 #  include "opentelemetry-c-wrapper/meter.h"
 #  include "opentelemetry-c-wrapper/tracer.h"
+#  include "opentelemetry-c-wrapper/version.h"
 #else
 #  include <opentelemetry-c-wrapper/define.h>
 #  include <opentelemetry-c-wrapper/debug.h>

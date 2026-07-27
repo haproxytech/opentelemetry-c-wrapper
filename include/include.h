@@ -121,6 +121,21 @@
 #  include "dbg_malloc.h"
 #endif
 #include "opentelemetry-c-wrapper/include.h"
+
+/***
+ * The composite/composable samplers arrived in opentelemetry-cpp 1.28.0 and
+ * their headers are absent in older SDKs, so they are gated on the SDK
+ * version.  This block follows the include above because that is what defines
+ * OTELCPP_VERSION_GE().
+ */
+#if OTELCPP_VERSION_GE(1, 28)
+#  include <opentelemetry/sdk/trace/samplers/composable_always_on.h>
+#  include <opentelemetry/sdk/trace/samplers/composable_always_off.h>
+#  include <opentelemetry/sdk/trace/samplers/composable_probability.h>
+#  include <opentelemetry/sdk/trace/samplers/composable_parent_threshold.h>
+#  include <opentelemetry/sdk/trace/samplers/composite_sampler.h>
+#endif
+
 #include "std.h"
 #include "yaml.h"
 #include "util.h"

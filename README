@@ -864,7 +864,7 @@ at all, a trace_id_ratio_based sampler with a ratio of 1.0 is used.
 
   type (string, mandatory)
       Sampler type.  Accepted values: "always_on", "always_off",
-      "trace_id_ratio_based", "parent_based".
+      "trace_id_ratio_based", "parent_based", "composite".
 
 Type "always_on" samples every trace unconditionally.  No additional
 configuration keys.
@@ -906,6 +906,23 @@ keys:
   local_not_sampled (string, default: "always_off")
       Sampler applied when the local parent does not have the sampled flag.
       Accepted values: "always_on", "always_off".
+
+Type "composite" wraps a composable sampler to perform consistent-probability
+sampling.  Unlike "trace_id_ratio_based", the resulting sampling threshold is
+written to the "ot" entry of the W3C tracestate, so that downstream services
+and the collector can reconstruct the adjusted span count from the propagated
+decision.  This type requires an OpenTelemetry C++ SDK of version 1.28.0 or
+newer; when the wrapper is built against an older SDK the type is rejected as
+invalid.  Additional keys:
+
+  composable (string, default: "probability")
+      Composable sampler that the composite drives.  Accepted values:
+      "always_on", "always_off", "probability", "parent_threshold".
+
+  ratio (double, range: 0.0-1.0)
+      Sampling probability.  Mandatory when composable is set to "probability"
+      or "parent_threshold"; otherwise not read.  For "parent_threshold" it is
+      the ratio of the probability sampler that decides the fate of root spans.
 
 
 6.4. Processors

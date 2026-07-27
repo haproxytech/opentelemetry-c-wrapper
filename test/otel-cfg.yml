@@ -232,6 +232,9 @@ samplers:
 #   type:  always_off
 #   type:  trace_id_ratio_based
 #   ratio: 1.0
+#   type:       composite
+#   composable: probability
+#   ratio:      0.25
     type:     parent_based
     delegate: always_on
 

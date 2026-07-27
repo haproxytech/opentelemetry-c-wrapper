@@ -18,6 +18,13 @@ __CPLUSPLUS_DECL_BEGIN
 #endif
 
 #define OTELCPP_VERSION                   "@OTELCPP_VERSION@"
+
+/*
+ * Non-zero when the OpenTelemetry C++ SDK compiled against is at least
+ * maj.min (via OPENTELEMETRY_VERSION_MAJOR/MINOR); zero if those are unset.
+ */
+#define OTELCPP_VERSION_GE(maj, min)      ((OPENTELEMETRY_VERSION_MAJOR > (maj)) || ((OPENTELEMETRY_VERSION_MAJOR == (maj)) && (OPENTELEMETRY_VERSION_MINOR >= (min))))
+
 #define OTELC_VERSION                     OTELC_PACKAGE_VERSION "-" OTELC_STRINGIFY(OTELC_PACKAGE_BUILD)
 #define OTELC_IS_VALID_VERSION()          (strcmp(otelc_version(), OTELC_VERSION) == 0)
 

@@ -174,6 +174,59 @@ int otel_sampler_create(struct otelc_tracer *tracer, std::unique_ptr<otel_sdk_tr
 
 		sampler_maybe = otel::make_unique_nothrow<otel_sdk_trace::ParentBasedSampler>(std::move(delegate_sampler), remote_sampled_sampler, remote_not_sampled_sampler, local_sampled_sampler, local_not_sampled_sampler);
 	}
+#if OTELCPP_VERSION_GE(1, 28)
+	else if (strcasecmp(type, "composite") == 0) {
+		/***
+		 * A CompositeSampler drives a single ComposableSampler that returns a
+		 * consistent-probability sampling intent.  The threshold is written to
+		 * the "ot" tracestate so downstream hops and the collector can
+		 * reconstruct the adjusted count.  For parent_threshold the root
+		 * sampler is fixed to a probability sampler using the same ratio.
+		 */
+		std::shared_ptr<otel_sdk_trace::ComposableSampler> composable_sampler;
+		char                                               composable[OTEL_YAML_BUFSIZ] = "probability";
+
+		rc = yaml_get_node(tracer->ctx->fyd, &(tracer->err), 0, "OpenTelemetry composite sampler", path, nullptr,
+		                   OTEL_YAML_ARG_STR(0, SAMPLERS, composable),
+		                   OTEL_YAML_END);
+		if (rc == OTELC_RET_ERROR)
+			OTELC_RETURN_INT(OTELC_RET_ERROR);
+
+		if (strcasecmp(composable, "always_on") == 0) {
+			composable_sampler = otel::make_shared_nothrow<otel_sdk_trace::ComposableAlwaysOnSampler>();
+		}
+		else if (strcasecmp(composable, "always_off") == 0) {
+			composable_sampler = otel::make_shared_nothrow<otel_sdk_trace::ComposableAlwaysOffSampler>();
+		}
+		else if ((strcasecmp(composable, "probability") == 0) || (strcasecmp(composable, "parent_threshold") == 0)) {
+			rc = yaml_get_node(tracer->ctx->fyd, &(tracer->err), 0, "OpenTelemetry composite sampler ratio", path, nullptr,
+			                   OTEL_YAML_ARG_DOUBLE(1, SAMPLERS, ratio, 0.0, 1.0),
+			                   OTEL_YAML_END);
+			if (rc == OTELC_RET_ERROR)
+				OTELC_RETURN_INT(OTELC_RET_ERROR);
+
+			if (strcasecmp(composable, "probability") == 0) {
+				composable_sampler = otel::make_shared_nothrow<otel_sdk_trace::ComposableProbabilitySampler>(ratio);
+			}
+			else {
+				std::shared_ptr<otel_sdk_trace::ComposableSampler> root_sampler = otel::make_shared_nothrow<otel_sdk_trace::ComposableProbabilitySampler>(ratio);
+
+				if (OTEL_NULL(root_sampler))
+					OTEL_TRACER_RETURN_INT(OTEL_ERROR_MSG_ENOMEM("composite root sampler"));
+
+				composable_sampler = otel::make_shared_nothrow<otel_sdk_trace::ComposableParentThresholdSampler>(root_sampler);
+			}
+		}
+		else {
+			OTEL_TRACER_RETURN_INT("Invalid composite sampler composable type: '%s'", composable);
+		}
+
+		if (OTEL_NULL(composable_sampler))
+			OTEL_TRACER_RETURN_INT(OTEL_ERROR_MSG_ENOMEM("composite composable sampler"));
+
+		sampler_maybe = otel::make_unique_nothrow<otel_sdk_trace::CompositeSampler>(composable_sampler);
+	}
+#endif /* OTELCPP_VERSION_GE(1, 28) */
 	else {
 		OTEL_TRACER_RETURN_INT("Invalid sampler type: '%s'", type);
 	}
