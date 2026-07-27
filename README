@@ -16,13 +16,15 @@ Summary
    5. Library API overview
    6. YAML configuration
      6.1. Document structure
-     6.2. Exporters
-     6.3. Samplers
-     6.4. Processors
-     6.5. Readers
-     6.6. Providers
-     6.7. Signals
-     6.8. Environment variables
+     6.2. Value conventions
+     6.3. Background threads
+     6.4. Exporters
+     6.5. Samplers
+     6.6. Processors
+     6.7. Readers
+     6.8. Providers
+     6.9. Signals
+     6.10. Environment variables
    7. Tracing example
    8. Metrics example
    9. Logging example
@@ -420,7 +422,7 @@ absent, a configuration written in the legacy layout, with the settings placed
 directly under the signal subtree, is accepted as a last resort.  The outcome
 of the lookup is recorded per signal section at otelc_init() time and can be
 read back with otelc_ctx_nstate_get().  If no variant is present, creating the
-corresponding signal fails; see section 6.7 for the details.
+corresponding signal fails; see section 6.9 for the details.
 
 The otelc_deinit() function accepts pointers to the context and to all three
 signal types and destroys whichever ones are non-NULL:
@@ -480,15 +482,16 @@ All public headers reside under include/opentelemetry-c-wrapper/.  Including
 ------------------------------------------------------------------------------
 
 The library reads its configuration from a YAML file whose path is passed to
-the otelc_init() function.  Named pipeline components are defined in top-level
-sections and bound together per signal type, under named entries, inside the
-'signals' section.  Each call to otelc_init() also takes a context name that
-selects the named entry to load (with a 'default' fallback); see section 6.7 for
-the layout.  All string values have a maximum length of 4095 characters.  A key
-with an empty value is treated as if the key were absent.  Boolean values accept
-"true" / "1" for true and "false" / "0" for false (case-insensitive).  Duplicate
-keys within a mapping are rejected at load time by the default rapidyaml parser;
-the libfyaml parser does not detect them.
+otelc_init().  The named pipeline components -- exporters, samplers, processors,
+readers and providers -- are defined in top-level sections, and the 'signals'
+section binds them together per signal type, under named entries.  Each call to
+otelc_init() also takes a context name that selects the named entry to load,
+with a fallback to 'default'; section 6.9 describes the lookup.
+
+The three sections that follow cover the material shared by the whole document:
+section 6.1 the layout, section 6.2 the value syntax common to every key, and
+section 6.3 the thread settings common to every component that runs a background
+thread.  The remaining sections document one top-level section each.
 
 
 6.1. Document structure
@@ -504,17 +507,23 @@ The YAML file contains the following top-level sections:
   * providers  - set resource attributes attached to all telemetry
   * signals    - bind the above components together per signal type
 
-Each section (except 'signals') contains named configuration blocks.  The
-'signals' section groups its 'traces', 'metrics', and 'logs' subtrees by name,
+Each section except 'signals' contains named configuration blocks.  The
+'signals' section groups its 'traces', 'metrics' and 'logs' subtrees by name,
 and each named entry references the other top-level blocks by name, either as a
 single name or as a YAML list of names.
+
+Besides these sections the document accepts the optional top-level scalar key
+'handle_map_shards', which sets the shard count of the span and span context
+handle maps.  Its value must be a power of two in the range 1..65536 and takes
+effect on the first otelc_init() call; README-configuration describes the key
+and its limitations in full.
 
 Here is a minimal configuration that exports traces to stdout:
 
   exporters:
     my_exporter:
       type:     ostream
-      filename: /dev/stdout
+      filename: stdout
 
   processors:
     my_processor:
@@ -541,21 +550,54 @@ Here is a minimal configuration that exports traces to stdout:
 A complete configuration covering all three signals, multiple exporter types,
 and multiple named entries can be found in the file test/otel-cfg.yml.
 
-Components that spawn background threads (batch processors, OTLP File and HTTP
-exporters, and periodic metric readers) accept two optional settings that
-control the operating system thread properties:
 
-  * thread_name - sets the OS thread name via pthread_setname_np(), truncated
-                  to 15 characters.  Useful for identifying SDK threads in
-                  debuggers and monitoring tools.
+6.2. Value conventions
+------------------------------------------------------------------------------
 
-  * cpu_id      - binds the thread to a specific CPU core via
-                  pthread_setaffinity_np().  Accepts a core number from 0 to
-                  OTEL_MAX_CPU_ID (4095), or -1 to leave the affinity unset
-                  (the default).  This setting requires sched.h and is only
-                  effective on Linux.
+The rules described here apply to every key documented in this section, and the
+per-key descriptions that follow state only the deviations from them.
 
-Both settings are configured per component.  For example:
+String values are limited to 4095 characters and longer values are truncated.
+A key whose value is empty is treated as if the key were absent, so the default
+documented for that key applies.  Keys that the addressed component does not
+read are ignored, which means a misspelled key is silently left out instead of
+being reported.
+
+Boolean values accept "true" and "1" for true, and "false" and "0" for false.
+Integer values are converted with base detection, so a decimal, a 0x-prefixed
+hexadecimal and a leading-zero octal form are all accepted.  Both integer and
+floating-point values are validated against the inclusive range stated with each
+key, and a value outside that range fails the load.
+
+Type names and enumerated values, such as the exporter 'type' or the sampler
+'delegate', are matched without regard to case.  A value matching none of the
+accepted spellings is reported as an error rather than silently replaced by
+the default.
+
+Duplicate keys within a mapping are rejected at load time by rapidyaml, the
+default parser; the libfyaml parser does not detect them.
+
+
+6.3. Background threads
+------------------------------------------------------------------------------
+
+Batch processors, the OTLP File and OTLP HTTP exporters and periodic metric
+readers each run a background thread.  Every one of these components accepts
+the same two optional keys, which control the operating system properties of
+that thread:
+
+  thread_name (string, default: "")
+      Name assigned to the background thread of the component.  It is set with
+      pthread_setname_np() and truncated to 15 characters, and is useful for
+      identifying SDK threads in debuggers and monitoring tools.
+
+  cpu_id (integer, default: -1)
+      Binds the thread to a single CPU core through pthread_setaffinity_np().
+      Accepts a core number from 0 to OTEL_MAX_CPU_ID (4095), or -1 to leave
+      the affinity unset.  The setting requires sched.h and is therefore only
+      effective on Linux.
+
+Both keys are set per component, alongside the other keys of that component:
 
   processors:
     my_processor:
@@ -563,15 +605,20 @@ Both settings are configured per component.  For example:
       thread_name: "proc/batch trac"
       cpu_id:      2
 
-The OTLP/gRPC exporter accepts these settings in the YAML file for
-configuration consistency, but they are not applied because the OTel
-C++ SDK does not provide runtime options for gRPC exporter threads.
+The two keys reach the thread through the SDK thread instrumentation interface,
+which the SDK build must enable with ENABLE_THREAD_INSTRUMENTATION_PREVIEW.
+Without that flag the values are still read and validated, but never applied.
+A processor of type 'single' accepts them as well and ignores them, because it
+exports on the calling thread.
 
-The Elasticsearch log exporter also spawns a background thread, but accepts
-neither setting; its thread runs with the process defaults.
+The OTLP gRPC exporter accepts both keys in the YAML file for configuration
+consistency, but does not apply them, because the OTel C++ SDK does not provide
+runtime options for gRPC exporter threads.  The Elasticsearch log exporter also
+spawns a background thread, yet accepts neither key; its thread runs with the
+process defaults.
 
 
-6.2. Exporters
+6.4. Exporters
 ------------------------------------------------------------------------------
 
 Exporters define where telemetry data is sent.  Each named exporter block must
@@ -589,10 +636,12 @@ types and their signal support are:
   elasticsearch     no      no       yes
 
 Exporter availability depends on the build configuration; unsupported types
-produce an error at startup.
+produce an error at startup, as does a type used with a signal that the table
+above marks as unsupported.
 
 The configuration keys for each exporter type are listed below.  All keys are
-optional unless noted otherwise.
+optional unless noted otherwise.  The thread_name and cpu_id keys described in
+section 6.3 are omitted from the lists.
 
 
 OTLP File exporter (otlp_file)
@@ -601,9 +650,6 @@ Writes telemetry data to rotating files in OTLP format.
 
   type (string, mandatory)
       Must be "otlp_file".
-
-  thread_name (string, default: "")
-      Name assigned to the exporter's background thread.
 
   file_pattern (string, default: "otel-logfile-%F-%N.txt")
       Output file naming pattern.
@@ -630,10 +676,6 @@ Sends telemetry data to a collector over gRPC.
 
   type (string, mandatory)
       Must be "otlp_grpc".
-
-  thread_name (string, default: "")
-      Read from YAML for configuration consistency but not used by the SDK, as
-      gRPC exporters do not support runtime thread naming.
 
   endpoint (string)
       Server endpoint URL.  Signal-specific defaults:
@@ -670,15 +712,16 @@ Sends telemetry data to a collector over gRPC.
       Custom user-agent string sent with each request.
 
   max_threads (integer, default: 0, range: 1-1024)
-      Maximum number of concurrent gRPC threads.  A value of 0 uses the SDK
-      default.
+      Maximum number of concurrent gRPC threads.  The default of 0 cannot be
+      written into the file, and leaves the SDK thread quota untouched.
 
   compression (string, default: "")
       Compression algorithm (e.g., "gzip").
 
   max_concurrent_requests (integer, default: 0, range: 1-1024)
-      Maximum number of concurrent export requests.  A value of 0 uses the SDK
-      default.  Requires the SDK async-export build flag (ENABLE_ASYNC_EXPORT).
+      Maximum number of concurrent export requests.  The default of 0 cannot be
+      written into the file, and leaves the SDK default in place.  Requires the
+      SDK async-export build flag (ENABLE_ASYNC_EXPORT).
 
 
 OTLP HTTP exporter (otlp_http)
@@ -687,9 +730,6 @@ Sends telemetry data to a collector over HTTP using the curl library.
 
   type (string, mandatory)
       Must be "otlp_http".
-
-  thread_name (string, default: "")
-      Name assigned to the exporter's background thread.
 
   endpoint (string)
       Server endpoint URL.  Signal-specific defaults:
@@ -798,9 +838,9 @@ metrics only.
   type (string, mandatory)
       Must be "memory".
 
-  buffer_size (integer, range: 16-65536)
-      Maximum number of records in the circular buffer.  Defaults to the SDK's
-      MAX_BUFFER_SIZE value.
+  buffer_size (integer, default: 100, range: 16-65536)
+      Maximum number of records in the circular buffer.  The default is the
+      MAX_BUFFER_SIZE value of the SDK.
 
 
 Zipkin exporter (zipkin)
@@ -854,7 +894,7 @@ Sends log records to an Elasticsearch cluster.  Supported for logs only.
       exporter's http_headers option.
 
 
-6.3. Samplers
+6.5. Samplers
 ------------------------------------------------------------------------------
 
 Samplers control which traces are recorded and exported.  They are configured
@@ -925,22 +965,18 @@ invalid.  Additional keys:
       the ratio of the probability sampler that decides the fate of root spans.
 
 
-6.4. Processors
+6.6. Processors
 ------------------------------------------------------------------------------
 
 Processors control how telemetry records are batched and delivered to exporters.
 They are used by the traces and logs signals.  Metrics use readers instead of
-processors (see section 6.5).
+processors (see section 6.7).
 
   type (string, mandatory)
       Processor type.  Accepted values: "batch", "single".
 
-  thread_name (string, default: "")
-      Name assigned to the processor's background thread (only meaningful in
-      batch mode).
-
 Type "batch" buffers records in a bounded circular queue and exports them in
-batches at regular intervals.  Additional keys:
+batches at regular intervals from its own thread.  Additional keys:
 
   max_queue_size (integer, default: 2048, range: 64-65536)
       Maximum number of records the queue can hold.  Must be greater than or
@@ -961,19 +997,18 @@ batches at regular intervals.  Additional keys:
 When the queue fills up, new records are silently dropped.  The library reports
 the drop count through otelc_pipeline_status_get() (see section 11 for details).
 
-Type "single" exports each record immediately without batching.  No additional
-configuration keys beyond 'type' and 'thread_name'.
+Type "single" exports each record immediately, on the thread that produced it.
+It reads no keys beyond 'type'.
 
 
-6.5. Readers
+6.7. Readers
 ------------------------------------------------------------------------------
 
-Readers configure periodic metric collection and export.  They are used
-exclusively by the metrics signal and pair with exporters to form metric
-pipelines.
-
-  thread_name (string, default: "")
-      Name assigned to the reader's background thread.
+Readers configure the periodic metric collection and export.  They are used
+exclusively by the metrics signal, and pair with exporters to form the metric
+pipelines.  Unlike the other components, a reader block has no 'type' key, and
+a metrics signal that references no reader gets one built from the defaults
+below.
 
   export_interval (integer, default: 60000, range: 100-3600000)
       Time in milliseconds between consecutive metric exports.  Must be greater
@@ -983,7 +1018,7 @@ pipelines.
       Maximum time in milliseconds allowed for a single metric export operation.
 
 
-6.6. Providers
+6.8. Providers
 ------------------------------------------------------------------------------
 
 Providers define resource attributes that are attached to all telemetry emitted
@@ -1006,7 +1041,7 @@ carried in every span, metric data point, and log record.
       service.version, service.namespace, and service.instance.id.
 
 Resource attributes from the YAML file are merged with attributes detected from
-environment variables (see section 6.8).  YAML attributes take precedence over
+environment variables (see section 6.10).  YAML attributes take precedence over
 environment attributes for duplicate keys.
 
 The OTel C++ SDK itself adds identification attributes to every resource it
@@ -1022,8 +1057,12 @@ in the resources sequence overrides the SDK values like any other attribute:
         - telemetry.sdk.name:     "my_name"
         - telemetry.sdk.version:  "my_version"
 
+When neither the YAML file nor the environment supplies service.name, the SDK
+falls back to "unknown_service", extended with the executable name when the
+process.executable.name attribute is present among the resource attributes.
 
-6.7. Signals
+
+6.9. Signals
 ------------------------------------------------------------------------------
 
 The 'signals' section is the central binding point that ties pipeline components
@@ -1068,14 +1107,21 @@ Configurations in the legacy layout therefore keep working unchanged:
       processors: my_processor
       providers:  my_provider
 
-Within each named entry, the keys reference the other top-level sections.
-When exporters and processors (or readers) are specified as YAML lists, each
-entry forms a separate pipeline within the same provider.  For traces and logs,
-one pipeline is created per processor, pairing processor[i] with exporter[i];
-for metrics, one pipeline is created per exporter, pairing exporter[i] with
-reader[i].  When the exporter (or, for metrics, the reader) list is shorter,
-its last entry is reused for the remaining pipelines; surplus entries in the
-longer list are ignored.  A single scalar name (not a list) is also accepted.
+Within each named entry, the keys reference the other top-level sections.  The
+keys that may carry a list decide how many pipelines the signal builds.  For
+traces and logs, one pipeline is created per processor, pairing processor[i]
+with exporter[i]; for metrics, one pipeline is created per exporter, pairing
+exporter[i] with reader[i].  When the paired list is shorter, its last entry is
+reused for the remaining pipelines, and surplus entries in the longer list are
+ignored.
+
+A single scalar name is accepted in place of a list, but the two notations may
+not be combined freely.  For traces and logs the 'exporters' and 'processors'
+keys must both be scalars or both be lists, because a scalar paired with a list
+fails at startup.  For metrics the 'exporters' key alone decides: a scalar
+'readers' value is applied to every pipeline, while a 'readers' list combined
+with a scalar 'exporters' value is ignored, which leaves the reader defaults
+of section 6.7 in place.
 
 
 Traces signal
@@ -1133,7 +1179,7 @@ Logs signal
       FATAL2, FATAL3, FATAL4.
 
 
-6.8. Environment variables
+6.10. Environment variables
 ------------------------------------------------------------------------------
 
 Resource attributes can also be set through environment variables, independently
