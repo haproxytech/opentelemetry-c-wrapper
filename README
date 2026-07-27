@@ -1009,6 +1009,19 @@ Resource attributes from the YAML file are merged with attributes detected from
 environment variables (see section 6.8).  YAML attributes take precedence over
 environment attributes for duplicate keys.
 
+The OTel C++ SDK itself adds identification attributes to every resource it
+creates, so telemetry.sdk.language, telemetry.sdk.name and telemetry.sdk.version
+are always present, with the values "cpp", "opentelemetry" and the version of
+the OTel C++ client the wrapper is built with ("1.28.0").  Listing those keys
+in the resources sequence overrides the SDK values like any other attribute:
+
+  providers:
+    my_provider:
+      resources:
+        - telemetry.sdk.language: "my_lang"
+        - telemetry.sdk.name:     "my_name"
+        - telemetry.sdk.version:  "my_version"
+
 
 6.7. Signals
 ------------------------------------------------------------------------------
