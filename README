@@ -14,6 +14,11 @@ Summary
    3. Testing the operation of the library
    4. Basic concepts of OpenTelemetry
    5. Library API overview
+     5.1. Objects and operations
+     5.2. Lifecycle
+     5.3. Contexts and ownership
+     5.4. Return values and error reporting
+     5.5. Utility types and functions
    6. YAML configuration
      6.1. Document structure
      6.2. Value conventions
@@ -379,28 +384,63 @@ official OpenTelemetry documentation: https://opentelemetry.io/docs/concepts/
 5. Library API overview
 ------------------------------------------------------------------------------
 
-The library provides a pure C API on top of the OpenTelemetry C++ SDK.  The API
-is organized around instance structs that each carry a pointer to an
-operations vtable (a struct of function pointers), one pair per telemetry
-signal:
+The library provides a pure C API on top of the OpenTelemetry C++ SDK.  All
+public headers reside under include/opentelemetry-c-wrapper/, and including
+<opentelemetry-c-wrapper/include.h> pulls in every one of them.  Section 5.1
+introduces the objects the API is built from, section 5.2 the order in which
+they are created and destroyed, section 5.3 the ownership rules that govern
+their lifetimes, section 5.4 the return values, and section 5.5 the utility
+types and functions that surround them.
+
+
+5.1. Objects and operations
+------------------------------------------------------------------------------
+
+The API is organized around instance structs that each carry a pointer to an
+operations vtable, a struct of function pointers.  One such pair exists per
+telemetry signal:
 
   * struct otelc_tracer - creates trace spans and propagates context
   * struct otelc_meter  - creates and records metric instruments
   * struct otelc_logger - emits structured log records
 
-Every instance struct carries an 'err' member (a character pointer holding the
-last error message), a 'scope_name' member (the instrumentation scope name read
-from the YAML configuration), and an 'ops' pointer to the operations vtable.
-Operations are invoked through the ops pointer:
+A tracer additionally hands out two more handle types, which follow the same
+convention.  Neither of them holds telemetry state: each is an index into an
+internal handle map, and a span records the tracer it belongs to as well.
+
+  * struct otelc_span         - one started, not yet ended, trace span
+  * struct otelc_span_context - a span identity, built from raw IDs or
+                                extracted from a carrier
+
+The three signal instances share a common layout.  Every one of them carries
+an 'err' member holding the text of the last error the instance recorded, a
+'scope_name' member with the instrumentation scope name read from the YAML
+configuration, an 'enabled' gate that suppresses the work of the instance while
+it is false, a 'ctx' pointer to the owning context, and the 'ops' pointer to
+the vtable.  A logger carries a 'min_severity' member as well.  The remaining
+members are internal, and the library context itself, struct otelc_ctx, stays
+opaque.
+
+Operations are invoked through the ops pointer, with the instance repeated as
+the first argument:
 
   tracer->ops->start_span(tracer, "name")
 
 The header <opentelemetry-c-wrapper/define.h> provides the convenience macros
-OTELC_OPS() and OTELC_OPSR() (the latter passes &ptr so the callee can set the
-pointer to NULL on destroy/end):
+OTELC_OPS() and OTELC_OPSR(), which supply that first argument themselves.  The
+"R" variant passes the address of the handle, so that the callee can set it to
+NULL in the destroy and end operations:
 
   OTELC_OPS(tracer, start_span, "name")
   OTELC_OPSR(span, end)
+
+Both macros are written as statement expressions over __typeof__ and therefore
+need GCC or Clang; the plain call through the ops pointer stays available to
+every compiler.
+
+
+5.2. Lifecycle
+------------------------------------------------------------------------------
 
 The typical usage follows this lifecycle:
 
@@ -438,6 +478,10 @@ final context has been destroyed, call otelc_lib_shutdown() to reset those hooks
 to their library defaults; this is required before unloading caller code that
 owns any of the registered callbacks, and is otherwise optional.
 
+
+5.3. Contexts and ownership
+------------------------------------------------------------------------------
+
 All configuration and provider state is per-context, so multiple contexts may
 coexist in the same process, each loaded from a distinct configuration file
 or selecting a distinct named signal entry.  The helper otelc_close_cfg(ctx)
@@ -454,17 +498,44 @@ context that outlives its own tracer supports only the end, end_with_options
 and destroy operations; any other operation on such a leftover instance fails
 without recording an error message.
 
-Functions that can fail return OTELC_RET_OK (0) on success or OTELC_RET_ERROR
-(-1) on failure.  Functions that create resources return a pointer on success or
-NULL on failure.
+Strings handed to the caller through an err argument are allocated by the API
+and are released with OTELC_SFREE(), the macro that tolerates a null pointer.
+The err member of an instance is different: it belongs to that instance, is
+replaced whenever a newer error is recorded, and is freed when the instance is
+destroyed, so a caller reads it but never frees it.
 
-The library also provides several utility types for passing structured data to
-the API:
 
-  * struct otelc_value    - a tagged union for bool, integer, double, and
-                            string values
+5.4. Return values and error reporting
+------------------------------------------------------------------------------
+
+Functions that create resources return a pointer on success, or NULL on failure,
+and report the reason through their err argument.  Functions that merely succeed
+or fail return OTELC_RET_OK (0) or OTELC_RET_ERROR (-1) and, once an instance
+exists, leave the reason in the err member of that instance.
+
+Two families depart from the plain pair, and both are recognized by testing
+for OTELC_RET_ERROR rather than for OTELC_RET_OK, since a false answer and a
+success share the value zero:
+
+  * the enabled predicates return true or false, or OTELC_RET_ERROR
+  * create_instrument() returns a non-negative instrument ID and
+    otelc_ctx_nstate_get() an otelc_ctx_name_t value, or OTELC_RET_ERROR
+
+
+5.5. Utility types and functions
+------------------------------------------------------------------------------
+
+The library provides several utility types for passing structured data to the
+API:
+
+  * struct otelc_value    - a tagged union carrying a bool, a signed or
+                            unsigned 32-bit or 64-bit integer, a double, a
+                            string, or a block of binary data, with a null
+                            variant for the absent value
   * struct otelc_kv       - a key-value pair (key string + otelc_value)
-  * struct otelc_text_map - a dynamic array of key-value string pairs
+  * struct otelc_text_map - a dynamic array of key-value string pairs, each
+                            pair carrying flags that say whether the map
+                            duplicates or adopts the key and the value
 
 Additional utility functions are also available; the most notable are:
 
@@ -472,11 +543,9 @@ Additional utility functions are also available; the most notable are:
   * otelc_log_set_handler()     - install an SDK diagnostic log callback
   * otelc_log_set_level()       - set the SDK internal log level
   * otelc_lib_shutdown()        - reset process-wide library hooks
+  * otelc_ctx_nstate_get()      - read how the context name resolved
   * otelc_pipeline_status_get() - read the export-pipeline status
   * otelc_span_context_create() - construct a span context from raw IDs
-
-All public headers reside under include/opentelemetry-c-wrapper/.  Including
-<opentelemetry-c-wrapper/include.h> pulls in all of them.
 
 
 6. YAML configuration
@@ -1203,9 +1272,10 @@ precedence for duplicate keys.
 ------------------------------------------------------------------------------
 
 The examples in this section are complete programs, one per signal type.  Each
-of them follows the lifecycle of section 5 -- initialize the library, create the
-signal instance, start it, use it, and release everything in the reverse order
--- and they differ only in the middle part, where the signal is put to work.
+of them follows the lifecycle of section 5.2 -- initialize the library, create
+the signal instance, start it, use it, and release everything in the reverse
+order -- and they differ only in the middle part, where the signal is put to
+work.
 
 Every example reads its configuration from the file otel-cfg.yml in the current
 directory and asks for the named entry 'default'.  The minimal document shown in
