@@ -483,55 +483,86 @@ has to point its exporters at that endpoint.
 
 OpenTelemetry (OTel) is an observability framework for cloud-native software.
 It provides a standardized, vendor-neutral way to create and collect telemetry
-data (traces, metrics, and logs).  Understanding its core concepts is key to
-using this wrapper library effectively.
+data.  The terms collected here are the ones that the rest of this document
+relies on; the official concepts page, https://opentelemetry.io/docs/concepts/ ,
+treats them at length.
 
-The main components of OTel are:
+The components of OTel are:
 
-  * Signals: OTel classifies telemetry data into several categories, known as
-    signals.  The three primary signals are traces, metrics, and logs.  This
-    library currently supports traces, metrics, and logs.
+  * Signal: a category of telemetry data.  The three signals are traces,
+    metrics and logs, and this library implements all of them.
 
-  * API (Application Programming Interface): This is a set of interfaces that
-    you use to instrument your code.  For example, you use the API to get a
-    tracer, start a span, or record a metric.  The API is decoupled from the
-    implementation.
+  * API: the set of interfaces that instrumented code calls to obtain a tracer,
+    start a span or record a measurement.  It is decoupled from the
+    implementation behind it.
 
-  * SDK (Software Development Kit): This is the official implementation of the
-    API.  The SDK provides the configuration and logic for processing telemetry
-    data.  It allows you to configure exporters, processors, and samplers.
+  * SDK: the official implementation of the API.  It holds the configuration
+    and the logic that processes telemetry data, and it is what the exporters,
+    processors and samplers plug into.
 
-  * Exporter: An exporter is a component that sends telemetry data to a specific
-    backend or collector.  For example, you might use an OTLP (OpenTelemetry
-    Protocol) exporter to send data to an OTel Collector, or a Jaeger exporter
-    to send data directly to a Jaeger instance.
+  * Exporter: the component that hands telemetry data to a particular backend
+    or collector.  The wrapper carries OTLP exporters over files, gRPC and
+    HTTP, a Zipkin exporter for traces and an Elasticsearch exporter for logs,
+    among others; section 6.4 lists them.
 
-  * Collector: The OTel Collector is a standalone service that can receive,
-    process, and export telemetry data.  It acts as a flexible pipeline,
-    allowing you to transform and filter data before it reaches your
-    observability backend.
+  * Collector: a standalone service that receives, processes and exports
+    telemetry data.  It acts as a flexible pipeline in which the data can be
+    transformed and filtered before it reaches the observability backend.
 
-Key concepts related to tracing:
+  * Resource: the set of attributes that identify the process producing the
+    telemetry, such as service.name and service.version.  Every span, metric
+    data point and log record carries them; section 6.8 configures them.
 
-  * Trace: A trace represents the entire journey of a request as it moves
-    through all the services in a distributed system.  A single trace is
-    composed of one or more spans.
+  * Instrumentation scope: the name identifying the instrumented component
+    inside the process, given per signal as scope_name.  The wrapper reports a
+    fixed scope version and schema URL alongside that name.
 
-  * Span: A span represents a single unit of work or operation within a trace,
-    such as an HTTP request, a database query, or a function call.  Spans have
-    a start time, an end time, attributes (key-value pairs), events (timestamped
-    log messages), links (references to related spans in other traces), and a
-    status.
+Concepts of the traces signal:
 
-  * Context Propagation: This is the mechanism that allows OTel to correlate
-    spans across different services.  When a service makes a call to another
-    service, context (which includes the current trace ID and span ID) is
-    injected into the request (e.g., as HTTP headers).  The receiving service
-    extracts this context to create a new child span, linking it to the parent
-    span in the calling service.
+  * Trace: the journey of a request as it moves through all the services of a
+    distributed system.  A single trace is composed of one or more spans.
 
-For a more in-depth understanding, it is highly recommended to review the
-official OpenTelemetry documentation: https://opentelemetry.io/docs/concepts/
+  * Span: a single unit of work within a trace, such as an HTTP request, a
+    database query or a function call.  A span has a start time, an end time,
+    attributes, events, links to related spans in other traces, and a status.
+
+  * Context propagation: the mechanism that correlates spans across services.
+    The caller injects the current trace and span identifiers into the request,
+    typically as HTTP headers, and the callee extracts them and opens its own
+    span as a child of the one that made the call.
+
+  * Sampling: the decision whether a span is recorded and exported, taken by a
+    sampler as the span starts.  It is what keeps the volume of trace data
+    under control, and the parent-based samplers carry the decision taken for
+    the root span down the whole trace; section 6.5 configures them.
+
+Concepts of the metrics signal:
+
+  * Instrument: the handle that a measurement is recorded through.  Counters
+    and up-down counters accumulate, gauges hold the last value written and
+    histograms distribute the values over buckets.  A synchronous instrument
+    is written by the instrumented code, while an observable one is read
+    through a callback when the collection happens.
+
+  * View: a rule that renames an instrument or changes the way its
+    measurements are aggregated, the bucket bounds of a histogram included.
+
+  * Reader: the component that collects the instruments at a fixed interval
+    and hands the result to an exporter; section 6.7 configures the readers.
+
+Concepts of the logs signal:
+
+  * Log record: a timestamped message with a severity, a body and attributes,
+    which the emitting code can tie to a span so that the record and the trace
+    it belongs to can be read together.
+
+  * Severity: the level of a record, running from TRACE to FATAL.  Records
+    below the configured threshold are dropped before reaching the processor.
+
+For traces and logs a processor sits between the API and the exporter, either
+batching the records or passing them on one at a time; the metrics signal uses
+a reader in its place.  Section 6 describes how a configuration assembles these
+parts into the pipelines of a signal.
 
 
 5. Library API overview
