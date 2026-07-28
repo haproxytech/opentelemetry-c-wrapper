@@ -11,6 +11,7 @@ Summary
      2.1. Prerequisites for building the OTel C wrapper library
      2.2. Compiling and installing the OTel C++ client
      2.3. Compiling and installing the OTel C wrapper library
+     2.4. Build options
    3. Testing the operation of the library
    4. Basic concepts of OpenTelemetry
    5. Library API overview
@@ -89,6 +90,17 @@ the LICENSE file; the copyright is held by HAProxy Technologies.
 2. Build instructions
 ------------------------------------------------------------------------------
 
+Building the wrapper takes three steps: install the development packages that
+the build needs (section 2.1), build and install the OTel C++ client together
+with its dependencies (section 2.2), and build the wrapper itself against that
+client (section 2.3).  Section 2.4 lists the options that the wrapper build
+accepts.
+
+Note: the '%' prompt indicates that the command is being executed by a non-
+      privileged user, whereas the '#' prompt indicates that the command is
+      being executed by the root user.
+
+
 2.1. Prerequisites for building the OTel C wrapper library
 ------------------------------------------------------------------------------
 
@@ -115,11 +127,8 @@ directory:
   # cd scripts/build
   # ./linux-update.sh
 
-Note: the '%' prompt indicates that the command is being executed by a non-
-      privileged user, whereas the '#' prompt indicates that the command is
-      being executed by the root user.
-
-The script linux-update.sh does not accept any arguments.
+The script takes no arguments and works interactively, asking for confirmation
+before each step it performs.
 
 To summarize, the script installs the necessary packages for compiling and
 setting up all required libraries, with the most important ones being:
@@ -171,28 +180,26 @@ the AWS-LC and curl build steps are commented out by default, so the script uses
 the OpenSSL and curl libraries present on the system.  An SSL library (OpenSSL
 or another supported implementation) must be installed on the system; if
 curl is not available, the OTel C++ build process downloads and compiles it
-automatically.  Users can uncomment the AWS-LC and curl steps if they prefer to
-build those from source as well.
+automatically.  Those two steps can be uncommented to build AWS-LC and curl
+from source instead; build.sh runs both of them as it stands.
 
 Example of how to run an installation script:
 
   # cd scripts/build
   # ./build-bundle.sh
 
-Both scripts accept multiple input arguments.  The first argument specifies the
-destination directory where packages will be installed, and the second argument
-defines the location of the root directory for installation.  However, it is not
-recommended to set the 'install-dir' argument, as it is intended solely for
-debugging purposes.
+Both scripts take their arguments positionally:
 
+  # ./build.sh        [ prefix-dir [ install-dir ] ]
   # ./build-bundle.sh [ prefix-dir [ install-dir [ lib-type ] ] ]
 
-The lib-type argument controls how the OTel C++ SDK libraries are built.
-Accepted values are "dynamic" (default) and "static".  When set to "static", the
-SDK is compiled as static archives (.a) instead of shared libraries (.so); this
-is required when the OTel C wrapper itself will be linked statically.
-
-By default, libraries are installed in the /opt directory (prefix = '/opt').
+The first argument names the directory that the packages are installed into and
+defaults to /opt.  The second names the root directory of the installation, and
+setting it is not recommended, as it serves debugging alone.  The third one,
+which build-bundle.sh alone accepts, controls how the OTel C++ SDK libraries are
+built: "dynamic", the default, or "static".  With "static" the SDK is compiled
+as archives (.a) instead of shared objects (.so), which is what linking the OTel
+C wrapper statically requires.
 
 Finally, the installation script will verify that all library dependencies for
 programs in the <prefix>/bin directory and libraries in the <prefix>/lib
@@ -205,9 +212,18 @@ Note: it is possible that some prerequisite libraries are already installed on
       directory, such as /opt, /usr/local, or any other non-system directory of
       your choice.
 
-If one prefers to use the AWS-LC cryptographic library instead of the
-system-installed OpenSSL, the AWS-LC and curl build steps can be uncommented in
-the installation scripts.
+A host without network access is served by the opentelemetry-cpp-monorepo.sh
+script, which assembles a self-contained source tree: it clones the client and
+the pinned dependency sources into the layout that the client build expects,
+drops the origin remote from every clone, and leaves a .monorepo marker behind.
+
+  % ./opentelemetry-cpp-monorepo.sh [ target-dir [ keep-remotes ] ]
+
+A non-empty second argument keeps the upstream remotes attached.  The install
+script recognizes the marker and builds such a tree as it stands: the bundled
+sources are used unchanged instead of being fetched again, and the dependencies
+that the tree carries are never taken from an installed package, so that a stale
+installation cannot hijack the build.
 
 List of (almost) all dependencies for the OTel C++ client package:
 
@@ -253,28 +269,25 @@ parsing library.  By default, rapidyaml (ryml) is used, and this is the
 recommended configuration.  Since rapidyaml is already built and installed as
 part of the OTel C++ client dependencies, no additional steps are required.
 
-Alternatively, libfyaml can be used instead by explicitly specifying the
---with-libfyaml option (autotools) or -DWITH_LIBFYAML=ON (CMake).  Both
-options cannot be used at the same time.
+Alternatively, libfyaml can be used instead, through the --with-libfyaml option
+(autotools) or with -DWITH_LIBFYAML=ON (CMake), either of which overrides the
+rapidyaml default.  Requesting both parsers explicitly, with --with-libfyaml
+and --with-rapidyaml together, fails at configuration time.
 
   * Rapid YAML - a C++ library to parse and emit YAML
     https://github.com/biojppm/rapidyaml
   * libfyaml - a fully-featured YAML 1.2 and JSON parser/writer
     https://github.com/pantoniou/libfyaml
 
-Once the OTel C++ client is installed, the OTel C wrapper library can be
-compiled and installed.  It can also be built in debug mode, which enables
-detailed logging of the library's operations, such as internal function
-calls.
-
 The OTel C wrapper requires the OTel C++ client to be built with ABI version 2
 enabled (CMake option -DWITH_ABI_VERSION_2=ON, which the provided installation
 scripts already set).  Both the autotools and CMake builds check the ABI version
 at configuration time and fail if it is not 2.
 
-In this example, we will install two versions of the library: the release
-version first, followed by the debug version.  Both versions will be installed
-in the /opt directory.
+Once the OTel C++ client is installed, the OTel C wrapper library can be
+compiled and installed.  In this example, we will install two versions of the
+library: the release version first, followed by the debug version.  Both
+versions will be installed in the /opt directory.
 
   % git clone https://github.com/haproxytech/opentelemetry-c-wrapper.git
   % cd opentelemetry-c-wrapper
@@ -297,7 +310,8 @@ Alternatively, the library can be compiled using CMake:
   # make install
 
 To build the debug version, add the -DENABLE_DEBUG=ON option to the cmake
-command above.
+command above.  The two versions live side by side under one prefix, because
+the debug library and its pkg-config file both carry a _dbg suffix.
 
 The wrapper library can also be built as a static archive (.a) instead of a
 shared library (.so).  This requires the OTel C++ SDK to be compiled as static
@@ -313,6 +327,51 @@ With CMake, use the BUILD_STATIC option:
 
   % cmake -DCMAKE_INSTALL_PREFIX=/opt -DOPENTELEMETRY_DIR=/opt \
         -DBUILD_STATIC=ON ..
+
+
+2.4. Build options
+------------------------------------------------------------------------------
+
+Both build systems accept the same set of options, each in its own spelling.
+The autotools form is given first below, the CMake form second.
+
+  --enable-debug, -DENABLE_DEBUG=ON
+      Build the debug version of the library, which logs the internal operation
+      in detail, down to the individual function calls, and links the tracking
+      allocator.  The result installs under the _dbg suffix.
+
+  --enable-warnings, -DENABLE_WARNINGS=ON
+      Add the extended compiler warning set to CFLAGS and CXXFLAGS.
+
+  --enable-gprof, -DENABLE_GPROF=ON
+      Build with the gprof profiling instrumentation.
+
+  --enable-asan, -DENABLE_ASAN=ON
+      Build with the address sanitizer.
+
+  --enable-tsan, -DENABLE_TSAN=ON
+      Build with the thread sanitizer.  The two sanitizers are mutually
+      exclusive, and asking for both fails at configuration time.
+
+  --disable-threads, -DENABLE_THREADS=OFF
+      Drop the pthread support that is otherwise compiled and linked in.
+
+  --disable-shared, -DBUILD_STATIC=ON
+      Build the static archive alone; autotools builds both the shared object
+      and the archive by default.
+
+  --with-opentelemetry[=DIR], -DOPENTELEMETRY_DIR=DIR
+      Install prefix of the OTel C++ client.
+
+  --with-rapidyaml[=DIR], -DWITH_RAPIDYAML=ON -DRAPIDYAML_DIR=DIR
+      Use the rapidyaml parser, which is what both builds do by default.
+
+  --with-libfyaml[=DIR], -DWITH_LIBFYAML=ON -DLIBFYAML_DIR=DIR
+      Use the libfyaml parser in place of rapidyaml.
+
+Running the test programs of a thread sanitizer build needs the suppression file
+test/tsan.supp, which silences the races that the sanitizer reports inside the
+uninstrumented SDK; the file describes its own use in its header.
 
 
 3. Testing the operation of the library
