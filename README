@@ -41,22 +41,49 @@ Summary
 1. Introduction
 ------------------------------------------------------------------------------
 
-This document will not cover the internal structure of OpenTelemetry (often
-abbreviated as OTel) or the environment that led to the need for an
-observability framework.  Those interested can find detailed reasons for its use
-and relevant documentation in many sources, especially on the official OTel
-website https://opentelemetry.io/ .
+The OTel C wrapper library exposes the OpenTelemetry C++ client through a pure
+C interface.  It covers all three telemetry signals -- traces, metrics and logs
+-- and builds the pipeline behind each of them from a YAML configuration file,
+so that a C program instruments its code against a small set of handles and
+leaves the exporters, processors, samplers and resource attributes to that file.
+The library was written primarily for the HAProxy OTel filter, to export the
+telemetry that the analysis of software performance and behavior needs, but it
+depends on nothing from HAProxy and serves any C program.
 
-The OTel C wrapper library was primarily developed for use in the HAProxy OTel
-filter to enable effective observation - specifically, exporting telemetry data
-to simplify the analysis of software performance and behavior.
+The wrapper sits on the official OTel C++ client, whose source repository is at
+https://github.com/open-telemetry/opentelemetry-cpp .  The build pins the client
+to release 1.28.0, which the client project documents on its release page at
+https://github.com/open-telemetry/opentelemetry-cpp/releases/tag/v1.28.0 ,
+because the patch set that it applies to the client sources is prepared for
+exactly that release; section 2.2 gives the reasons.  The wrapper itself also
+compiles against an older client, with the parts that require the newer SDK
+compiled out.
 
-This library is a C wrapper for the official OTel C++ client, with the source
-repository available at https://github.com/open-telemetry/opentelemetry-cpp .
-The version of the OTel C++ client used by the wrapper is set to 1.28.0 (see
-https://github.com/open-telemetry/opentelemetry-cpp/releases/tag/v1.28.0 ).
-This exact release is required by the patch set that the build applies to the
-client sources; the reasons are described in section 2.2.
+This document covers how to build the library, how to configure it and how to
+call it.  It does not explain the internals of OpenTelemetry, nor the reasoning
+that led to observability frameworks; section 4 summarizes only as much of the
+terminology as the rest of the document relies on, and the official website
+https://opentelemetry.io/ carries the full treatment.
+
+Subjects that fall outside this document are covered by its companions:
+
+  * README.md                - condensed overview for the repository front page
+  * README-configuration     - compile-time macros of include/configuration.h
+                               and the handle_map_shards key
+  * README-naming_convention - naming scheme of the variadic and array-based
+                               function variants
+  * README-sharded_map       - design of the span handle maps and the
+                               measurements behind it
+  * README-meter_performance - meter locking, attribute handling and instrument
+                               lookup measurements
+  * MEMO                     - concurrency model of the OTel C++ API and the
+                               internal design notes
+  * ChangeLog                - release notes, grouped by package version
+  * test/README-fuzz-yaml    - fuzzing harness for the configuration loader
+  * test/README-speed_check  - throughput regression check
+
+The library is distributed under the Apache License, Version 2.0, reproduced in
+the LICENSE file; the copyright is held by HAProxy Technologies.
 
 
 2. Build instructions
