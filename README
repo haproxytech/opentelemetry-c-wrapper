@@ -25,11 +25,12 @@ Summary
      6.8. Providers
      6.9. Signals
      6.10. Environment variables
-   7. Tracing example
-   8. Metrics example
-   9. Logging example
-  10. Thread safety
-  11. Known bugs and limitations
+   7. Examples
+     7.1. Tracing
+     7.2. Metrics
+     7.3. Logging
+   8. Thread safety
+   9. Known bugs and limitations
 
 
 1. Introduction
@@ -995,7 +996,7 @@ batches at regular intervals from its own thread.  Additional keys:
       Maximum number of records per export batch.
 
 When the queue fills up, new records are silently dropped.  The library reports
-the drop count through otelc_pipeline_status_get() (see section 11 for details).
+the drop count through otelc_pipeline_status_get() (see section 9 for details).
 
 Type "single" exports each record immediately, on the thread that produced it.
 It reads no keys beyond 'type'.
@@ -1198,18 +1199,45 @@ precedence for duplicate keys.
       service.name value in OTEL_RESOURCE_ATTRIBUTES.
 
 
-7. Tracing example
+7. Examples
 ------------------------------------------------------------------------------
 
-Here is a simple example demonstrating how to use the C wrapper library to
-create a tracer, start a span, and export it.
+The examples in this section are complete programs, one per signal type.  Each
+of them follows the lifecycle of section 5 -- initialize the library, create the
+signal instance, start it, use it, and release everything in the reverse order
+-- and they differ only in the middle part, where the signal is put to work.
+
+Every example reads its configuration from the file otel-cfg.yml in the current
+directory and asks for the named entry 'default'.  The minimal document shown in
+section 6.1 serves the tracing example as it stands; the other two need the same
+document with a metrics or a logs signal in place of the traces one.
+
+Against the installed library, an example is built with a single command:
+
+  cc -o example example.c $(pkg-config --cflags --libs opentelemetry-c-wrapper)
+
+Two error conventions appear throughout.  The otelc_init() and otelc_*_create()
+functions report through their err argument, and the caller releases that string
+with OTELC_SFREE().  Once an instance exists, its operations record the failure
+text in the err member of that instance, which is released together with it.
+
+The closing otelc_lib_shutdown() call resets the process-wide hooks.  It is the
+last lifecycle step, it is optional for a program that is about to exit anyway,
+and it is therefore left out of the error paths below.
+
+
+7.1. Tracing
+------------------------------------------------------------------------------
+
+The program below creates a tracer, starts a span, and leaves the configured
+exporter to write the finished span out.
 
 ```c
 #include <stdio.h>
 #include <stdlib.h>
 #include <opentelemetry-c-wrapper/include.h>
 
-int main(int argc, char **argv)
+int main(void)
 {
     struct otelc_ctx    *ctx;
     struct otelc_tracer *tracer;
@@ -1224,7 +1252,7 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    /* Create and start a tracer bound to the context */
+    /* Create a tracer bound to the context */
     tracer = otelc_tracer_create(ctx, &err);
     if (tracer == NULL) {
         fprintf(stderr, "Failed to create tracer: %s\n", err);
@@ -1233,8 +1261,9 @@ int main(int argc, char **argv)
         return 1;
     }
 
+    /* Build the trace pipeline described by the configuration */
     if (tracer->ops->start(tracer) != OTELC_RET_OK) {
-        fprintf(stderr, "Failed to start tracer\n");
+        fprintf(stderr, "Failed to start tracer: %s\n", tracer->err);
         otelc_deinit(&ctx, &tracer, NULL, NULL);
         return 1;
     }
@@ -1242,36 +1271,39 @@ int main(int argc, char **argv)
     /* Start a new span */
     span = tracer->ops->start_span(tracer, "my-operation");
     if (span == NULL) {
-        fprintf(stderr, "Failed to start span\n");
+        fprintf(stderr, "Failed to start span: %s\n", tracer->err);
         otelc_deinit(&ctx, &tracer, NULL, NULL);
         return 1;
     }
 
     /* ... perform work ... */
 
-    /* End the span */
+    /* End the span; the operation also clears the pointer */
     span->ops->end(&span);
 
-    /* Clean up the tracer and the context */
+    /* Clean up the tracer and the context, then the process-wide hooks */
     otelc_deinit(&ctx, &tracer, NULL, NULL);
+    otelc_lib_shutdown();
 
     return 0;
 }
 ```
 
 
-8. Metrics example
+7.2. Metrics
 ------------------------------------------------------------------------------
 
-Here is an example showing how to create a counter instrument and record a
-measurement.
+The program below creates a counter instrument and records a measurement into
+it.  The value leaves the process when the periodic reader fires, and once more
+when that reader is shut down along with the context, so a short-lived program
+like this one still exports what it recorded.
 
 ```c
 #include <stdio.h>
 #include <stdlib.h>
 #include <opentelemetry-c-wrapper/include.h>
 
-int main(int argc, char **argv)
+int main(void)
 {
     struct otelc_ctx   *ctx;
     struct otelc_meter *meter;
@@ -1287,7 +1319,7 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    /* Create and start a meter bound to the context */
+    /* Create a meter bound to the context */
     meter = otelc_meter_create(ctx, &err);
     if (meter == NULL) {
         fprintf(stderr, "Failed to create meter: %s\n", err);
@@ -1296,18 +1328,19 @@ int main(int argc, char **argv)
         return 1;
     }
 
+    /* Build the metric pipeline described by the configuration */
     if (meter->ops->start(meter) != OTELC_RET_OK) {
-        fprintf(stderr, "Failed to start meter\n");
+        fprintf(stderr, "Failed to start meter: %s\n", meter->err);
         otelc_deinit(&ctx, NULL, &meter, NULL);
         return 1;
     }
 
-    /* Create a counter instrument */
+    /* Create a counter instrument; the returned id addresses it later */
     counter_id = meter->ops->create_instrument(meter,
         "requests", "Total request count", "1",
         OTELC_METRIC_INSTRUMENT_COUNTER_UINT64, NULL);
     if (counter_id == OTELC_RET_ERROR) {
-        fprintf(stderr, "Failed to create instrument\n");
+        fprintf(stderr, "Failed to create instrument: %s\n", meter->err);
         otelc_deinit(&ctx, NULL, &meter, NULL);
         return 1;
     }
@@ -1315,27 +1348,32 @@ int main(int argc, char **argv)
     /* Record a measurement */
     value.u_type         = OTELC_VALUE_UINT64;
     value.u.value_uint64 = 1;
-    meter->ops->update_instrument(meter, counter_id, &value);
+    (void)meter->ops->update_instrument(meter, counter_id, &value);
 
-    /* Clean up the meter and the context */
+    /* Clean up the meter and the context, then the process-wide hooks */
     otelc_deinit(&ctx, NULL, &meter, NULL);
+    otelc_lib_shutdown();
 
     return 0;
 }
 ```
 
 
-9. Logging example
+7.3. Logging
 ------------------------------------------------------------------------------
 
-Here is an example showing how to emit a structured log record.
+The program below emits a single log record.  The log_span() operation takes an
+optional span whose trace and span identifiers are copied into the record; the
+example passes NULL, which leaves both identifiers zero and so the record is not
+correlated with any trace.  Its body is built from a printf-style format string
+and the arguments that follow it.
 
 ```c
 #include <stdio.h>
 #include <stdlib.h>
 #include <opentelemetry-c-wrapper/include.h>
 
-int main(int argc, char **argv)
+int main(void)
 {
     struct otelc_ctx    *ctx;
     struct otelc_logger *logger;
@@ -1349,7 +1387,7 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    /* Create and start a logger bound to the context */
+    /* Create a logger bound to the context */
     logger = otelc_logger_create(ctx, &err);
     if (logger == NULL) {
         fprintf(stderr, "Failed to create logger: %s\n", err);
@@ -1358,26 +1396,28 @@ int main(int argc, char **argv)
         return 1;
     }
 
+    /* Build the log pipeline described by the configuration */
     if (logger->ops->start(logger) != OTELC_RET_OK) {
-        fprintf(stderr, "Failed to start logger\n");
+        fprintf(stderr, "Failed to start logger: %s\n", logger->err);
         otelc_deinit(&ctx, NULL, NULL, &logger);
         return 1;
     }
 
-    /* Emit a log record */
-    logger->ops->log_span(logger, OTELC_LOG_SEVERITY_INFO,
+    /* Emit a record; the NULL span leaves it uncorrelated with any trace */
+    (void)logger->ops->log_span(logger, OTELC_LOG_SEVERITY_INFO,
         0, NULL, NULL, NULL, NULL, NULL, 0,
         "Application started successfully");
 
-    /* Clean up the logger and the context */
+    /* Clean up the logger and the context, then the process-wide hooks */
     otelc_deinit(&ctx, NULL, NULL, &logger);
+    otelc_lib_shutdown();
 
     return 0;
 }
 ```
 
 
-10. Thread safety
+8. Thread safety
 ------------------------------------------------------------------------------
 
 The library is designed for multi-threaded use.  All data-plane operations
@@ -1405,7 +1445,7 @@ a specific CPU core via the cpu_id YAML setting.  See the YAML configuration
 section for details.
 
 
-11. Known bugs and limitations
+9. Known bugs and limitations
 ------------------------------------------------------------------------------
 
 Currently, not all categories of telemetry (referred to as 'signals' in OTel
