@@ -969,11 +969,14 @@ Provider/exporter/processor stack:
        and max_export_batch_size.  Batch pipelines are additionally
        wrapped with otel_counting_span_exporter and
        otel_counting_span_processor (or their log counterparts) for drop
-       and export tracking; the Simple processor is not counted.
+       and export tracking; the Simple processor is not counted.  The
+       counters those wrappers keep are read back through
+       otelc_pipeline_status_get().
 
     3. otel_sampler_create (src/sampler.cpp)
-       Tracer-only.  Creates AlwaysOn, AlwaysOff, TraceIdRatioBased, or
-       ParentBased sampler from YAML config.
+       Tracer-only.  Creates AlwaysOn, AlwaysOff, TraceIdRatioBased,
+       ParentBased or Composite sampler from YAML config; the composite
+       type is compiled in only against an SDK of 1.28 or newer.
 
     4. otel_*_provider_create (src/provider.cpp)
        Builds a Resource from environment and YAML attributes via
@@ -1081,7 +1084,8 @@ Tracer startup (otel_tracer_start):
   The function builds the provider stack bottom-up from YAML configuration:
 
     1. Read scope name from YAML.
-    2. Create sampler (AlwaysOn, AlwaysOff, TraceIdRatioBased, or ParentBased).
+    2. Create sampler (AlwaysOn, AlwaysOff, TraceIdRatioBased, ParentBased or
+       Composite).
     3. Create exporter-processor pairs.  YAML sequences allow multiple pairs;
        otherwise a single pair is created.
     4. Build TracerProvider, call provider->GetTracer(scope_name,
@@ -1742,6 +1746,11 @@ Allocation infrastructure:
   free that also sets the pointer to NULL), and OTEL_EXT_FREE_CLEAR (external
   allocator variant that sets to nullptr).
 
+  Duplication macros -- OTELC_STRDUP and OTELC_STRNDUP resolve to the tracked
+  otelc_dbg_strdup/otelc_dbg_strndup in a debug build and to the exported
+  otelc_strdup/otelc_strndup wrappers otherwise, so both builds return NULL
+  for a NULL argument instead of leaving that to the C library.
+
   C++ nothrow wrappers (std.h) -- make_unique_nothrow and make_shared_nothrow
   handle both new(std::nothrow) failure and shared_ptr control block allocation
   failure.  In make_shared_nothrow, the catch clause must not delete the raw
@@ -1773,7 +1782,8 @@ Allocation patterns by signal:
   Logger -- same struct pattern as tracer.  No handle maps; log records are
   transient, created by the C++ SDK's CreateLogRecord() and emitted in the same
   call.  The log body is formatted with vasprintf() which allocates via malloc;
-  the result is freed with free() immediately after SetBody().
+  the result is handed to SetBody(), which converts it into a value the record
+  owns, and is freed with free() once EmitLogRecord() has returned.
 
 Text map memory management:
 
