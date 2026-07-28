@@ -10,10 +10,12 @@ official
 [OpenTelemetry C++ client](https://github.com/open-telemetry/opentelemetry-cpp).
 It was developed by [HAProxy Technologies](https://www.haproxy.com/) for use in
 the HAProxy OTel filter, but is suitable for any C application that needs to
-export telemetry data.  The version of the underlying OTel C++ client is set to
-[1.28.0](https://github.com/open-telemetry/opentelemetry-cpp/releases/tag/v1.28.0);
-this exact release is required by the patch set that the build applies to the
-SDK, as described in the [Build Instructions](#build-instructions) section.
+export telemetry data.  The build pins the underlying OTel C++ client to
+[1.28.0](https://github.com/open-telemetry/opentelemetry-cpp/releases/tag/v1.28.0)
+because the patch set it applies to the SDK is prepared for exactly that
+release, as the [Build Instructions](#build-instructions) explain; the wrapper
+itself also compiles against an older client, with the parts that require the
+newer SDK compiled out.
 
 The library supports three OTel signals:
 
@@ -136,8 +138,9 @@ The library requires a YAML parser.  By default it uses
 [rapidyaml](https://github.com/biojppm/rapidyaml), which is already built as
 part of the OTel C++ SDK dependencies.  Alternatively,
 [libfyaml](https://github.com/pantoniou/libfyaml) can be selected with
-`--with-libfyaml` (autotools) or `-DWITH_LIBFYAML=ON` (CMake).  Both parsers
-cannot be used at the same time.
+`--with-libfyaml` (autotools) or `-DWITH_LIBFYAML=ON` (CMake); either option
+overrides the rapidyaml default.  Requesting both parsers explicitly, with
+`--with-libfyaml` and `--with-rapidyaml` together, fails at configuration time.
 
 ## Testing
 
@@ -150,18 +153,33 @@ cd test
 ./otel-c-wrapper-test --runcount=10 --threads=8
 ```
 
-The test program uses `otel-cfg.yml` as its library configuration file.
+Every program reads `otel-cfg.yml` and looks up the signal entry named
+`default`; the `--config` and `--name` options override both.  Each prints a
+PASS or FAIL line per test case and exits non-zero when a case fails.
 
 Signal-specific test programs (`test-tracer`, `test-meter`, `test-logger`,
 `test-yaml`, `test-multi`) are also built by `make test`.
+
+The names in the test directory are libtool wrapper scripts.  The real binaries
+sit in `test/.libs` and carry an rpath to the installed library, so running one
+of them directly picks up the installed copy rather than the one just built.
+Run the wrapper scripts instead, as `test/gdb.sh` does for the debugger.
+
+Further tooling lives beside the programs: `speed.sh`, `speed-check.sh` and
+`speed-show.sh` measure the throughput, and `fuzz-yaml.sh` runs a libFuzzer
+harness over the configuration loader.  The documents
+[`test/README-speed_check`](test/README-speed_check) and
+[`test/README-fuzz-yaml`](test/README-fuzz-yaml) describe the last two.
 
 For integration testing with an OTel Collector and a backend such as
 Elasticsearch/Kibana, use the Docker Compose setup in `test/elastic-apm/`.
 
 A reference [OpenTelemetry Collector](https://github.com/open-telemetry/opentelemetry-collector)
-configuration is provided in `test/otelcol/`.  It collects all three signals
-(traces, metrics, and logs) over OTLP/gRPC and OTLP/HTTP, and exports traces
-to a Jaeger instance reachable at a local IP address via OTLP/HTTP.
+configuration is provided in `test/otelcol/`.  It receives all three signals
+over OTLP/gRPC and OTLP/HTTP, and traces over the Jaeger and Zipkin protocols
+as well.  Traces leave through the debug exporter and over OTLP/HTTP to an
+endpoint on the local network, while metrics and logs reach the debug exporter
+alone.
 
 ## Quick Start
 
@@ -183,29 +201,43 @@ int main(void)
     ctx = otelc_init("otel-cfg.yml", "default", &err);
     if (ctx == NULL) {
         fprintf(stderr, "Failed to init: %s\n", err);
-        free(err);
+        OTELC_SFREE(err);
         return 1;
     }
 
-    /* Create and start a tracer bound to the context */
+    /* Create a tracer bound to the context */
     tracer = otelc_tracer_create(ctx, &err);
     if (tracer == NULL) {
         fprintf(stderr, "Failed to create tracer: %s\n", err);
-        free(err);
+        OTELC_SFREE(err);
         otelc_deinit(&ctx, NULL, NULL, NULL);
         return 1;
     }
-    tracer->ops->start(tracer);
 
-    /* Start a span, do work, end the span */
-    span = tracer->ops->start_span(tracer, "my-operation");
-    if (span != NULL) {
-        /* ... */
-        span->ops->end(&span);
+    /* Build the trace pipeline described by the configuration */
+    if (tracer->ops->start(tracer) != OTELC_RET_OK) {
+        fprintf(stderr, "Failed to start tracer: %s\n", tracer->err);
+        otelc_deinit(&ctx, &tracer, NULL, NULL);
+        return 1;
     }
 
-    /* Clean up the tracer and the context */
+    /* Start a new span */
+    span = tracer->ops->start_span(tracer, "my-operation");
+    if (span == NULL) {
+        fprintf(stderr, "Failed to start span: %s\n", tracer->err);
+        otelc_deinit(&ctx, &tracer, NULL, NULL);
+        return 1;
+    }
+
+    /* ... perform work ... */
+
+    /* End the span; the operation also clears the pointer */
+    span->ops->end(&span);
+
+    /* Clean up the tracer and the context, then the process-wide hooks */
     otelc_deinit(&ctx, &tracer, NULL, NULL);
+    otelc_lib_shutdown();
+
     return 0;
 }
 ```
@@ -223,32 +255,51 @@ int main(void)
     struct otelc_meter *meter;
     struct otelc_value  value;
     char               *err = NULL;
-    int64_t             counter;
+    int64_t             counter_id;
 
+    /* Initialize the library; "default" selects the named signal entry */
     ctx = otelc_init("otel-cfg.yml", "default", &err);
     if (ctx == NULL) {
         fprintf(stderr, "Failed to init: %s\n", err);
-        free(err);
+        OTELC_SFREE(err);
         return 1;
     }
 
+    /* Create a meter bound to the context */
     meter = otelc_meter_create(ctx, &err);
     if (meter == NULL) {
         fprintf(stderr, "Failed to create meter: %s\n", err);
-        free(err);
+        OTELC_SFREE(err);
         otelc_deinit(&ctx, NULL, NULL, NULL);
         return 1;
     }
-    meter->ops->start(meter);
 
-    counter = meter->ops->create_instrument(meter, "requests", "Total request count", "1", OTELC_METRIC_INSTRUMENT_COUNTER_UINT64, NULL);
-    if (counter != OTELC_RET_ERROR) {
-        value.u_type         = OTELC_VALUE_UINT64;
-        value.u.value_uint64 = 1;
-        meter->ops->update_instrument(meter, counter, &value);
+    /* Build the metric pipeline described by the configuration */
+    if (meter->ops->start(meter) != OTELC_RET_OK) {
+        fprintf(stderr, "Failed to start meter: %s\n", meter->err);
+        otelc_deinit(&ctx, NULL, &meter, NULL);
+        return 1;
     }
 
+    /* Create a counter instrument; the returned id addresses it later */
+    counter_id = meter->ops->create_instrument(meter,
+        "requests", "Total request count", "1",
+        OTELC_METRIC_INSTRUMENT_COUNTER_UINT64, NULL);
+    if (counter_id == OTELC_RET_ERROR) {
+        fprintf(stderr, "Failed to create instrument: %s\n", meter->err);
+        otelc_deinit(&ctx, NULL, &meter, NULL);
+        return 1;
+    }
+
+    /* Record a measurement */
+    value.u_type         = OTELC_VALUE_UINT64;
+    value.u.value_uint64 = 1;
+    (void)meter->ops->update_instrument(meter, counter_id, &value);
+
+    /* Clean up the meter and the context, then the process-wide hooks */
     otelc_deinit(&ctx, NULL, &meter, NULL);
+    otelc_lib_shutdown();
+
     return 0;
 }
 ```
@@ -266,25 +317,39 @@ int main(void)
     struct otelc_logger *logger;
     char                *err = NULL;
 
+    /* Initialize the library; "default" selects the named signal entry */
     ctx = otelc_init("otel-cfg.yml", "default", &err);
     if (ctx == NULL) {
         fprintf(stderr, "Failed to init: %s\n", err);
-        free(err);
+        OTELC_SFREE(err);
         return 1;
     }
 
+    /* Create a logger bound to the context */
     logger = otelc_logger_create(ctx, &err);
     if (logger == NULL) {
         fprintf(stderr, "Failed to create logger: %s\n", err);
-        free(err);
+        OTELC_SFREE(err);
         otelc_deinit(&ctx, NULL, NULL, NULL);
         return 1;
     }
-    logger->ops->start(logger);
 
-    logger->ops->log_span(logger, OTELC_LOG_SEVERITY_INFO, 0, NULL, NULL, NULL, NULL, NULL, 0, "Application started successfully");
+    /* Build the log pipeline described by the configuration */
+    if (logger->ops->start(logger) != OTELC_RET_OK) {
+        fprintf(stderr, "Failed to start logger: %s\n", logger->err);
+        otelc_deinit(&ctx, NULL, NULL, &logger);
+        return 1;
+    }
 
+    /* Emit a record; the NULL span leaves it uncorrelated with any trace */
+    (void)logger->ops->log_span(logger, OTELC_LOG_SEVERITY_INFO,
+        0, NULL, NULL, NULL, NULL, NULL, 0,
+        "Application started successfully");
+
+    /* Clean up the logger and the context, then the process-wide hooks */
     otelc_deinit(&ctx, NULL, NULL, &logger);
+    otelc_lib_shutdown();
+
     return 0;
 }
 ```
@@ -297,6 +362,19 @@ operations vtable, one pair per signal:
 - `struct otelc_tracer` -- creates trace spans and propagates context.
 - `struct otelc_meter` -- creates and records metric instruments.
 - `struct otelc_logger` -- emits structured log records.
+
+A tracer hands out two more handle types, which follow the same convention but
+carry no telemetry state of their own:
+
+- `struct otelc_span` -- one started, not yet ended, trace span.
+- `struct otelc_span_context` -- a span identity, built from raw IDs or
+  extracted from a carrier.
+
+Each signal instance carries an `err` member with the text of the last error it
+recorded, a `scope_name` member, an `enabled` gate, a `ctx` back-pointer and the
+`ops` pointer.  The `err` string belongs to the instance and is released with
+it; the strings returned through an `err` argument belong to the caller and go
+to `OTELC_SFREE()`.  The library context itself is opaque.
 
 Operations are invoked through the `ops` pointer:
 
@@ -312,6 +390,9 @@ so the callee can NULL the pointer on destroy/end) are provided in
 OTELC_OPS(tracer, start_span, "name");
 OTELC_OPSR(span, end);
 ```
+
+Both macros are statement expressions over `__typeof__` and therefore need GCC
+or Clang; the plain call through the `ops` pointer works with any compiler.
 
 ### Lifecycle
 
@@ -344,11 +425,21 @@ Functions that can fail return `OTELC_RET_OK` (0) on success or
 `OTELC_RET_ERROR` (-1) on failure.  Functions that create resources return a
 pointer on success or `NULL` on failure.
 
+Two families depart from that pair, and both are recognized by testing for
+`OTELC_RET_ERROR` rather than for `OTELC_RET_OK`, since a false answer and a
+success share the value zero: the `enabled` predicates return true or false,
+and `create_instrument()` returns a non-negative instrument ID while
+`otelc_ctx_nstate_get()` returns an `otelc_ctx_name_t` value.
+
 ### Utility Types
 
-- `struct otelc_value` -- tagged union (bool, integer, double, string).
+- `struct otelc_value` -- tagged union carrying a bool, a signed or unsigned
+  32-bit or 64-bit integer, a double, a string or binary data, with a null
+  variant for the absent value.
 - `struct otelc_kv` -- key-value pair (key string + otelc_value).
-- `struct otelc_text_map` -- dynamic array of key-value string pairs.
+- `struct otelc_text_map` -- dynamic array of key-value string pairs, each pair
+  carrying flags that say whether the map duplicates or adopts the key and the
+  value.
 
 Including `<opentelemetry-c-wrapper/include.h>` pulls in all public headers.
 
@@ -364,6 +455,11 @@ The YAML file passed to `otelc_init()` contains these top-level sections:
 | `processors`   | Batching before export (batch or single)      |
 | `providers`    | Resource attributes (service name, etc.)      |
 | `signals`      | Binds the above components per signal type    |
+
+Besides these, the document accepts the optional top-level scalar key
+`handle_map_shards`, which sets the shard count of the span handle maps; its
+value must be a power of two in the range 1..65536 and takes effect on the
+first `otelc_init()` call.
 
 The `signals` section groups its `traces`, `metrics`, and `logs` subtrees by
 name, so a single configuration can hold several independent definitions per
@@ -383,7 +479,7 @@ Minimal configuration exporting traces to stdout:
 exporters:
   my_exporter:
     type:     ostream
-    filename: /dev/stdout
+    filename: stdout
 
 processors:
   my_processor:
@@ -451,10 +547,14 @@ processors:
     cpu_id:      2
 ```
 
-The `cpu_id` setting uses `pthread_setaffinity_np()` and is only effective on
-Linux (requires `sched.h`).  The OTLP/gRPC exporter accepts both settings for
-configuration consistency, but they are not applied because the OTel C++ SDK
-does not provide runtime options for gRPC exporter threads.
+Both settings reach the thread through the SDK thread instrumentation
+interface, which the SDK build must enable with
+`ENABLE_THREAD_INSTRUMENTATION_PREVIEW`; without that flag the values are still
+read and validated, but never applied.  The `cpu_id` setting uses
+`pthread_setaffinity_np()` and is only effective on Linux (requires `sched.h`).
+The OTLP/gRPC exporter accepts both settings for configuration consistency, but
+they are not applied because the OTel C++ SDK does not provide runtime options
+for gRPC exporter threads.
 
 The Elasticsearch log exporter also spawns a background thread, but accepts
 neither setting; its thread runs with the process defaults.
@@ -474,16 +574,32 @@ neither setting; its thread runs with the process defaults.
 ## Thread Safety
 
 All data-plane operations (creating spans, recording metrics, emitting logs) are
-thread-safe and can be called concurrently.  Spans are stored in a sharded map
-whose independently locked shards distribute contention; the shard count is set
-with the top-level `handle_map_shards` YAML key.
+thread-safe and can be called concurrently on the same instance.  The error text
+a failing operation leaves in the instance is replaced under a lock, so
+concurrent failures cannot corrupt it.
 
-The lifecycle operations (`otelc_init`, `otelc_*_create`, `start`, `destroy`,
-`otelc_deinit`, and `otelc_lib_shutdown`) must be called from a single thread,
-typically during program startup and shutdown.
+Spans are stored in a sharded map whose independently locked shards distribute
+contention; the shard count is set with the top-level `handle_map_shards` YAML
+key.  That shared-handle model is what the default build selects, and it is what
+allows a span started on one thread to be ended on another.  The alternative
+model, chosen at compile time, keeps the handles thread-local: it removes the
+locking altogether but confines each span to the thread that made it, as
+[`README-configuration`](README-configuration) describes.
 
-Applications can provide a custom thread-ID function via `otelc_ext_init()`
-before creating any context.
+Before `start()` or `destroy()` runs on a tracer, meter or logger, the caller
+has to drain every concurrent operation on that same instance and end the spans
+it produced; a call still in flight when either of them runs reads state that is
+being replaced or freed.  Instances are independent of one another, so the
+ordering is required per instance rather than across the process.
+
+Two calls are process-wide instead: `otelc_ext_init()` installs the allocation
+and thread-id callbacks and has to run before anything that uses them, and
+`otelc_lib_shutdown()` clears them again, so it has to run only after every
+context and every instance has been destroyed.
+
+Each thread is identified internally by a numeric ID; an application supplies
+its own thread-ID function through `otelc_ext_init()`, and without one the
+library assigns the identifiers itself.
 
 SDK background threads can optionally be bound to a specific CPU core via the
 `cpu_id` YAML setting.  See the [Thread Settings](#thread-settings) section
@@ -504,6 +620,11 @@ for details.
 - [`README-configuration`](README-configuration) -- compile-time configuration
   macros and their effects on threading, context propagation, and provider
   architecture.
+- [`test/README-fuzz-yaml`](test/README-fuzz-yaml) -- fuzzing harness for the
+  configuration loader.
+- [`test/README-speed_check`](test/README-speed_check) -- throughput regression
+  checking.
+- [`ChangeLog`](ChangeLog) -- release notes, grouped by package version.
 - [`TODO`](TODO) -- implemented features and planned enhancements.
 
 ## License
