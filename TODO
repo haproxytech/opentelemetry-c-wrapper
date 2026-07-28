@@ -13,22 +13,23 @@ Implemented:
     exception.stacktrace).
   - Baggage propagation (set, get, variadic and array-based variants).
   - Context propagation (TextMap and HTTP headers).
-  - Samplers: AlwaysOn, AlwaysOff, TraceIdRatioBased, and ParentBased
-    with per-state delegates (remote_sampled, remote_not_sampled,
-    local_sampled, local_not_sampled).
+  - Samplers: AlwaysOn, AlwaysOff, TraceIdRatioBased, ParentBased with
+    per-state delegates (remote_sampled, remote_not_sampled, local_sampled,
+    local_not_sampled), and Composite driving a composable sampler for
+    consistent-probability sampling (needs an SDK of 1.28 or newer).
   - Processors: Simple and Batch span processors.
   - TracerProvider with multiple processors/exporters (via YAML list
     configuration).
   - Exporters: OTLP (HTTP/gRPC/File), OStream, Zipkin, In-Memory.
 - Metrics:
-  - Synchronous and Observable instruments (int64/double).
+  - Synchronous and Observable instruments (uint64/int64/double).
   - Metric attributes and Views (custom aggregation/boundaries).
   - Instrument retrieval by name and type.
   - Periodic exporting metric reader.
   - Multiple metric readers/exporters via YAML list configuration
     (MeterProvider with AddMetricReader() for each exporter-reader pair).
-  - Enabled check (returns true when the meter is valid; the C++ SDK does not
-    yet provide Meter::Enabled()).
+  - Enabled check (returns true when the meter is valid and the runtime gate
+    is set; the C++ SDK does not yet provide Meter::Enabled()).
   - Exporters: OTLP (HTTP/gRPC/File), OStream, In-Memory.
 - Logs:
   - Basic logging API with severity, timestamps, and span correlation.
@@ -40,17 +41,27 @@ Implemented:
 - General:
   - YAML-based SDK configuration for all signals.
   - Resource attribute detection and configuration.
+  - Multiple library contexts in one process, each with its own
+    configuration document and named signal entries.
+  - Runtime enable/disable gate on every signal, through the set_enabled
+    operation, reflected in the matching enabled probe.
+  - Export-pipeline status through otelc_pipeline_status_get(): drop and
+    export counters, batch queue depth and capacity per signal.
+  - Runtime shard count for the span handle maps, through the top-level
+    handle_map_shards key.
+  - Minimum log severity per logger, from the YAML min_severity key or the
+    set_min_severity operation.
 
 Planned (Traces):
 -----------------
 - Baggage entry metadata (the C++ SDK Baggage::Set() does not yet accept a
   metadata parameter; pending upstream support).
 - SpanLimits configuration (max attributes, events, links per span) via
-  YAML (requires SpanLimits header in the C++ SDK build).
-- B3 propagator for Zipkin-style trace propagation (requires
-  B3Propagator header in the C++ SDK build).
-- Jaeger propagator for Uber-style trace headers (requires
-  JaegerPropagator header in the C++ SDK build).
+  YAML; the SDK ships span_limits.h, only the wrapper side is missing.
+- B3 propagator for Zipkin-style trace propagation; the SDK ships
+  b3_propagator.h, only the wrapper side is missing.
+- Jaeger propagator for Uber-style trace headers; the SDK ships
+  jaeger.h, only the wrapper side is missing.
 - Custom ID generators via C callback bridge.
 - Custom samplers via C callback bridge.
 - Expose Span Link retrieval if supported by OTel API.
@@ -61,15 +72,16 @@ Planned (Metrics):
 - Support delta aggregation temporality configuration.
 - View attribute filter (requires FilteringAttributesProcessor in the
   C++ SDK build).
-- View cardinality limits (requires CardinalityLimit support in the
-  C++ SDK build).
+- View cardinality limits; AggregationConfig already carries a
+  cardinality_limit, only the wrapper side is missing.
 - Batch observable callbacks (multi-instrument observation).
 
 Planned (Logs):
 ---------------
 - Support complex log body types (Map/Array) via otelc_value.
 - LogRecordLimits configuration (max attributes per log record) via
-  YAML (requires LogRecordLimits header in the C++ SDK build).
+  YAML; the SDK ships log_record_limits.h, only the wrapper side is
+  missing.
 
 Planned (General):
 ------------------
