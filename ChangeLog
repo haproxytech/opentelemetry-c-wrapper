@@ -6,6 +6,180 @@ commits, with a few directly related commits folded into a single bullet, and
 the git log keeps the full descriptions.
 
 
+Version 3.1.0 (2026-07-24)
+--------------------------
+
+Minor release on the 3.x line: the OpenTelemetry C++ SDK used by the build moved
+from 1.26.0 to 1.28.0 and the tracer gained the composite sampler, alongside
+correctness and hardening fixes, refreshed documentation and new test and build
+tooling.  The functions otelc_strdup() and otelc_strndup() are now also exported
+from the shared library, so the library current and age both rose while the
+soname stayed unchanged (8:0:1), keeping existing binaries compatible.
+
+  * VERSION: Bumped package version to 3.1.0; library version 8:0:1.
+  * MEDIUM: Hardened the debug allocator and aligned strdup behavior; a detected
+    double free now ends in a diagnostic instead of heap corruption, and the
+    non-debug OTELC_STRDUP()/OTELC_STRNDUP() macros map to the new exported
+    wrappers otelc_strdup() and otelc_strndup(), which tolerate a null argument
+    like their debug counterparts.
+  * MINOR: Guaranteed hook release when resetting the SDK log handler; the reset
+    always installs a handler, so no caller-supplied callback reference survives
+    otelc_lib_shutdown().
+  * DOC: Refreshed the library (de)initialization documentation; the MEMO now
+    describes the per-context model and the actual teardown order, while the
+    README examples release the error strings with OTELC_SFREE().
+  * TEST: Covered configuration close, library shutdown and YAML failures; the
+    yaml suite now exercises otelc_close_cfg() and otelc_lib_shutdown(), and
+    a malformed document and a duplicate mapping key end in an error message
+    instead of an abort through the backend error handler.
+  * MEDIUM: Validated baggage key-value pairs in the span setters; a null or
+    empty name or value fails the call with an error message instead of crashing
+    inside the SDK, and the variadic string setter checks every pair.
+  * DOC: Aligned the tracer and span descriptions with the actual behavior,
+    documenting the silent code paths and the pointer-clearing end and destroy
+    operations.
+  * CLEANUP: Fixed the meter instrument ID returns, which the int-typed debug
+    return macro truncated in the debug build only, and narrowed the add_view()
+    non-null attribute to the arguments the implementation does not default.
+  * DOC: Corrected the meter descriptions and hardened the README quick start
+    examples, which now check the init and create results before use.
+  * DOC: Documented the optional logger min_severity key in the public header,
+    the README and the example configuration, and refreshed the MEMO logger
+    notes.
+  * MEDIUM: Gave the YAML resource attributes precedence over the environment
+    values on duplicate keys, as the README describes; the environment value
+    had silently won before.
+  * MINOR: Rejected the reuse of the instance logfile stream cleanly; a second
+    file-backed ostream exporter in the same signal instance gets a clear error
+    message instead of a stale errno text.
+  * DOC: Completed the pipeline component descriptions; the pipeline status
+    counters aggregate process-wide over all instances of a signal and the queue
+    fields describe only the newest batch processor.
+  * DOC: Qualified the duplicate-key rejection by backend; only the default
+    rapidyaml parser rejects duplicate mapping keys and the MEMO names this
+    as the intended difference.
+  * MINOR: Fixed the failure detection in the XSI otel_strerror() branch, which
+    checked errno although that strerror_r() variant reports through its return
+    value.
+  * DOC: Corrected the MEMO memory and mutex notes so the defer helpers, the
+    thread-local string buffers and the per-shard locking are now described
+    as implemented.
+  * BUILD: Let WITH_LIBFYAML override the rapidyaml default in CMake instead
+    of aborting on the option combination, matching the autotools behavior.
+  * BUILD: Fixed the opentelemetry-cpp install script, which aborted under the
+    -u shell option when invoked through build.sh and never removed the emptied
+    cmake and pkgconfig directories.
+  * BUILD: Hardened the build helper scripts against a failed clone, a failed
+    autotools generator, patching in the wrong directory and installing after
+    a failed build.
+  * TEST: Fixed the per-thread statistics build in the test program, which had
+    not compiled since the multi-instance rework.
+  * TEST: Hardened the option handling in the test programs; unknown options
+    print the usage text, a negative delay is rejected and the long random-seed
+    form works.
+  * DOC: Corrected the test harness function descriptions.
+  * BUILD: Fixed the aux-dir path and flag handling in the m4 macros; generated
+    files land in config/ with any autoconf release and the noexcept fallback
+    appends to the CXXFLAGS instead of replacing them.
+  * BUILD: Added address and thread sanitizer build options to the autotools
+    and CMake builds (--enable-asan/--enable-tsan and ENABLE_ASAN/ENABLE_TSAN),
+    with a suppression file for the uninstrumented SDK and system libraries.
+  * MEDIUM: Fixed a data race in the handle map statistics readers, which walked
+    the shard maps without taking the shard mutexes; the readers now sample
+    each shard under its lock and the hot paths are unchanged.
+  * TEST: Made the worker start flag atomic in the test program; volatile alone
+    does not synchronize the start store with the busy-wait loads.
+  * TEST: Added a libFuzzer harness for the YAML configuration loader that feeds
+    every input into otelc_init() through a memfd-backed path; README-fuzz-yaml
+    documents the harness and the first campaign.
+  * TEST: Added speed-check.sh, which compares runs against a machine-local
+    throughput baseline and enforces a minimum scaling ratio between the worker
+    groups; README-speed_check documents the usage.
+  * TEST: Verified the library version in the suite harness; every suite now
+    fails loudly when the loaded library does not match the header files.
+  * DOC: Aligned the sharded map analysis document with the current code; the
+    span operation list, the last-tracer cleanup semantics and the static-build
+    shard count note now match the sources.
+  * DOC: Aligned the configuration document with the current code; the overview
+    covers the definitions outside the OTELC_USER_CONFIG block and the dynamic
+    handle map description matches the initialization code.
+  * DOC: Aligned the README with the current code; the sampler type key became
+    mandatory, the no-sampler fallback and the Elasticsearch exporter thread
+    are stated, and the leftover-span end is tied to the last tracer destroy.
+  * DOC: Aligned README.md with the current code; the test program list gained
+    test-multi, the metrics quick start checks the instrument creation and the
+    patch and thread notes match the other documents.
+  * BUILD: Added offline build mode for the assembled monorepo tree; a tree
+    stamped by the assembly script builds its bundled dependencies instead of
+    cloning them, and they cannot be hijacked by installed packages.
+  * BUILD: Upgraded opentelemetry-cpp from 1.26.0 to 1.28.0; the patch set was
+    rebased onto the new release with the upstreamed system SSL patch dropped,
+    the monorepo helper now mirrors its dependency pins and the documentation
+    version statements follow.
+  * MEDIUM: Added the composite sampler for consistent probability sampling; the
+    new type wraps a composable sampler and writes the sampling threshold to the
+    tracestate, so downstream services can reconstruct the adjusted span count,
+    and it compiles out against an SDK older than 1.28.0.
+  * MINOR: Brought the sources in line with the coding conventions; discarded
+    return values gained explicit (void) casts, truthiness tests on non-boolean
+    values became explicit comparisons, and the propagation carriers return
+    through the sanctioned OTELCPP_RETURN_OBJ macro.
+  * DOC: Aligned function descriptions with the current code; corrected the
+    meter provider, counting exporter and otelc_strctrl descriptions, extended
+    several return-value sections with their omitted paths and unified repeated
+    argument descriptions.
+  * DOC: Documented the default telemetry.sdk.* resource attributes; the README
+    providers section now states the telemetry.sdk.language, telemetry.sdk.name
+    and telemetry.sdk.version values that the SDK sets on its own, and an added
+    example shows how a configuration overrides them.
+  * DOC: Restructured the YAML configuration section of the README; the value
+    conventions and the background thread settings moved into subsections of
+    their own, and the section gained the handle_map_shards key, the thread
+    instrumentation build flag and the rules for mixing lists and scalars.
+  * DOC: Merged and corrected the example sections of the README; the tracing,
+    metrics and logging examples became subsections of one Examples section,
+    and they now complete the documented lifecycle, report the error text the
+    library recorded and build without warnings.
+  * DOC: Restructured the API overview section of the README; the objects, the
+    lifecycle, the ownership rules, the return values and the utility types
+    each got a subsection, and the overview now covers the span handles, the
+    value types and the ownership of the error strings.
+  * DOC: Rewrote the introduction section of the README; it now opens with what
+    the library provides, separates the pinned client release from the older
+    ones the wrapper still compiles against, and lists the companion documents
+    and the licence.
+  * DOC: Corrected and extended the build section of the README; the script
+    arguments and the YAML parser options now match the code, and the section
+    gained an option list for both build systems, the offline monorepo build
+    mode and the thread sanitizer suppression file.
+  * DOC: Corrected and extended the testing section of the README; the section
+    now lists all the test programs, the libtool wrapper caveat and the tooling
+    around them, and the collector configuration description matches the file.
+  * DOC: Extended the concepts section of the README to all signals; the metric
+    instruments, views and readers and the log records and severity join the
+    trace concepts, and so do the resource attributes and the instrumentation
+    scope.
+  * DOC: Corrected the thread safety section of the README; the lifecycle rule
+    follows the per-instance contract of the headers, and the section names the
+    compile-time handle model and the lock behind the error text.
+  * DOC: Restructured the limitations section of the README; the export drop
+    description and the limitation list became subsections, the signal support
+    statement was shortened and the shared span maps are named as the default
+    build.
+  * DOC: Carried the README corrections over to README.md; the version pin, the
+    YAML parser rule, the collector configuration and the value and the return
+    conventions match the README, and the examples are now the very code that
+    the README shows.
+  * DOC: Linked the HAProxy OTel filter repository from the README introduction
+    and the README.md overview.
+  * DOC: Corrected the MEMO against the current sources; the sampler lists now
+    carry the composite type, the log body release matches the code, and the
+    pipeline status getter and the duplication macros are named.
+  * DOC: Corrected the TODO against the code and the pinned SDK; the composite
+    sampler and the newer general features joined the implemented list, and the
+    planned items no longer claim that the SDK lacks headers it ships.
+
+
 Version 3.0.0 (2026-07-17)
 --------------------------
 
