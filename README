@@ -13,6 +13,9 @@ Summary
      2.3. Compiling and installing the OTel C wrapper library
      2.4. Build options
    3. Testing the operation of the library
+     3.1. Test programs
+     3.2. Measurement and fuzzing tools
+     3.3. Integration testing with a collector
    4. Basic concepts of OpenTelemetry
    5. Library API overview
      5.1. Objects and operations
@@ -377,38 +380,102 @@ uninstrumented SDK; the file describes its own use in its header.
 3. Testing the operation of the library
 ------------------------------------------------------------------------------
 
-The library includes a test suite located in the test/ directory.  Test
-programs are not compiled during the regular build; use 'make test' to compile
-them.  The main test program simulates a worker process that generates traces,
-metrics, and logs.
+The test/ directory holds the test programs, the configuration they read and
+the tooling built around them.  Section 3.1 covers the programs, section 3.2
+the measurement and fuzzing tools, and section 3.3 the integration tests against
+a collector and a backend.
+
+
+3.1. Test programs
+------------------------------------------------------------------------------
+
+The test programs are not compiled during the regular build.  The 'make test'
+target, which stands for 'make check', builds every one of them:
 
   % make test
   % cd test
   % ./otel-c-wrapper-test --help
   % ./otel-c-wrapper-test --runcount=10 --threads=8
 
-The test program uses otel-cfg.yml as its library configuration file.
+The programs are:
 
-When built with the debug option, the test binary is named
-otel-c-wrapper-test_dbg.  If present at install time, the test binary is
-installed into the <prefix>/bin directory by 'make install'.
+  * otel-c-wrapper-test - simulates a worker process that generates traces,
+                          metrics and logs from several threads at once
+  * test-tracer         - exercises the tracer, span and context propagation
+                          operations
+  * test-meter          - exercises the meter, instrument and view operations
+  * test-logger         - exercises the logger operations, including the
+                          severity threshold
+  * test-yaml           - exercises the configuration loader, its failure
+                          paths included
+  * test-multi          - exercises several contexts and signal instances
+                          side by side
 
-For integration testing with an OpenTelemetry Collector and a backend (like
-Elasticsearch/Kibana), you can use the Docker Compose setup provided in the
-`test/elastic-apm/` directory.
+Every program reads its configuration from otel-cfg.yml in the current directory
+and looks up the signal entry named 'default'; the --config and --name options
+override both.  The main program takes the run length, the thread and instance
+counts, a delay and a random seed on top of that, and --help lists them all.
+Each program prints a PASS or FAIL line per test case and leaves a non-zero
+exit status behind when a case fails.
 
-A reference OpenTelemetry Collector configuration is provided in test/otelcol/.
-The OpenTelemetry Collector source is available at
-https://github.com/open-telemetry/opentelemetry-collector .  The configuration
-collects all three signals (traces, metrics, and logs) over OTLP/gRPC and
-OTLP/HTTP, and exports traces to a Jaeger instance reachable at a local IP
-address via OTLP/HTTP.
+A debug build appends _dbg to every program name.  Only the main program is
+installed, into the <prefix>/bin directory, and only when it was built before
+'make install' ran.
+
+The names in the test directory are libtool wrapper scripts.  The real binaries
+sit in test/.libs and carry an rpath to the installed library, so running one
+of them directly picks up the installed copy rather than the one just built.
+Run the wrapper scripts instead, and when a debugger or valgrind needs the real
+binary, put the src/.libs directory of the build tree first in LD_LIBRARY_PATH,
+the way the gdb.sh script does.
+
+
+3.2. Measurement and fuzzing tools
+------------------------------------------------------------------------------
+
+Several shell scripts in the test directory drive the programs beyond the plain
+test runs:
+
+  * speed.sh       - runs the throughput measurement against the speed_test
+                     signal entries, whose exporters write to /dev/null so
+                     that the measured cost is the API path itself
+  * speed-check.sh - compares a run against a machine-local baseline and
+                     fails when the throughput or the scaling between the
+                     worker groups regresses
+  * speed-show.sh  - groups the worker counts of a run and reports the rate
+                     range of each group
+  * fuzz-yaml.sh   - builds the library with clang into an out-of-tree
+                     directory and runs the libFuzzer harness over the
+                     configuration loader
+  * gdb.sh         - starts the main program under gdb against the freshly
+                     built library
+
+The documents test/README-speed_check and test/README-fuzz-yaml describe the
+throughput check and the fuzzing harness in detail.
+
+
+3.3. Integration testing with a collector
+------------------------------------------------------------------------------
+
+The test/otelcol directory carries a reference configuration for running an
+OpenTelemetry Collector beside the test programs; its sources live at
+https://github.com/open-telemetry/opentelemetry-collector .  It receives all
+three signals over OTLP/gRPC and OTLP/HTTP, and it takes traces over the Jaeger
+and Zipkin protocols as well.  Traces leave through the debug exporter and over
+OTLP/HTTP to an endpoint on the local network, while metrics and logs reach the
+debug exporter alone.  The README in that directory walks through the whole
+configuration.
+
+For a complete backend, the test/elastic-apm directory holds a Docker Compose
+stack of Elasticsearch, Kibana and APM Server:
 
   % cd test/elastic-apm
   % docker compose up -d
 
-Ensure that the `otel-cfg.yml` configuration file is correctly set up to point
-to the collector's endpoint.
+The APM Server takes OTLP over HTTP on port 8200 and Kibana answers on port
+5601; the README in that directory lists the endpoints and the credentials.
+Whichever of the two is running, the otel-cfg.yml that the test programs read
+has to point its exporters at that endpoint.
 
 
 4. Basic concepts of OpenTelemetry
