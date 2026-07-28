@@ -40,6 +40,8 @@ Summary
      7.3. Logging
    8. Thread safety
    9. Known bugs and limitations
+     9.1. Export drops and pipeline status
+     9.2. Other limitations
 
 
 1. Introduction
@@ -1249,7 +1251,7 @@ batches at regular intervals from its own thread.  Additional keys:
       Maximum number of records per export batch.
 
 When the queue fills up, new records are silently dropped.  The library reports
-the drop count through otelc_pipeline_status_get() (see section 9 for details).
+the drop count through otelc_pipeline_status_get(); section 9.1 has the details.
 
 Type "single" exports each record immediately, on the thread that produced it.
 It reads no keys beyond 'type'.
@@ -1719,11 +1721,18 @@ section 6.3 describes.
 9. Known bugs and limitations
 ------------------------------------------------------------------------------
 
-Currently, not all categories of telemetry (referred to as 'signals' in OTel
-terminology) are supported by this library.  Baggage, traces, metrics, and logs
-are supported at the moment.  Span events are supported as part of the traces
-signal.  As for profiles, the signal is still experimental in the OTel
-specification and is not supported by this library.
+The library implements the three telemetry signals of OTel -- traces, metrics
+and logs -- together with the span events and the baggage that ride along with
+the traces.  Profiles are left out, that signal being still experimental in the
+OTel specification.
+
+Section 9.1 describes the one behaviour that surprises callers most often, the
+silent dropping of telemetry under load, and the interface that reports it.
+Section 9.2 collects the remaining limitations.
+
+
+9.1. Export drops and pipeline status
+------------------------------------------------------------------------------
 
 The OTel C++ SDK batch processors (BatchSpanProcessor for traces and
 BatchLogRecordProcessor for logs) use bounded, lock-free circular buffers to
@@ -1781,20 +1790,25 @@ OTLP/gRPC) count an export as successful the moment the batch is handed off for
 delivery, so transport failures surface later through the diagnostic log handler
 installed with otelc_log_set_handler(), not in export_fail.
 
-Additional limitations:
-  * Span lifecycle: Spans are stored in a shared map accessible from any thread.
-    It is the caller's responsibility to end all spans before destroying the
-    tracer.  The span maps are shared by all tracers, so any spans left open
-    are ended implicitly only when the last tracer is destroyed.
-  * ABI compatibility: The library must be built against an OTel C++ client
-    compiled with ABI version 2; both build systems verify this at configuration
-    time and reject any other ABI version.  `AddLink` (an ABI version 2 feature)
-    is therefore always available.  The `start_span_with_options` operation
-    additionally establishes span links at creation time, which the OTel API
-    supports on all ABI versions.
-  * Drop reporting asymmetry in the C++ SDK: The BatchSpanProcessor logs a
+
+9.2. Other limitations
+------------------------------------------------------------------------------
+
+  * Span lifecycle: ending every span before the tracer that produced it is
+    destroyed is the caller's responsibility.  In the default build the span
+    maps are shared by all tracers, so the spans left open are ended
+    implicitly only when the last tracer goes; section 8 describes the
+    thread-local alternative, in which a span never leaves its own thread.
+
+  * ABI compatibility: the library has to be built against an OTel C++ client
+    compiled with ABI version 2, and both build systems verify this at
+    configuration time and reject any other ABI version.  AddLink, an ABI
+    version 2 feature, is therefore always available.  The
+    start_span_with_options operation additionally establishes span links at
+    creation time, which the OTel API supports on every ABI version.
+
+  * Drop reporting asymmetry in the C++ SDK: the BatchSpanProcessor logs a
     warning to stderr ("BatchSpanProcessor queue is full - dropping span.")
-    when a span is dropped, but the BatchLogRecordProcessor silently
-    discards log records without any diagnostic output.  The wrapper library
-    reports drop counts for both signal types uniformly through
-    otelc_pipeline_status_get().
+    when a span is dropped, while the BatchLogRecordProcessor discards log
+    records without any diagnostic output.  The wrapper reports the drop
+    counts of both signals uniformly through otelc_pipeline_status_get().
