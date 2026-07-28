@@ -9,8 +9,9 @@ The OpenTelemetry (OTel) C wrapper library provides a pure C API on top of the
 official
 [OpenTelemetry C++ client](https://github.com/open-telemetry/opentelemetry-cpp).
 It was developed by [HAProxy Technologies](https://www.haproxy.com/) for use in
-the HAProxy OTel filter, but is suitable for any C application that needs to
-export telemetry data.  The build pins the underlying OTel C++ client to
+the [HAProxy OTel filter](https://github.com/haproxytech/haproxy-opentelemetry),
+but is suitable for any C application that needs to export telemetry data.  The
+build pins the underlying OTel C++ client to
 [1.28.0](https://github.com/open-telemetry/opentelemetry-cpp/releases/tag/v1.28.0)
 because the patch set it applies to the SDK is prepared for exactly that
 release, as the [Build Instructions](#build-instructions) explain; the wrapper

@@ -54,7 +54,8 @@ so that a C program instruments its code against a small set of handles and
 leaves the exporters, processors, samplers and resource attributes to that file.
 The library was written primarily for the HAProxy OTel filter, to export the
 telemetry that the analysis of software performance and behavior needs, but it
-depends on nothing from HAProxy and serves any C program.
+depends on nothing from HAProxy and serves any C program.  That filter has its
+own repository at https://github.com/haproxytech/haproxy-opentelemetry .
 
 The wrapper sits on the official OTel C++ client, whose source repository is at
 https://github.com/open-telemetry/opentelemetry-cpp .  The build pins the client
