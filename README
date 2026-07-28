@@ -1674,29 +1674,46 @@ int main(void)
 8. Thread safety
 ------------------------------------------------------------------------------
 
-The library is designed for multi-threaded use.  All data-plane operations
-(creating spans, recording metrics, emitting logs) are thread-safe and can be
-called concurrently from any number of threads.
+The library is designed for multi-threaded use.  The data-plane operations --
+creating spans, recording measurements, emitting log records -- are thread-safe,
+and any number of threads may call them concurrently on the same tracer, meter
+or logger instance.  The error text a failing operation leaves in the instance
+is replaced under a lock, so concurrent failures cannot corrupt it.
 
-Spans are stored in a sharded map with independently-locked shards (the shard
-count is set by the handle_map_shards YAML key, with a compile-time default),
-distributing contention across threads.  Metric instrument lookups and updates
-take a shared lock and run in parallel; instrument creation is serialized, as
-the instrument set is typically small and rarely modified after startup.
+Span and span context handles live in a sharded map whose shards are locked
+independently and spread the contention across the threads; the shard count
+comes from the handle_map_shards key of section 6.1, and a compile-time default
+applies without it.  The shared-handle model is what the default build selects,
+and it is what allows a span started on one thread to be ended on another.  The
+alternative model, chosen at compile time, keeps the handles thread-local: it
+removes the locking altogether but confines each span to the thread that made
+it.  README-configuration describes both models.
 
-Lifecycle operations -- otelc_init(), otelc_*_create(), start(), destroy(),
-otelc_deinit(), and otelc_lib_shutdown() -- must be called from a single thread,
-typically the main thread.  These are intended to run during program startup and
-shutdown, not concurrently with data-plane operations.
+Metric instrument lookups and updates take a shared lock and run in parallel,
+while instrument and view creation is serialized, the instrument set being small
+and rarely touched after the startup.
 
-Each thread is identified internally by a numeric ID.  Applications can provide
-a custom thread-ID function via otelc_ext_init() before creating any context;
-otherwise, the library uses its own internal assignment.
+The operations that replace or release the state of an instance fall outside
+that guarantee.  Before start() or destroy() runs on a tracer, meter or logger,
+the caller has to drain every concurrent operation on that same instance and
+end the spans it produced; a call still in flight when either of them runs reads
+state that is being replaced or freed.  The instances are independent of each
+other, so the ordering is required per instance rather than across the process,
+and the same holds for the contexts that own them.
 
-SDK background threads (batch processor export threads, OTLP File and HTTP
-exporter threads, periodic metric reader threads) can optionally be bound to
-a specific CPU core via the cpu_id YAML setting.  See the YAML configuration
-section for details.
+Two calls are process-wide rather than per-instance.  otelc_ext_init() installs
+the allocation and thread-id callbacks and has to run before anything that uses
+them, and otelc_lib_shutdown() clears those callbacks again, so it has to run
+only after every context and every instance has been destroyed.
+
+Each thread is identified internally by a numeric ID.  An application supplies
+its own thread-ID function through otelc_ext_init(); without one, the library
+assigns the identifiers itself.
+
+The background threads of the SDK -- the batch processor export threads, the
+OTLP File and HTTP exporter threads and the periodic metric reader threads --
+are named and bound to a CPU core through the thread_name and cpu_id keys that
+section 6.3 describes.
 
 
 9. Known bugs and limitations
