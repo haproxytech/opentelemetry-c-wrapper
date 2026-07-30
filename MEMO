@@ -930,6 +930,27 @@ Handle initialization:
   threads with per-shard mutexes.  Otherwise, handles are thread-local with
   no locking overhead.
 
+  In the dynamic builds the maps are allocated lazily: in the thread-local build
+  a thread allocates its maps on its first span start or carrier extraction,
+  while the shared-handle build allocates the process-wide maps on the first
+  tracer create, serializing concurrent first creates with a function-local
+  mutex.  A newly allocated map continues handle numbering from the point where
+  the previous map generation stopped, so a leftover span or span context from
+  a destroyed generation can never alias a live handle of a newer generation
+  with the same index.
+
+  In the thread-local build a span start or carrier extraction may allocate
+  the calling thread's maps, while the teardown in otel_tracer_destroy() runs
+  only on a thread whose tracer count has dropped to zero.  A thread-exit reaper
+  (otel_handle_reaper in src/tracer.cpp), armed just before the per-thread maps
+  are allocated, ends the spans still present and frees the maps when the thread
+  exits.  A tracer must nevertheless be destroyed on the thread that created it;
+  otherwise the creating thread's count never reaches zero and the destroying
+  thread's count underflows.  In the shared-handle build the last destroy tears
+  the maps down outside the initialization mutex, so create and destroy calls
+  that may overlap in time must be serialized externally; concurrent creates
+  among themselves and concurrent destroys among themselves remain safe.
+
 Span and span context lifecycle:
 
   otel_span_new (src/span.cpp):
@@ -991,6 +1012,11 @@ Provider/exporter/processor stack:
     3. Releases the impl members; no global SDK provider is touched.
     4. Frees err, scope_name, and yaml_prefix strings.
 
+  Releasing the provider reference in the third step destroys the SDK provider
+  object; its destructor calls Shutdown(), which stops and joins the export
+  worker threads (batch processors, periodic metric readers) after the bounded
+  force-flush of the second step.
+
   For the tracer, otel_tracer_destroy additionally (when the last tracer in
   scope is destroyed):
     - Destroys all remaining span context handles.
@@ -1044,7 +1070,7 @@ Overall deinitialization flow:
     |     +-- destroy the span maps        (last tracer, dynamic build)
     |     +-- force-flush provider
     |     +-- release propagator           (tracer only)
-    |     +-- release impl and provider
+    |     +-- release impl and provider    (runs the SDK provider Shutdown)
     |     +-- free err, scope_name, yaml_prefix
     |
     +-- close YAML configuration
@@ -1735,7 +1761,7 @@ Allocation infrastructure:
   Debug tracking layer (dbg_malloc.h/cpp) -- wraps every allocation with source
   location (function name, line number) tracking, enabled via the DEBUG or
   DEBUG_OTEL compile flag.  This allows leak detection at runtime without
-  external tools.
+  external tools.  Section 19 describes the tracker internals in detail.
 
   External allocator interface (otelc_ext_init) -- allows callers to register
   custom malloc/free function pointers.  The OTEL_EXT_MALLOC and
@@ -1835,7 +1861,10 @@ otelc_sprintf() ownership transfer:
 
   otelc_sprintf() (used by the OTEL_*_ERROR macros to set the err member) frees
   the old *ret string before assigning the new one from vasprintf().  If
-  vasprintf() fails, *ret is freed and left NULL.
+  vasprintf() fails, *ret is freed and left NULL.  The replacement of *ret is
+  serialized by an internal mutex, so concurrent error paths that signal on
+  the same target (for example meter->err) cannot double-free the previously
+  stored string.
 
 
 ------------------------------------------------------------------------
@@ -2155,3 +2184,99 @@ Interaction with shutdown and destroy:
   force_flush; callers who want the underlying SDK provider to release its
   resources should follow with shutdown or destroy as appropriate for the
   affected signal.
+
+
+------------------------------------------------------------------------
+19. Debug Memory Tracker
+------------------------------------------------------------------------
+
+Debug builds route the entire OTELC_MALLOC macro family through the otelc_dbg_*
+wrappers in src/dbg_malloc.cpp, which prepend a metadata header to each block
+and record each allocation in a caller-supplied table.  The tracker detects
+leaks, double frees and stray frees at runtime without external tools, and it
+degrades gracefully whenever it cannot track a block.  The OTELC_DBG_MEM macro
+gates the whole facility; it is derived from DEBUG or DEBUG_OTEL in the public
+debug.h header, and the debug library's pkg-config file supplies -DOTELC_DBG_MEM
+to consumers.
+
+Block layout:
+
+  Every allocation reserves room for a header (struct otelc_dbg_mem_metadata)
+  in front of the payload: DBG_MEM_SIZE() adds the header size to the request,
+  DBG_MEM_RETURN() hands the caller the payload address behind the header, and
+  DBG_MEM_DATA() maps a payload pointer back to the header.  The header stores
+  a pointer to the allocation record and the magic value (DBG_MEM_MAGIC) that
+  marks blocks coming from these wrappers.
+
+Tracker state and lifecycle:
+
+  otelc_dbg_mem_init() receives a caller-owned otelc_dbg_mem state structure
+  together with an array of allocation records, initializes a recursive pthread
+  mutex and then publishes the tracker through a file-scope pointer.  The test
+  harness in test/test.c initializes the tracker early in main() and prints
+  the final report with OTELC_MEMINFO() at the end of the run; any chunk still
+  listed there is a leak.  otelc_dbg_mem_info() prints the operation counters,
+  every live chunk with the location that allocated it, and the process-wide
+  mallinfo()/mallinfo2() statistics when available.
+
+  otelc_dbg_mem_disable() clears the tracker pointer under the mutex, so an
+  operation that races on another thread either completes first or detects the
+  disabling after it acquires the mutex and backs out.  The mutex itself is
+  never destroyed on purpose, since a thread may still be blocked on it, and
+  destroying a mutex in that state is undefined behavior.  The caller-owned
+  state structure must therefore outlive all tracked activity.
+
+Record management:
+
+  Records live in the fixed-size caller-supplied array.  A new allocation first
+  takes a never-used slot (high-water cursor); once every slot has been touched,
+  a scan starting at the reuse cursor claims the first record no longer in use.
+  When no slot is free the block stays allocated but untracked, and an overflow
+  diagnostic is emitted after the mutex has been released.
+
+Untracked and foreign blocks:
+
+  A block allocated before otelc_dbg_mem_init(), after the tracker was disabled,
+  or while the record table was full carries self-referencing metadata: the
+  header is valid but points at itself instead of a record.  otelc_dbg_free()
+  and otelc_dbg_realloc() recognize this state and release or reallocate the
+  real base directly, re-initializing the header after each realloc so the stale
+  self-pointer is never followed.
+
+  A pointer whose header carries no valid magic value was not produced by these
+  wrappers at all; it is freed or reallocated transparently through the plain
+  C library calls.  The magic probe reads below the payload, which is formally
+  undefined for these foreign blocks; in practice the read lands inside the
+  allocator's chunk header, and the accepted risk is documented at the probe
+  in src/dbg_malloc.cpp.
+
+Double-free defense:
+
+  A release is rejected when the record shows that the block is not currently
+  allocated or does not match the pointer, which indicates a double or stray
+  free.  The memory is then deliberately left untouched after the diagnostic,
+  accepting a leak rather than risking heap corruption; records whose pointer
+  matches the rejected block are listed as possible previous uses.
+
+Error string tracking:
+
+  otelc_sprintf() obtains its result from vasprintf(), which allocates with
+  plain malloc().  In a debug build OTELC_DBG_MEM_TRACKING() duplicates that
+  result through otelc_dbg_memdup() and frees the original, so error strings
+  participate in leak tracking like any other tracked block; errno is preserved
+  across the exchange.
+
+Coverage boundary:
+
+  Only allocations made through the OTELC_* macros are tracked.  The external
+  allocator hooks default to the tracked functions, so span and span context
+  structures stay covered until a caller registers its own malloc/free pair
+  through otelc_ext_init(), which bypasses the tracker.  The C++ objects are
+  not tracked at all: the impl structures and the handle objects are allocated
+  with the nothrow helpers and released with delete, the wrapper-created SDK
+  objects are released through their smart pointers, and the SDK performs its
+  internal allocations itself.  The handle objects are instead accounted by
+  the handle-map counters; otelc_statistics_check() verifies the live map size
+  together with the id, alloc_fail_cnt, erase_cnt and destroy_cnt counters in
+  the test suite, while peak_size is printed by otelc_statistics() and the debug
+  handle-map dumps but never verified.
