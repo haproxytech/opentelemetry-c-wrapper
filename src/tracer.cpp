@@ -1092,7 +1092,13 @@ static int otel_tracer_start(struct otelc_tracer *tracer)
  *
  * DESCRIPTION
  *   Stops the tracer and releases all resources and memory associated with the
- *   tracer instance.
+ *   tracer instance.  As the public destroy operation documents, the call must
+ *   not overlap other operations on the same tracer: dropping the SDK handle
+ *   stops only the callers that arrive after the drop, it does not synchronize
+ *   with a snapshot already in flight.  The spans created by this tracer must
+ *   already have been ended; a span left over while other tracers keep the
+ *   handle maps alive stays usable at the SDK level, but its error reporting
+ *   and its inject operation still reach into the freed tracer structure.
  *
  * RETURN VALUE
  *   This function does not return a value.

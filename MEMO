@@ -1029,8 +1029,11 @@ Per-instance state:
   and for the tracer the propagator) in a heap-allocated impl structure
   referenced from the public struct.  Operations snapshot the SDK handle from
   the impl and bail out when it is empty; the destroy function drops that
-  handle first, before provider teardown, so in-flight callers cannot reach a
-  half-destroyed provider.  No process-wide SDK singletons are registered.
+  handle first, before provider teardown.  The drop stops only callers that
+  arrive after it and does not synchronize with a snapshot already in flight,
+  so destroy must not run concurrently with operations on the same instance,
+  as the public destroy operation documents.  No process-wide SDK singletons
+  are registered.
 
 Library constructor/destructor (debug builds only):
 
@@ -1101,9 +1104,10 @@ Tracer per-instance state:
     shared_ptr<TextMapPropagator>  propagator;
 
   Operations snapshot the tracer member and bail out when it is empty.
-  During shutdown the member is dropped first, gating out concurrent callers
-  before the provider is torn down.  The logfile comes first so that it is
-  destroyed last, after the provider members that may still flush into it.
+  During shutdown the member is dropped first, stopping the callers that arrive
+  after the drop; calls already in flight must be drained before destroy runs.
+  The logfile is declared first so that it is destroyed last, after the provider
+  members that may still flush into it.
 
 Tracer startup (otel_tracer_start):
 
@@ -1277,8 +1281,8 @@ Tracer shutdown (otel_tracer_destroy):
 
   Shutdown is ordered to prevent use-after-free:
 
-    1. Drop the SDK Tracer handle from the impl to gate out concurrent
-       callers.
+    1. Drop the SDK Tracer handle from the impl to stop the callers that
+       arrive afterwards.
     2. When the last tracer in scope is destroyed: clear span context
        handles, iterate all remaining spans in the handle map, calling
        handle->span->End(end_options) on each, and destroy the span maps
@@ -1286,6 +1290,11 @@ Tracer shutdown (otel_tracer_destroy):
     3. Force-flush the per-instance provider.
     4. Release the per-instance propagator and provider, delete the impl.
     5. Free err, scope_name, and yaml_prefix strings.
+
+  The spans created by a tracer must already be ended or destroyed when that
+  tracer is destroyed, even when other tracers keep the handle maps alive: a
+  leftover span remains usable at the SDK level, but its error reporting and
+  its inject operation still reach into the freed tracer structure.
 
 
 ------------------------------------------------------------------------

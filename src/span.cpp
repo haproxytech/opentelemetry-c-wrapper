@@ -223,6 +223,11 @@ static int otel_span_inject_carrier(const struct otelc_span *span, W *carrier, c
 	/* Release the content a previous inject left in the writer's map. */
 	otelc_text_map_free(&(carrier->text_map));
 
+	/***
+	 * The map is pre-sized even when the writer supplies a set callback:
+	 * the known callbacks store their entries into this same text map, so
+	 * the exact-size allocation spares them the incremental growth steps.
+	 */
 	if (OTEL_NULL(OTELC_TEXT_MAP_NEW(&(carrier->text_map), otel_carrier.data().size())))
 		OTEL_SPAN_RETURN_INT("Unable to allocate memory for %s carrier", carrier_name);
 
@@ -835,8 +840,10 @@ static struct otelc_text_map *otel_span_get_baggage_var(const struct otelc_span 
  */
 static int otel_span_set_one_attribute(otel_nostd::shared_ptr<otel_trace::Span> span, const char *key, const struct otelc_value *value)
 {
+	OTELC_FUNC("<span>, \"%s\", %p", OTELC_STR_ARG(key), value);
+
 	if (OTEL_NULL(key) || OTEL_NULL(value))
-		return OTELC_RET_ERROR;
+		OTELC_RETURN_INT(OTELC_RET_ERROR);
 
 	OTELC_DBG(DEBUG, "'%s' -> %s", key, otelc_value_dump(value, ""));
 
@@ -845,9 +852,9 @@ static int otel_span_set_one_attribute(otel_nostd::shared_ptr<otel_trace::Span> 
 	else if (OTELC_IN_RANGE(value->u_type, OTELC_VALUE_BOOL, OTELC_VALUE_DATA))
 		otelc_value_visit(value, [&](auto val) { span->SetAttribute(key, val); });
 	else
-		return OTELC_RET_ERROR;
+		OTELC_RETURN_INT(OTELC_RET_ERROR);
 
-	return OTELC_RET_OK;
+	OTELC_RETURN_INT(OTELC_RET_OK);
 }
 
 
