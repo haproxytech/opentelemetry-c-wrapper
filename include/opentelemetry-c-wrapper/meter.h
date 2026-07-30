@@ -78,6 +78,14 @@ typedef void (*otelc_metric_observable_instrument_cb_t)(struct otelc_metric_obse
  * repurposes the same storage on every observation cycle.  The 'data' member
  * is an opaque user pointer registered alongside the callback and is passed
  * back unchanged.
+ *
+ * The callback runs while the SDK holds the owning meter's callback-registry
+ * mutex.  It must therefore not call any operation of that meter: creation
+ * and callback registration hold the instrument map lock while acquiring the
+ * same registry mutex, so a callback that takes the map lock can deadlock with
+ * them.  A descriptor must also stay with the instruments of a single meter;
+ * collections of different meters run concurrently and would race on the shared
+ * 'value' slot.
  */
 struct otelc_metric_observable_cb {
 	otelc_metric_observable_instrument_cb_t  func;  /* Observation callback invoked at collection time. */

@@ -1402,6 +1402,17 @@ Observable callback mechanism:
   which maps each observable instrument type to the correct callback adapter.
   Synchronous instruments are no-ops in this dispatch.
 
+  The SDK serializes collection per meter: ObservableRegistry::Observe() holds
+  the registry mutex across the whole callback loop, so two periodic readers
+  never run the callbacks of one meter concurrently.  The wrapper's creation
+  and callback registration paths hold the instrument map lock while acquiring
+  that same registry mutex, fixing the lock order map lock -> registry mutex;
+  a user callback that called back into the meter API would take the locks in
+  the opposite order and can deadlock with a concurrent create_instrument.  The
+  public descriptor documentation therefore forbids calling meter operations
+  from the callback and ties a descriptor to a single meter; collections of
+  different meters run concurrently and would race on the shared value slot.
+
 Instrument creation (otel_meter_create_instrument):
 
   Creates and registers a metric instrument:
