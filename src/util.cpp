@@ -1389,8 +1389,8 @@ void otelc_text_map_destroy(struct otelc_text_map **text_map)
  *   the owned buffer is freed before overwriting; for OTELC_VALUE_STRING the
  *   pointer is simply overwritten.
  *
- *   If the string cannot be fully parsed (trailing characters remain) or a
- *   conversion error occurs, the value entry is left unchanged.
+ *   If the string is empty or cannot be parsed completely (trailing characters
+ *   remain), or a conversion error occurs, the value entry is left unchanged.
  *
  * RETURN VALUE
  *   Returns the target type cast to int on success, or OTELC_RET_ERROR
@@ -1452,7 +1452,7 @@ int otelc_value_strtonum(struct otelc_value *value, otelc_value_type_t type)
 		buffer.u.value_double = strtod(str, &endptr);
 	}
 
-	if ((errno != 0) || OTELC_STR_IS_VALID(endptr))
+	if ((endptr == str) || (errno != 0) || OTELC_STR_IS_VALID(endptr))
 		OTELC_RETURN_INT(retval);
 
 	retval = type;
@@ -1487,7 +1487,7 @@ int otelc_value_strtonum(struct otelc_value *value, otelc_value_type_t type)
  *
  * RETURN VALUE
  *   Returns a pointer to the newly allocated array of n value entries on
- *   success, or nullptr if the allocation fails.
+ *   success, or nullptr if n is 0 or the allocation fails.
  */
 struct otelc_value *otelc_value_new(size_t n)
 {
@@ -1629,7 +1629,7 @@ void otelc_value_destroy(struct otelc_value **value, size_t n)
  *
  * RETURN VALUE
  *   Returns a pointer to the newly allocated array of n key-value entries on
- *   success, or nullptr if the allocation fails.
+ *   success, or nullptr if n is 0 or the allocation fails.
  */
 struct otelc_kv *otelc_kv_new(size_t n)
 {
