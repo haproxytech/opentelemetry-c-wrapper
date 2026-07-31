@@ -26,7 +26,10 @@ static std::mutex otel_logger_start_mutex;
  * to otel_logs_logger * to invoke the method.  The subclass carries no data
  * members, only the using-declaration that promotes the protected method to the
  * public section, so the cast is layout-compatible and unlocks access without
- * altering the object.
+ * altering the object.  The downcast is formally outside the standard (the
+ * object is never an otel_logs_logger); it is accepted because the subclass
+ * adds no members or virtual functions and the promoted member is a non-virtual
+ * method of the base.
  */
 struct otel_logs_logger : public otel_logs::Logger {
 	using otel_logs::Logger::SetMinimumSeverity;
@@ -342,8 +345,10 @@ static int otel_logger_record_create(struct otelc_logger *logger, otel_logs::Log
  *
  * RETURN VALUE
  *   Returns the number of characters written to the buffer when the log was
- *   emitted, 0 if the severity level is not enabled, or a negative value on
- *   error (OTELC_RET_ERROR).
+ *   emitted, 0 if the severity level is not enabled or the wrapper-level gate
+ *   is cleared (set_enabled), or a negative value on error (OTELC_RET_ERROR).
+ *   An emitted record whose formatted body is empty also returns 0, which is
+ *   indistinguishable from the disabled cases.
  */
 static int otel_logger_log_v(struct otelc_logger *logger, otelc_log_severity_t severity, int64_t event_id, const char *event_name, const uint8_t *span_id, size_t span_id_size, const uint8_t *trace_id, size_t trace_id_size, uint8_t trace_flags, const struct timespec *ts, const struct timespec *ts_obs, const struct otelc_kv *attr, size_t attr_len, const char *format, va_list ap)
 {
@@ -419,8 +424,10 @@ static int otel_logger_log_v(struct otelc_logger *logger, otelc_log_severity_t s
  *
  * RETURN VALUE
  *   Returns the number of characters written to the buffer when the log was
- *   emitted, 0 if the severity level is not enabled, or a negative value on
- *   error (OTELC_RET_ERROR).
+ *   emitted, 0 if the severity level is not enabled or the wrapper-level gate
+ *   is cleared (set_enabled), or a negative value on error (OTELC_RET_ERROR).
+ *   An emitted record whose formatted body is empty also returns 0, which is
+ *   indistinguishable from the disabled cases.
  */
 static int otel_logger_log(struct otelc_logger *logger, otelc_log_severity_t severity, int64_t event_id, const char *event_name, const uint8_t *span_id, size_t span_id_size, const uint8_t *trace_id, size_t trace_id_size, uint8_t trace_flags, const struct timespec *ts, const struct timespec *ts_obs, const struct otelc_kv *attr, size_t attr_len, const char *format, ...)
 {
@@ -505,8 +512,10 @@ static void otel_logger_span_extract(const struct otelc_span *span, uint8_t *spa
  *
  * RETURN VALUE
  *   Returns the number of characters written to the buffer when the log was
- *   emitted, 0 if the severity level is not enabled, or a negative value on
- *   error (OTELC_RET_ERROR).
+ *   emitted, 0 if the severity level is not enabled or the wrapper-level gate
+ *   is cleared (set_enabled), or a negative value on error (OTELC_RET_ERROR).
+ *   An emitted record whose formatted body is empty also returns 0, which is
+ *   indistinguishable from the disabled cases.
  */
 static int otel_logger_log_span(struct otelc_logger *logger, otelc_log_severity_t severity, int64_t event_id, const char *event_name, const struct otelc_span *span, const struct timespec *ts, const struct timespec *ts_obs, const struct otelc_kv *attr, size_t attr_len, const char *format, ...)
 {

@@ -171,9 +171,12 @@ struct otelc_logger_ops {
 	 *   and name.
 	 *
 	 * RETURN VALUE
-	 *   Returns the number of characters written to the buffer when the log
-	 *   was emitted, 0 if the severity level is not enabled, or a negative
-	 *   value on error (OTELC_RET_ERROR).
+	 *   Returns the number of characters written to the buffer when the
+	 *   log was emitted, 0 if the severity level is not enabled or the
+	 *   wrapper-level gate is cleared (set_enabled), or a negative value on
+	 *   error (OTELC_RET_ERROR).  An emitted record whose formatted body is
+	 *   empty also returns 0, which is indistinguishable from the disabled
+	 *   cases.
 	 */
 	int (*log)(struct otelc_logger *logger, otelc_log_severity_t severity, int64_t event_id, const char *event_name, const uint8_t *span_id, size_t span_id_size, const uint8_t *trace_id, size_t trace_id_size, uint8_t trace_flags, const struct timespec *ts, const struct timespec *ts_obs, const struct otelc_kv *attr, size_t attr_len, const char *format, ...)
 		OTELC_NONNULL(1, 14);
@@ -208,9 +211,12 @@ struct otelc_logger_ops {
 	 *   name.
 	 *
 	 * RETURN VALUE
-	 *   Returns the number of characters written to the buffer when the log
-	 *   was emitted, 0 if the severity level is not enabled, or a negative
-	 *   value on error (OTELC_RET_ERROR).
+	 *   Returns the number of characters written to the buffer when the
+	 *   log was emitted, 0 if the severity level is not enabled or the
+	 *   wrapper-level gate is cleared (set_enabled), or a negative value on
+	 *   error (OTELC_RET_ERROR).  An emitted record whose formatted body is
+	 *   empty also returns 0, which is indistinguishable from the disabled
+	 *   cases.
 	 */
 	int (*log_span)(struct otelc_logger *logger, otelc_log_severity_t severity, int64_t event_id, const char *event_name, const struct otelc_span *span, const struct timespec *ts, const struct timespec *ts_obs, const struct otelc_kv *attr, size_t attr_len, const char *format, ...)
 		OTELC_NONNULL(1, 10);

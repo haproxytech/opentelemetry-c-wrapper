@@ -1504,8 +1504,8 @@ Meter shutdown (otel_meter_destroy):
 
   Shutdown is ordered to prevent use-after-free:
 
-    1. Drop the SDK Meter handle from the impl to gate out concurrent
-       callers.
+    1. Drop the SDK Meter handle from the impl to stop the callers that
+       arrive afterwards.
     2. Force-flush the per-instance provider.
     3. Clear the view and instrument handle maps (deleting all handles).
     4. Release the impl members and delete the impl.
@@ -1632,8 +1632,11 @@ Logger startup (otel_logger_start):
         using otel_logs::Logger::SetMinimumSeverity;
     };
 
-  A static_cast to otel_logs_logger* exposes the method without violating the
-  class hierarchy.
+  A static_cast to otel_logs_logger* exposes the method.  The downcast falls
+  formally outside the standard, accepted because the subclass adds no members
+  or virtual functions and the promoted member is a non-virtual method of the
+  base; the setter performs an atomic byte write paired with the atomic read
+  in Enabled(), so a runtime severity change needs no wrapper locking.
 
 Logger enabled check (otel_logger_enabled):
 
@@ -1679,7 +1682,8 @@ Log record creation and emission:
    12. log_record->SetBody(ptr).
    13. logger_ptr->EmitLogRecord(std::move(log_record)).
    14. free(ptr).
-   15. Return character count.
+   15. Return the character count; an emitted empty body returns 0, which
+       is indistinguishable from a disabled severity or a cleared gate.
 
   The body variants (log_body, log_body_span) skip otel_logger_log_v() and
   vasprintf entirely: they call otel_logger_record_create() and set a typed
@@ -1734,8 +1738,8 @@ Logger shutdown (otel_logger_destroy):
 
   Shutdown is ordered to prevent use-after-free:
 
-    1. Drop the SDK Logger handle from the impl to gate out concurrent
-       callers.
+    1. Drop the SDK Logger handle from the impl to stop the callers that
+       arrive afterwards.
     2. Force-flush the per-instance provider.
     3. Release the impl members and delete the impl.
     4. Free err, scope_name, and yaml_prefix strings.
