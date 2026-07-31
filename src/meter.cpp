@@ -266,12 +266,7 @@ static int64_t otel_meter_add_view(struct otelc_meter *meter, const char *view_n
 
 	rdguard_view.unlock();
 
-	/***
-	 * Serialize creation on create_mutex: of a whole herd racing for the
-	 * same view name only the winner performs the registration, and every
-	 * other thread leaves through the shared re-probe below without
-	 * touching the exclusive map lock at all.
-	 */
+	/* Only the creation winner reaches the exclusive map lock below. */
 	OTEL_LOCK_METER_CREATE();
 
 	OTEL_LOCK_METER_SHARED(view, rdguard_view_recheck);
@@ -677,13 +672,7 @@ static int64_t otel_meter_create_instrument(struct otelc_meter *meter, const cha
 	if (instrument_key.empty())
 		OTEL_METER_RETURN_INT(OTEL_ERROR_MSG_ENOMEM("instrument key"));
 
-	/***
-	 * Returns the instrument ID if the instrument already exists.  The
-	 * lookup is based on both the instrument name and type, with the name
-	 * compared case-insensitively.  The probe runs under the shared lock so
-	 * concurrent callers looking up an existing instrument do not serialize
-	 * on the map mutex.
-	 */
+	/* Probe under the shared lock so lookups do not serialize. */
 	OTEL_LOCK_METER_SHARED(instrument, rdguard_instrument);
 
 	if ((instrument_id = otel_nolock_meter_find_instrument(meter, instrument_key)) != OTELC_RET_ERROR)
@@ -691,12 +680,7 @@ static int64_t otel_meter_create_instrument(struct otelc_meter *meter, const cha
 
 	rdguard_instrument.unlock();
 
-	/***
-	 * Serialize creation on create_mutex: of a whole herd racing for the
-	 * same name only the winner performs the creation, and every other
-	 * thread leaves through the shared re-probe below without touching
-	 * the exclusive map lock at all.
-	 */
+	/* Only the creation winner reaches the exclusive map lock below. */
 	OTEL_LOCK_METER_CREATE();
 
 	OTEL_LOCK_METER_SHARED(instrument, rdguard_instrument_recheck);
@@ -1323,18 +1307,11 @@ static void otel_meter_destroy(struct otelc_meter **meter)
 
 	auto *impl = OTEL_IMPL(meter, *meter);
 
-	/***
-	 * Drop the SDK Meter handle before provider teardown to prevent
-	 * concurrent callers from using a meter that is being destroyed.
-	 */
+	/* Drop the SDK Meter handle before provider teardown. */
 	if (!OTEL_NULL(impl))
 		impl->meter = {};
 
-	/***
-	 * Flush the per-instance provider and release it together with the
-	 * instrument and view handle maps, all of which live inside the impl
-	 * struct.  No global SDK provider is touched.
-	 */
+	/* The maps live inside the impl; no global SDK provider is touched. */
 	if (!OTEL_NULL(impl)) {
 		const auto provider_sdk = OTEL_METER_PROVIDER(impl->provider);
 		if (!OTEL_NULL(provider_sdk))

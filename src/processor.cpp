@@ -706,9 +706,6 @@ int otel_tracer_processor_create(struct otelc_tracer *tracer, std::unique_ptr<ot
 		if (max_queue_size < max_export_batch_size)
 			OTEL_TRACER_RETURN_INT(OTEL_ERROR_MSG_QUEUE_BATCH_SIZE, max_queue_size, max_export_batch_size);
 
-		/***
-		 * Configuration parameters are set here.
-		 */
 		options.max_queue_size        = max_queue_size;
 		options.schedule_delay_millis = std::chrono::milliseconds(schedule_delay);
 		options.export_timeout        = std::chrono::milliseconds(export_timeout);
@@ -824,9 +821,6 @@ int otel_logger_processor_create(struct otelc_logger *logger, std::unique_ptr<ot
 		if (max_queue_size < max_export_batch_size)
 			OTEL_LOGGER_RETURN_INT(OTEL_ERROR_MSG_QUEUE_BATCH_SIZE, max_queue_size, max_export_batch_size);
 
-		/***
-		 * Configuration parameters are set here.
-		 */
 		options.max_queue_size        = max_queue_size;
 		options.schedule_delay_millis = std::chrono::milliseconds(schedule_delay);
 		options.export_timeout_millis = std::chrono::milliseconds(export_timeout);

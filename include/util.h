@@ -55,8 +55,7 @@ extern std::atomic<size_t> otel_handle_map_shards;
 
 /***
  * Encapsulates the try/emplace/catch/peak-size pattern for inserting a handle
- * into a sharded map.  Uses 'bool emplace_ok' to track whether the emplace
- * succeeded, avoiding the verbose std::pair<iterator,bool>.
+ * into a sharded map.
  */
 #define OTEL_HANDLE_EMPLACE(map_name, idx, handle_var, cleanup, err_macro, dup_msg, exc_msg) \
 	do {                                                                                 \

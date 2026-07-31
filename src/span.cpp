@@ -202,9 +202,7 @@ static int otel_span_inject_carrier(const struct otelc_span *span, W *carrier, c
 	propagator->Inject(otel_carrier, *(handle->context));
 
 #ifndef OTELC_USE_COMPOSITE_PROPAGATOR
-	/***
-	 * Baggage content is also added to the carrier.
-	 */
+	/* Without a composite propagator, baggage is injected separately. */
 	const auto baggage = otel_baggage::GetBaggage(*(handle->context));
 	if (!OTEL_NULL(baggage)) {
 		OTEL_DBG_BAGGAGE(baggage);
@@ -351,9 +349,6 @@ static void otel_span_end_with_options(struct otelc_span **span, const struct ti
 	if (!OTEL_NULL(handle)) {
 		otel_trace::EndSpanOptions end_options{};
 
-		/***
-		 * end_steady_time - sets the end time of a Span
-		 */
 		if (!OTEL_NULL(ts_steady))
 			end_options.end_steady_time = otel_steady_timestamp(timespec_to_duration(ts_steady));
 
@@ -2257,11 +2252,7 @@ struct otelc_span_context *otelc_span_context_create(const uint8_t *trace_id, si
 	OTELC_FUNC("%p, %zu, %p, %zu, 0x%02x, %d, \"%s\", %p:%p", trace_id, trace_id_size, span_id, span_id_size, trace_flags, is_remote, OTELC_STR_ARG(trace_state_header), OTELC_DPTR_ARGS(err));
 
 #ifndef OTELC_USE_STATIC_HANDLE
-	/***
-	 * The span context handle map is created with the first tracer and
-	 * destroyed with the last one (see otel_tracer_handle_init()); a
-	 * call made outside that window would dereference the missing map.
-	 */
+	/* Outside the map's lifetime the lookup below would dereference null. */
 	if (OTEL_NULL(otel_span_context))
 		OTEL_ERR_RETURN_PTR("Unable to create span context: no active tracer");
 #endif

@@ -855,10 +855,7 @@ void *otelc_dbg_memdup(const char *func, int line, const void *s, size_t size)
 
 	OTELC_FUNC_EX(MEM, "\"%s\", %d, %p, %zu", OTELC_STR_ARG(func), line, s, size);
 
-	/***
-	 * A null source is rejected up front; the size + 1 payload plus the
-	 * metadata header is guarded against overflow.
-	 */
+	/* The payload is size + 1, hence DBG_MEM_SIZE(1) in the overflow guard. */
 	if (OTEL_NULL(s) || (size > (SIZE_MAX - DBG_MEM_SIZE(1))))
 		OTELC_RETURN_EX(nullptr, void *, "%p");
 

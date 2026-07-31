@@ -156,13 +156,7 @@ static int otel_tracer_handle_init(void)
 	OTELC_FUNC("");
 
 #ifdef OTELC_USE_THREAD_SHARED_HANDLE
-	/***
-	 * In the shared-handle build the maps are process-wide, so two threads
-	 * racing on the first tracer create would both pass the null check
-	 * below and both allocate, leaking one map.  Serialize with a
-	 * function-local mutex.  In the thread-local build the maps are
-	 * per-thread and the lock is unnecessary.
-	 */
+	/* Without this, two racing first creates would both allocate a map. */
 	static std::mutex                 init_mutex;
 	const std::lock_guard<std::mutex> guard(init_mutex);
 #endif
@@ -407,10 +401,7 @@ static struct otelc_span *otel_tracer_start_span_with_options(struct otelc_trace
 		otel_nolock_span_destroy(&retptr);
 	} else {
 #ifdef OTELC_USE_RUNTIME_CONTEXT
-		/***
-		 * Storing the span scope in a map to keep it alive while the
-		 * span is active.
-		 */
+		/* The handle owns the scope, keeping the span active. */
 		auto scope = otel::make_shared_nothrow<otel_trace::Scope>(otel_trace::Scope(span_maybe));
 		if (OTEL_NULL(scope)) {
 			span_maybe->End(otel_trace::EndSpanOptions{});
@@ -1117,20 +1108,11 @@ static void otel_tracer_destroy(struct otelc_tracer **tracer)
 
 	auto *impl = OTEL_IMPL(tracer, *tracer);
 
-	/***
-	 * Drop the SDK Tracer handle before provider teardown to prevent
-	 * concurrent callers from using a tracer that is being destroyed.
-	 */
+	/* Drop the SDK Tracer handle before provider teardown. */
 	if (!OTEL_NULL(impl))
 		impl->tracer = {};
 
-	/***
-	 * Decrement the tracer count.  The span and span-context handle maps
-	 * are torn down only when the last tracer in the same scope as the
-	 * count is destroyed (process-wide in the shared-handle build, this
-	 * thread in the thread-local build), so destroying one tracer never
-	 * invalidates spans owned by another tracer that is still in use.
-	 */
+	/* The maps are torn down only by the last tracer in the count's scope. */
 	const int remaining = otel_tracer_count.fetch_sub(1, std::memory_order_acq_rel) - 1;
 
 	if (remaining == 0) {
@@ -1196,10 +1178,7 @@ static void otel_tracer_destroy(struct otelc_tracer **tracer)
 #endif /* OTELC_USE_STATIC_HANDLE */
 	}
 
-	/***
-	 * Flush the per-instance provider and release it.  No global SDK
-	 * provider is touched.
-	 */
+	/* No global SDK provider is touched. */
 	if (!OTEL_NULL(impl)) {
 		const auto provider_sdk = OTEL_TRACER_PROVIDER(impl->provider);
 		if (!OTEL_NULL(provider_sdk))

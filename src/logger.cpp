@@ -882,16 +882,10 @@ static void otel_logger_destroy(struct otelc_logger **logger)
 	auto *impl = OTEL_IMPL(logger, *logger);
 
 	if (!OTEL_NULL(impl)) {
-		/***
-		 * Drop the SDK Logger handle before provider teardown to prevent
-		 * concurrent callers from using a logger that is being destroyed.
-		 */
+		/* Drop the SDK Logger handle before provider teardown. */
 		impl->logger = {};
 
-		/***
-		 * Flush the per-instance provider and release it.  No global SDK
-		 * provider is touched.
-		 */
+		/* No global SDK provider is touched. */
 		const auto provider_sdk = OTEL_LOGGER_PROVIDER(impl->provider);
 		if (!OTEL_NULL(provider_sdk))
 			(void)provider_sdk->ForceFlush(std::chrono::microseconds{5000000});

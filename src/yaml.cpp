@@ -527,12 +527,7 @@ int yaml_resolve_prefix(OTEL_YAML_DOC *fyd, char **err, const char *base, const 
 		OTELC_SFREE_CLEAR(*prefix);
 	}
 
-	/***
-	 * Neither context matched.  Before giving up, probe the base node
-	 * itself for the legacy flat layout that predates the naming level,
-	 * in which the settings live directly under the base path.  The
-	 * mandatory scope_name key is used as the layout marker.
-	 */
+	/* Neither context matched: probe the base for the legacy flat layout. */
 	len = snprintf(NULL, 0, "%s/%s", base, OTEL_YAML_SCOPE_NAME);
 	if (len > 0) {
 		*prefix = OTEL_CAST_TYPEOF(*prefix, OTELC_MALLOC(__func__, __LINE__, len + 1));
@@ -602,11 +597,7 @@ char *yaml_read(const char *file, char **err)
 #ifdef HAVE_LIBFYAML_H
 	auto retptr = fy_emit_document_to_string(fyd, OTEL_CAST_STATIC(enum fy_emitter_cfg_flags, 0));
 
-	/***
-	 * The returned string is released by the caller with OTELC_SFREE();
-	 * re-dup the libfyaml malloc'd string into the tracked debug channel
-	 * so a debug build does not release a foreign pointer.
-	 */
+	/* Re-dup the libfyaml string so a debug build frees a tracked block. */
 	OTELC_DBG_MEM_TRACKING(retptr, strlen(retptr));
 
 #else

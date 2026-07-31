@@ -235,10 +235,6 @@ void otelc_ext_init(otelc_ext_malloc_t func_malloc, otelc_ext_free_t func_free, 
 	/***
 	 * The functions otelc_ext_malloc/free() are used only for memory
 	 * operations on the otelc_span and otelc_span_context structures.
-	 *
-	 * The allocation callbacks are taken over only as a complete pair; a
-	 * custom allocator combined with the default deallocator (or the
-	 * reverse) would release memory through a mismatched function.
 	 */
 	if (OTEL_NULL(func_malloc) || OTEL_NULL(func_free)) {
 		if (OTEL_NULL(func_malloc) != OTEL_NULL(func_free))
@@ -419,13 +415,7 @@ void otelc_log_set_handler(otelc_log_handler_cb_t handler, void *ctx, bool forwa
 	if (OTEL_NULL(handler)) {
 		std::shared_ptr<otel_sdk_internal_log::LogHandler> dfl = otel::make_shared_nothrow<otel_sdk_internal_log::DefaultLogHandler>();
 
-		/***
-		 * The handler is installed even when the allocation of the
-		 * default handler fails: the SDK dispatch macro tolerates an
-		 * empty handler, and installing it releases the previously
-		 * registered one, so no reference to a caller-supplied
-		 * callback can survive this call.
-		 */
+		/* The SDK dispatch macro tolerates an empty handler. */
 		otel_sdk_internal_log::GlobalLogHandler::SetLogHandler(dfl);
 	} else {
 		std::shared_ptr<otel_sdk_internal_log::LogHandler> custom = otel::make_shared_nothrow<otel_log_handler>(handler, ctx, forward_attr);
@@ -645,12 +635,7 @@ int otelc_sprintf(char **ret, const char *format, ...)
 	if (retval != -1)
 		OTELC_DBG_MEM_TRACKING(ptr, retval);
 
-	/***
-	 * The replacement of *ret is serialized because concurrent error paths
-	 * may signal an error on the same target (e.g. meter->err); without it
-	 * two racing calls would both free the previous string (double free)
-	 * and one of the two new strings would leak.
-	 */
+	/* Concurrent error paths may target the same *ret, e.g. meter->err. */
 	const std::lock_guard<std::mutex> guard(otelc_sprintf_mutex);
 
 	OTELC_SFREE_CLEAR(*ret);
@@ -1240,13 +1225,7 @@ int otelc_text_map_add(OTELC_DBG_IFDEF(OTELC_ARGS(const char *func, int line, ),
 	if (!OTEL_NULL(text_map->key[text_map->count]) && !OTEL_NULL(text_map->value[text_map->count])) {
 		retval = text_map->count++;
 	} else {
-		/***
-		 * On failure the text map takes no ownership: only the
-		 * duplicates created above are released, while a pointer
-		 * stored directly (no DUP flag) stays with the caller even
-		 * when its FREE flag is set, consistently with the realloc
-		 * failures above.
-		 */
+		/* As with the realloc failures above, no ownership is taken. */
 		if ((flags & OTELC_TEXT_MAP_DUP_KEY) != 0)
 			OTELC_SFREE(text_map->key[text_map->count]);
 		if ((flags & OTELC_TEXT_MAP_DUP_VALUE) != 0)
