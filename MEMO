@@ -1916,15 +1916,20 @@ Path traversal (rapidyaml backend):
 
   ryml_get_node_by_path() splits a slash-separated path and walks the tree node
   by node.  For map nodes it calls has_child(part); for sequence nodes it parses
-  the numeric index character by character and validates bounds against
-  num_children().  The edge cases of empty path (returns root), leading slash,
-  and empty path segments are handled explicitly.
+  the numeric index character by character and validates the bounds against
+  num_children().  A numeric segment that would overflow size_t is rejected
+  before the bounds check, so a wrapped index can never select a wrong node.
+  The edge cases of empty path (returns root), leading slash, and empty path
+  segments are handled explicitly.
 
 Error handling:
 
   ryml_throw_error() is registered as the rapidyaml error callback.  It throws
   std::runtime_error, which is caught by the OTEL_CATCH_SIGNAL_RETURN macro in
-  the YAML module's try blocks.
+  the YAML module's try blocks.  The routing was verified against rapidyaml
+  0.10: the temporary parser used by the freestanding parse_in_arena() reports
+  errors through the tree's callbacks, so the throwing handler installed on
+  the tree contains malformed input and a parse error cannot abort the process.
 
   yaml_open() wraps tree allocation and parsing in a single try block.  On
   success the unique_ptr is released to transfer ownership to the caller.
@@ -1942,7 +1947,11 @@ Value extraction:
   yaml_find() retrieves a scalar value by path.  The libfyaml path constructs
   a scanf format string with OTEL_YAML_BUFLEN ("4095") as the field width to
   prevent buffer overflow.  The rapidyaml path uses otelc_strlcpy() which is
-  length-safe.
+  length-safe.  Because that libfyaml format embeds the lookup path, and the
+  path in turn carries the context name via the resolved prefix, a '%' in the
+  name or fallback is rejected by yaml_resolve_prefix(); a conversion specifier
+  smuggled through the path would otherwise reach fy_document_scanf() with no
+  matching argument.
 
   yaml_get_node_v() is the variadic core that parses typed properties (STR,
   BOOL, INT64, DOUBLE, MAP) from a named YAML node.  Integer parsing uses

@@ -62,8 +62,15 @@ static ryml::NodeRef ryml_get_node_by_path(ryml::Tree *tree, const char *path)
 			if (part.len == 0)
 				return {};
 
-			for (i = 0; (i < part.len) && OTELC_IN_RANGE(part.str[i], '0', '9'); i++)
-				idx = idx * 10 + OTEL_CAST_STATIC(size_t, part.str[i] - '0');
+			for (i = 0; (i < part.len) && OTELC_IN_RANGE(part.str[i], '0', '9'); i++) {
+				const size_t digit = OTEL_CAST_STATIC(size_t, part.str[i] - '0');
+
+				/* An index that would wrap can never fit num_children(). */
+				if (idx > ((SIZE_MAX - digit) / 10))
+					return {};
+
+				idx = idx * 10 + digit;
+			}
 
 			if ((i < part.len) || (idx >= node.num_children()))
 				return {};
@@ -460,7 +467,10 @@ otelc_ctx_name_t yaml_probe_nstate(OTEL_YAML_DOC *fyd, const char *base, const c
  *   mandatory scope_name key; on success a copy of base is stored in *prefix.
  *   If no candidate is present, an error message is set and OTELC_RET_ERROR is
  *   returned; after a failed lookup *prefix is NULL.  Either name or fallback
- *   may be NULL or empty to skip that context.  The caller is responsible for
+ *   may be NULL or empty to skip that context.  A name or fallback containing
+ *   the '%' character is rejected: the resolved prefix is later embedded into
+ *   the scanf format of the libfyaml build of yaml_find(), where a conversion
+ *   specifier would trigger undefined behavior.  The caller is responsible for
  *   freeing *prefix.
  *
  * RETURN VALUE
@@ -482,6 +492,10 @@ int yaml_resolve_prefix(OTEL_YAML_DOC *fyd, char **err, const char *base, const 
 		OTEL_ERR_RETURN_INT("At least one of name or fallback must be specified");
 	else if (OTEL_NULL(prefix))
 		OTEL_ERR_RETURN_INT("Prefix pointer not specified");
+	else if (!OTEL_NULL(name) && (strchr(name, '%') != nullptr))
+		OTEL_ERR_RETURN_INT("'%s': invalid character in YAML context name", name);
+	else if (!OTEL_NULL(fallback) && (strchr(fallback, '%') != nullptr))
+		OTEL_ERR_RETURN_INT("'%s': invalid character in YAML context name", fallback);
 
 	/* Avoid probing the same path twice when name == fallback. */
 	if (!OTEL_NULL(name) && !OTEL_NULL(fallback) && (strcmp(name, fallback) == 0))

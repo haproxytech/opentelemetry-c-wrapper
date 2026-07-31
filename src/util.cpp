@@ -2003,7 +2003,9 @@ static int otelc_load_handle_map_shards(OTEL_YAML_DOC *fyd, char **err)
  *   the span and span context handle maps, later calls validate the key but
  *   do not change the live setting.  The resolution state of the context name
  *   against each signal section is recorded in the context and can be read
- *   back with otelc_ctx_nstate_get().
+ *   back with otelc_ctx_nstate_get().  A name containing the '%' character is
+ *   rejected when a signal instance resolves its configuration prefix against
+ *   the context.
  *   An error message stored in *err is allocated by the library and must be
  *   released with OTELC_SFREE().
  *
