@@ -98,6 +98,20 @@ template <typename T> otel_defer_struct<T>make_defer(T fn) { return { fn }; }
 #define OTEL_DEFER_FREE(t,v,f)        auto guard_##v = std::unique_ptr<t, void(*)(t *)>((v), [](t *ptr) { f(ptr); })
 #define OTEL_DEFER_DPTR_FREE(t,v,f)   auto guard_##v = std::unique_ptr<t *, void(*)(t **)>(&(v), [](t **ptr) { f(ptr); })
 
+/***
+ * Marks a function that performs a deliberate downcast to a type the object was
+ * never created as, so the undefined behavior sanitizer does not report its
+ * vptr check.  The suppression is kept on the smallest possible function.
+ */
+#ifdef __has_attribute
+#  if __has_attribute(no_sanitize)
+#    define OTEL_NO_SANITIZE_VPTR    __attribute__((no_sanitize("vptr")))
+#  endif
+#endif
+#ifndef OTEL_NO_SANITIZE_VPTR
+#  define OTEL_NO_SANITIZE_VPTR
+#endif
+
 #define OTEL_CAST_CONST(t,e)          const_cast<t>(e)
 #define OTEL_CAST_STATIC(t,e)         static_cast<t>(e)
 #define OTEL_CAST_STATIC_PTR(t,e)     std::static_pointer_cast<t>(e)

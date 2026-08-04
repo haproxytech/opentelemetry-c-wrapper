@@ -22,18 +22,44 @@ static std::mutex otel_logger_start_mutex;
 
 /***
  * Helper subclass that exposes the protected SetMinimumSeverity method on the
- * OpenTelemetry C++ Logger base class.  Call sites cast the SDK Logger pointer
- * to otel_logs_logger * to invoke the method.  The subclass carries no data
- * members, only the using-declaration that promotes the protected method to the
- * public section, so the cast is layout-compatible and unlocks access without
- * altering the object.  The downcast is formally outside the standard (the
- * object is never an otel_logs_logger); it is accepted because the subclass
- * adds no members or virtual functions and the promoted member is a non-virtual
- * method of the base.
+ * OpenTelemetry C++ Logger base class.  The subclass carries no data members,
+ * only the using-declaration that promotes the protected method to the public
+ * section, so the cast in otel_logger_severity_set() is layout-compatible and
+ * unlocks access without altering the object.  The downcast is formally outside
+ * the standard (the object is never an otel_logs_logger); it is accepted because
+ * the subclass adds no members or virtual functions and the promoted member is a
+ * non-virtual method of the base.
  */
 struct otel_logs_logger : public otel_logs::Logger {
 	using otel_logs::Logger::SetMinimumSeverity;
 };
+
+
+/***
+ * NAME
+ *   otel_logger_severity_set - sets the minimum severity on an SDK logger
+ *
+ * SYNOPSIS
+ *   static OTEL_NO_SANITIZE_VPTR void otel_logger_severity_set(otel_logs::Logger *logger_ptr, otel_logs::Severity severity)
+ *
+ * ARGUMENTS
+ *   logger_ptr - SDK logger the severity threshold is set on
+ *   severity   - new minimum severity level, as the SDK enumeration
+ *
+ * DESCRIPTION
+ *   Performs the downcast to otel_logs_logger that reaches the protected setter
+ *   of the base class, and writes the threshold through it.  The cast is the one
+ *   documented deviation from the standard, so it is confined to this function,
+ *   which carries OTEL_NO_SANITIZE_VPTR for the sanitizer builds; the function
+ *   must therefore stay free of any other work.
+ *
+ * RETURN VALUE
+ *   This function does not return a value.
+ */
+static OTEL_NO_SANITIZE_VPTR void otel_logger_severity_set(otel_logs::Logger *logger_ptr, otel_logs::Severity severity)
+{
+	OTEL_CAST_STATIC(otel_logs_logger *, logger_ptr)->SetMinimumSeverity(OTEL_CAST_STATIC(uint8_t, severity));
+}
 
 
 /***
@@ -208,7 +234,7 @@ static int otel_logger_set_min_severity(struct otelc_logger *logger, otelc_log_s
 	if (log_severity == otel_logs::Severity::kInvalid)
 		OTEL_LOGGER_RETURN_INT(OTEL_ERROR_MSG_INVALID_SEVERITY, severity);
 
-	OTEL_CAST_STATIC(otel_logs_logger *, logger_ptr)->SetMinimumSeverity(OTEL_CAST_STATIC(uint8_t, log_severity));
+	otel_logger_severity_set(logger_ptr, log_severity);
 
 	logger->min_severity = severity;
 
@@ -841,7 +867,7 @@ static int otel_logger_start(struct otelc_logger *logger)
 			OTEL_LOGGER_RETURN_INT("Unable to get logger from provider");
 
 		const auto severity = otel_logger_severity(logger, logger->min_severity);
-		OTEL_CAST_STATIC(otel_logs_logger *, logger_maybe.get())->SetMinimumSeverity(OTEL_CAST_STATIC(uint8_t, severity));
+		otel_logger_severity_set(logger_maybe.get(), severity);
 
 		impl->logger   = std::move(logger_maybe);
 		impl->provider = provider;

@@ -20,6 +20,22 @@
 
 /* 8 bytes - dBgM (dBgM ^ 0xffffffff) */
 #define DBG_MEM_MAGIC         UINT64_C(0x6442674d9bbd98b2)
+
+/***
+ * Marks the metadata probe, which reads below the payload of a possibly foreign
+ * block, as not to be instrumented by the address sanitizer; without it every
+ * probe of a foreign block is reported as a heap underflow, and the sanitizer
+ * offers no way to suppress a memory error at runtime.
+ */
+#ifdef __has_attribute
+#  if __has_attribute(no_sanitize)
+#    define DBG_MEM_NO_ASAN   __attribute__((no_sanitize("address")))
+#  endif
+#endif
+#ifndef DBG_MEM_NO_ASAN
+#  define DBG_MEM_NO_ASAN
+#endif
+
 #define DBG_MEM_SIZE(n)       ((n) + sizeof(struct otelc_dbg_mem_metadata))
 #define DBG_MEM_PTR(p)        DBG_MEM_SIZE(OTEL_CAST_TYPEOF(uint8_t *, (p)))
 #define DBG_MEM_DATA(p)       OTEL_CAST_TYPEOF(struct otelc_dbg_mem_metadata *, OTEL_CAST_TYPEOF(uint8_t *, (p)) - DBG_MEM_SIZE(0))

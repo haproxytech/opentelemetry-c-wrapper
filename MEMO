@@ -1643,7 +1643,10 @@ Logger startup (otel_logger_start):
   formally outside the standard, accepted because the subclass adds no members
   or virtual functions and the promoted member is a non-virtual method of the
   base; the setter performs an atomic byte write paired with the atomic read
-  in Enabled(), so a runtime severity change needs no wrapper locking.
+  in Enabled(), so a runtime severity change needs no wrapper locking.  The cast
+  is confined to otel_logger_severity_set(), which carries OTEL_NO_SANITIZE_VPTR
+  because the undefined behavior sanitizer reports the downcast on every call;
+  keeping it in one small function leaves the check active everywhere else.
 
 Logger enabled check (otel_logger_enabled):
 
@@ -2285,7 +2288,10 @@ Untracked and foreign blocks:
   C library calls.  The magic probe reads below the payload, which is formally
   undefined for these foreign blocks; in practice the read lands inside the
   allocator's chunk header, and the accepted risk is documented at the probe
-  in src/dbg_malloc.cpp.
+  in src/dbg_malloc.cpp.  The probe is confined to otelc_dbg_is_wrapper_block(),
+  which carries the DBG_MEM_NO_ASAN attribute because the address sanitizer
+  reports that read as a heap underflow and offers no runtime suppression for
+  a memory error.
 
 Double-free defense:
 

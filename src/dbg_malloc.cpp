@@ -57,6 +57,36 @@ static void otelc_dbg_set_metadata(void *ptr, struct otelc_dbg_mem_data *data)
 
 /***
  * NAME
+ *   otelc_dbg_is_wrapper_block - tells whether a block carries valid metadata
+ *
+ * SYNOPSIS
+ *   static DBG_MEM_NO_ASAN bool otelc_dbg_is_wrapper_block(const struct otelc_dbg_mem_metadata *metadata)
+ *
+ * ARGUMENTS
+ *   metadata - candidate metadata header located below a payload pointer
+ *
+ * DESCRIPTION
+ *   Reads the candidate header and reports whether it was produced by these
+ *   wrappers.  This is the probe that reaches below the payload of a block the
+ *   caller may have obtained elsewhere, so it is the one place that touches
+ *   memory outside any known allocation; it carries DBG_MEM_NO_ASAN for that
+ *   reason and must stay free of any other memory access.
+ *
+ * RETURN VALUE
+ *   Returns true if the header carries the magic value and a record pointer,
+ *   false otherwise.
+ */
+static DBG_MEM_NO_ASAN bool otelc_dbg_is_wrapper_block(const struct otelc_dbg_mem_metadata *metadata)
+{
+	if (OTEL_NULL(metadata) || OTEL_NULL(metadata->data) || (metadata->magic != DBG_MEM_MAGIC))
+		return false;
+
+	return true;
+}
+
+
+/***
+ * NAME
  *   otelc_dbg_mem_add - adds a memory allocation to the tracking list
  *
  * SYNOPSIS
@@ -444,7 +474,7 @@ void *otelc_dbg_realloc(const char *func, int line, void *ptr, size_t size)
 		 * If memory is not allocated via these debug functions, it must
 		 * not be reallocated via them either.
 		 */
-		if (OTEL_NULL(metadata) || OTEL_NULL(metadata->data) || (metadata->magic != DBG_MEM_MAGIC)) {
+		if (!otelc_dbg_is_wrapper_block(metadata)) {
 			retptr = realloc(ptr, size);
 
 			OTELC_RETURN_PTR(retptr);
@@ -513,14 +543,14 @@ void otelc_dbg_free(const char *func, int line, void *ptr)
 	 * The magic probe here and in otelc_dbg_realloc() reads the metadata
 	 * header sizeof(struct otelc_dbg_mem_metadata) bytes below the payload
 	 * pointer.  For a pointer that was not produced by these functions the
-	 * read lies outside the allocation: formally undefined behavior that
-	 * in practice lands in the allocator's chunk header on glibc and is
-	 * reported by AddressSanitizer.  A foreign block whose preceding bytes
-	 * happen to match the magic would be mistaken for a tracked one; the
-	 * probability of that is negligible.
+	 * read lies outside the allocation: formally undefined behavior that in
+	 * practice lands in the allocator's chunk header on glibc, which is why
+	 * otelc_dbg_is_wrapper_block() carries DBG_MEM_NO_ASAN.  A foreign block
+	 * whose preceding bytes happen to match the magic would be mistaken for
+	 * a tracked one; the probability of that is negligible.
 	 */
 	metadata = DBG_MEM_DATA(ptr);
-	if (OTEL_NULL(metadata) || OTEL_NULL(metadata->data) || (metadata->magic != DBG_MEM_MAGIC)) {
+	if (!otelc_dbg_is_wrapper_block(metadata)) {
 		free(ptr);
 
 		OTELC_RETURN();
