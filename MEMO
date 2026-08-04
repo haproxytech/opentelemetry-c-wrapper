@@ -1535,6 +1535,21 @@ Key differences from tracer:
   OPENTELEMETRY_ABI_VERSION_NO >= 2.  All other instrument types are available
   in ABI v1.
 
+Upstream defect in the ostream metric exporter:
+
+  The timestamp helper of the SDK ostream metric exporter calls the plain
+  std::gmtime() on every platform but Windows, and the exporter serializes its
+  output on a per-instance mutex.  Two meters that each own such an exporter
+  therefore format timestamps concurrently through the shared buffer that
+  gmtime() returns, which the thread sanitizer reports as a data race in
+  exporters/ostream/src/metric_exporter.cc; the versions checked are the pinned
+  1.28.0 and the 1.26.0 that is installed.  The consequence is limited to a
+  wrong or torn timestamp in the exported text, no wrapper state is involved,
+  and the SDK is read-only, so this is recorded for an upstream report rather
+  than worked around.  The recordable of the Elasticsearch log exporter, which
+  the wrapper also creates, formats its timestamps the same way and without any
+  lock at all, so a report should cover both call sites.
+
 
 ------------------------------------------------------------------------
 14. Logger/Logs C++ API/SDK Wrapping Strategy
