@@ -1966,6 +1966,19 @@ Error handling:
   yaml_read() uses OTEL_DEFER(yaml_close(&fyd)) for automatic document cleanup
   regardless of the exit path.
 
+Upstream defect in the libfyaml scanner:
+
+  The fuzzing campaign of the libfyaml backend found a five-byte document, the
+  '%' directive marker followed by the bytes 01 a9 00 00, on which libfyaml 0.9
+  never returns: it spins inside fy_scan_directive() below the document build
+  call.  A plain program that only builds a document from that file reproduces
+  the hang without any wrapper code, so otelc_init() of a libfyaml build hangs
+  on such a configuration file and no wrapper-side timeout can break out of the
+  library call.  The file has to be supplied by the operator, which bounds the
+  exposure, and the default rapidyaml backend rejects the same input normally.
+  Recorded for an upstream report; the SDK and the YAML libraries stay
+  untouched.
+
 Value extraction:
 
   yaml_find() retrieves a scalar value by path.  Both backends resolve the node

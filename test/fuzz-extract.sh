@@ -14,8 +14,10 @@
    SH_SRCDIR="$(realpath "$(dirname "${0}")/..")"
    SH_LIBDIR="/opt"
  SH_BUILDDIR="${TMPDIR:-/tmp}/otelc-fuzz"
-  SH_TREEDIR="${SH_BUILDDIR}/tree"
+   SH_SUFFIX="${OTELC_FUZZ_LIBFYAML:+-libfyaml}"
+  SH_TREEDIR="${SH_BUILDDIR}/tree${SH_SUFFIX}"
    SH_CORPUS="${SH_BUILDDIR}/corpus-extract"
+   SH_TARGET="${SH_BUILDDIR}/fuzz-extract${SH_SUFFIX}"
     SH_CLANG="${CLANG:-clang++}"
 SH_ARG_TIME="${1:-60}"
 
@@ -25,7 +27,7 @@ sh "${SH_SRCDIR}/test/fuzz-build.sh" || exit
 
 "${SH_CLANG}" -O1 -g -fsanitize=fuzzer,address \
 	-I "${SH_TREEDIR}/include" \
-	-o "${SH_BUILDDIR}/fuzz-extract" "${SH_SRCDIR}/test/fuzz-extract.cpp" \
+	-o "${SH_TARGET}" "${SH_SRCDIR}/test/fuzz-extract.cpp" \
 	-L "${SH_TREEDIR}/src/.libs" -lopentelemetry-c-wrapper || exit 70
 
 if test ! -d "${SH_CORPUS}"; then
@@ -39,7 +41,7 @@ fi
 
 OTELC_FUZZ_CFG="${SH_SRCDIR}/test/otel-cfg.yml" \
 LD_LIBRARY_PATH="${SH_TREEDIR}/src/.libs:${SH_LIBDIR}/lib" \
-	exec "${SH_BUILDDIR}/fuzz-extract" \
+	exec "${SH_TARGET}" \
 		"${SH_CORPUS}" \
 		-max_total_time="${SH_ARG_TIME}" \
 		-close_fd_mask=1 \

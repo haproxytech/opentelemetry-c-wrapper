@@ -14,8 +14,10 @@
    SH_SRCDIR="$(realpath "$(dirname "${0}")/..")"
    SH_LIBDIR="/opt"
  SH_BUILDDIR="${TMPDIR:-/tmp}/otelc-fuzz"
-  SH_TREEDIR="${SH_BUILDDIR}/tree"
+   SH_SUFFIX="${OTELC_FUZZ_LIBFYAML:+-libfyaml}"
+  SH_TREEDIR="${SH_BUILDDIR}/tree${SH_SUFFIX}"
    SH_CORPUS="${SH_BUILDDIR}/corpus"
+    SH_TARGET="${SH_BUILDDIR}/fuzz-yaml${SH_SUFFIX}"
     SH_CLANG="${CLANG:-clang++}"
 SH_ARG_TIME="${1:-60}"
 
@@ -25,7 +27,7 @@ sh "${SH_SRCDIR}/test/fuzz-build.sh" || exit
 
 "${SH_CLANG}" -O1 -g -fsanitize=fuzzer,address \
 	-I "${SH_TREEDIR}/include" \
-	-o "${SH_BUILDDIR}/fuzz-yaml" "${SH_SRCDIR}/test/fuzz-yaml.cpp" \
+	-o "${SH_TARGET}" "${SH_SRCDIR}/test/fuzz-yaml.cpp" \
 	-L "${SH_TREEDIR}/src/.libs" -lopentelemetry-c-wrapper || exit 70
 
 if test ! -d "${SH_CORPUS}"; then
@@ -37,8 +39,9 @@ if test ! -d "${SH_CORPUS}"; then
 fi
 
 LD_LIBRARY_PATH="${SH_TREEDIR}/src/.libs:${SH_LIBDIR}/lib" \
-	exec "${SH_BUILDDIR}/fuzz-yaml" \
+	exec "${SH_TARGET}" \
 		"${SH_CORPUS}" \
 		-max_total_time="${SH_ARG_TIME}" \
+		-timeout=25 \
 		-close_fd_mask=1 \
 		-artifact_prefix="${SH_BUILDDIR}/" "${@}"

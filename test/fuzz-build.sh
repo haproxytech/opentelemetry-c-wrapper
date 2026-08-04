@@ -11,14 +11,20 @@
 # scratch whenever a library source or a build system input is newer than
 # that library; the build artifacts of the tree are not consulted.
 #
+# Setting OTELC_FUZZ_LIBFYAML in the environment builds the libfyaml backend
+# instead of the default one, in a snapshot of its own so that the two
+# instrumented libraries do not replace each other.
+#
 #   Usage: ./fuzz-build.sh
 #
-  SH_SRCDIR="$(realpath "$(dirname "${0}")/..")"
-  SH_LIBDIR="/opt"
-SH_BUILDDIR="${TMPDIR:-/tmp}/otelc-fuzz"
- SH_TREEDIR="${SH_BUILDDIR}/tree"
-     SH_LIB="${SH_TREEDIR}/src/.libs/libopentelemetry-c-wrapper.so"
-   SH_CLANG="${CLANG:-clang++}"
+   SH_SRCDIR="$(realpath "$(dirname "${0}")/..")"
+   SH_LIBDIR="/opt"
+ SH_BUILDDIR="${TMPDIR:-/tmp}/otelc-fuzz"
+  SH_SUFFIX="${OTELC_FUZZ_LIBFYAML:+-libfyaml}"
+SH_CONF_OPTS="${OTELC_FUZZ_LIBFYAML:+--with-libfyaml}"
+  SH_TREEDIR="${SH_BUILDDIR}/tree${SH_SUFFIX}"
+      SH_LIB="${SH_TREEDIR}/src/.libs/libopentelemetry-c-wrapper.so"
+    SH_CLANG="${CLANG:-clang++}"
 
 command -v "${SH_CLANG}" >/dev/null 2>&1 || { echo "ERROR: ${SH_CLANG} not found"; exit 69; }
 
@@ -51,6 +57,6 @@ CXX="${SH_CLANG}" \
 CFLAGS="-O1 -g -fsanitize=address,fuzzer-no-link" \
 CXXFLAGS="-O1 -g -fsanitize=address,fuzzer-no-link" \
 LDFLAGS="-fsanitize=address" \
-	./configure --prefix="${SH_LIBDIR}" --with-opentelemetry="${SH_LIBDIR}" || exit 78
+	./configure --prefix="${SH_LIBDIR}" --with-opentelemetry="${SH_LIBDIR}" ${SH_CONF_OPTS} || exit 78
 
 make -j8 || exit 70

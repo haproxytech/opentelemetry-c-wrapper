@@ -59,7 +59,17 @@ error path, and the error path itself neither leaks nor corrupts memory.  As a
 side effect the campaign proved that the library compiles warning-free under
 clang with the project's -Werror posture.
 
-The result is a statement about the configured backend only; a rapidyaml build
-was fuzzed, and the libfyaml backend deserves its own campaign.  Longer runs, a
-YAML dictionary for the mutation engine, and fuzzing under the thread sanitizer
-are natural extensions when more assurance is wanted.
+The libfyaml backend was then given its own campaign, selected with the
+OTELC_FUZZ_LIBFYAML variable, and it did not get far: a five-byte document, the
+'%' directive marker followed by the bytes 01 a9 00 00, makes libfyaml 0.9 spin
+forever inside its directive scanner, which consumed the whole budget after a
+thousand executions.  A program that only builds a document from that file
+reproduces the hang with no wrapper code involved, so the finding belongs to the
+library and is recorded in the MEMO for an upstream report; the harness now
+passes a per-input timeout so that such a hang is reported in seconds instead of
+the twenty minutes libFuzzer waits by default.  Beyond that one input the
+backend is still barely explored, and it deserves a longer run once the hang is
+out of the way.
+
+Longer runs, a YAML dictionary for the mutation engine, and fuzzing under the
+thread sanitizer are natural extensions when more assurance is wanted.
