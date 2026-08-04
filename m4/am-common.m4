@@ -530,6 +530,24 @@ AC_DEFUN([AX_ENABLE_TSAN], [
 	)
 ])
 
+AC_DEFUN([AX_ENABLE_UBSAN], [
+	AC_ARG_ENABLE(
+		[ubsan],
+		[AS_HELP_STRING([--enable-ubsan], [build with the undefined behavior sanitizer])],
+		[
+			AS_IF(
+				[test "${enableval}" = "yes"],
+				[
+					CFLAGS="${CFLAGS} -fsanitize=undefined -fno-omit-frame-pointer"
+					CXXFLAGS="${CXXFLAGS} -fsanitize=undefined -fno-omit-frame-pointer"
+					LDFLAGS="${LDFLAGS} -fsanitize=undefined"
+				],
+				[]
+			)
+		]
+	)
+])
+
 AC_DEFUN([AX_ENABLE_HARDENING], [
 	AC_ARG_ENABLE(
 		[hardening],

@@ -359,6 +359,10 @@ The autotools form is given first below, the CMake form second.
       Build with the thread sanitizer.  The two sanitizers are mutually
       exclusive, and asking for both fails at configuration time.
 
+  --enable-ubsan, -DENABLE_UBSAN=ON
+      Build with the undefined behavior sanitizer, which combines with
+      either of the other two.
+
   --enable-hardening, -DENABLE_HARDENING=ON
       Add the toolchain hardening flags: the fortified source define, the
       stack protector, the stack clash and control flow protections, and
