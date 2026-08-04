@@ -235,6 +235,48 @@ static int ryml_find_duplicate_keys(const ryml::Tree *tree, char **err)
 #endif /* !HAVE_LIBFYAML_H */
 
 
+#ifdef HAVE_LIBFYAML_H
+
+/***
+ * NAME
+ *   fyaml_copy_scalar - copies a scalar value found by path into a buffer
+ *
+ * SYNOPSIS
+ *   static int fyaml_copy_scalar(OTEL_YAML_DOC *fyd, const char *path, char *data, size_t data_size)
+ *
+ * ARGUMENTS
+ *   fyd       - pointer to the YAML document
+ *   path      - the path expression to the desired node
+ *   data      - buffer to store the found string value
+ *   data_size - size of the data buffer
+ *
+ * DESCRIPTION
+ *   Resolves the node at the given path with fy_node_by_path() and copies its
+ *   scalar value into the data buffer with otelc_strlcpy(); the path is never
+ *   interpreted as a format string.  A missing node, a non-scalar node and a
+ *   node whose value is empty are all reported as not found.
+ *
+ * RETURN VALUE
+ *   Returns 1 if the value was copied, or 0 if the node was not found.
+ */
+static int fyaml_copy_scalar(OTEL_YAML_DOC *fyd, const char *path, char *data, size_t data_size)
+{
+	size_t          len = 0;
+	const char     *value;
+	struct fy_node *node;
+	int             retval = 0;
+
+	node  = fy_node_by_path(fy_document_root(fyd), path, -1, FYNWF_DONT_FOLLOW);
+	value = OTEL_NULL(node) ? nullptr : fy_node_get_scalar(node, &len);
+	if (!OTEL_NULL(value) && (len > 0))
+		retval = (otelc_strlcpy(data, data_size, value, len) == OTELC_RET_ERROR) ? 0 : 1;
+
+	return retval;
+}
+
+#endif /* HAVE_LIBFYAML_H */
+
+
 /***
  * NAME
  *   yaml_open - opens and parses a YAML file
@@ -468,9 +510,9 @@ otelc_ctx_name_t yaml_probe_nstate(OTEL_YAML_DOC *fyd, const char *base, const c
  *   If no candidate is present, an error message is set and OTELC_RET_ERROR is
  *   returned; after a failed lookup *prefix is NULL.  Either name or fallback
  *   may be NULL or empty to skip that context.  A name or fallback containing
- *   the '%' character is rejected: the resolved prefix is later embedded into
- *   the scanf format of the libfyaml build of yaml_find(), where a conversion
- *   specifier would trigger undefined behavior.  The caller is responsible for
+ *   the '%' character is rejected as a defense in depth, so that a conversion
+ *   specifier smuggled through the context name can never reach a printf-style
+ *   format position via the resolved prefix.  The caller is responsible for
  *   freeing *prefix.
  *
  * RETURN VALUE
@@ -647,10 +689,7 @@ char *yaml_read(const char *file, char **err)
  */
 int yaml_find(OTEL_YAML_DOC *fyd, char **err, bool is_mandatory, const char *desc, const char *path, char *data, size_t data_size)
 {
-#ifdef HAVE_LIBFYAML_H
-	char fmt[OTEL_YAML_BUFSIZ << 1], buffer[OTEL_YAML_BUFSIZ] = "";
-#endif
-	int  retval = 0;
+	int retval = 0;
 
 	OTELC_FUNC("%p, %p:%p, %hhu, \"%s\", \"%s\", %p, %zu", fyd, OTELC_DPTR_ARGS(err), is_mandatory, OTELC_STR_ARG(desc), OTELC_STR_ARG(path), data, data_size);
 
@@ -669,12 +708,7 @@ int yaml_find(OTEL_YAML_DOC *fyd, char **err, bool is_mandatory, const char *des
 	 * functions is not satisfactory because instead of checking the entire
 	 * string, they return a positive result for a substring.
 	 */
-	(void)snprintf(fmt, sizeof(fmt), "%s %%" OTEL_YAML_BUFLEN "[^\n]", path);
-PRAGMA_DIAG_IGNORE("-Wformat-nonliteral")
-	retval = fy_document_scanf(fyd, fmt, buffer);
-PRAGMA_DIAG_RESTORE
-	if (retval == 1)
-		(void)otelc_strlcpy(data, data_size, buffer, 0);
+	retval = fyaml_copy_scalar(fyd, path, data, data_size);
 
 #else
 
@@ -1056,9 +1090,6 @@ int yaml_find_sequence(OTEL_YAML_DOC *fyd, char **err, bool is_mandatory, const 
 static int yaml_get_node_v(OTEL_YAML_DOC *fyd, char **err, const char *desc, const char *name, int type, va_list ap)
 {
 	char fmt[OTEL_YAML_BUFSIZ << 1], subarg[OTEL_YAML_BUFSIZ];
-#ifdef HAVE_LIBFYAML_H
-	char subfmt[OTEL_YAML_BUFSIZ << 1];
-#endif
 	int  rc, retval = 0;
 
 	OTELC_FUNC("%p, %p:%p, \"%s\", \"%s\", %d, %p", fyd, OTELC_DPTR_ARGS(err), OTELC_STR_ARG(desc), OTELC_STR_ARG(name), type, ap);
@@ -1103,27 +1134,23 @@ PRAGMA_DIAG_RESTORE
 			continue;
 		}
 
-#ifdef HAVE_LIBFYAML_H
-		(void)snprintf(subfmt, sizeof(subfmt), "%s %%" OTEL_YAML_BUFLEN "[^\n]", arg_path);
-PRAGMA_DIAG_IGNORE("-Wformat-nonliteral")
-		(void)snprintf(fmt, sizeof(fmt), subfmt, name);
-		rc = fy_document_scanf(fyd, fmt, subarg);
-PRAGMA_DIAG_RESTORE
-
-#else
-
 PRAGMA_DIAG_IGNORE("-Wformat-nonliteral")
 		(void)snprintf(fmt, sizeof(fmt), arg_path, name);
 PRAGMA_DIAG_RESTORE
+
+#ifdef HAVE_LIBFYAML_H
+		rc = fyaml_copy_scalar(fyd, fmt, subarg, sizeof(subarg));
+
+#else
+
 		const auto node = ryml_get_node_by_path(fyd, fmt);
 		if (!node.invalid() && node.has_val() && (node.val().len > 0))
 			rc = (otelc_strlcpy(subarg, sizeof(subarg), node.val().str, node.val().len) == OTELC_RET_ERROR) ? 0 : 1;
 		else
 			rc = 0;
 #endif /* HAVE_LIBFYAML_H */
-		if (rc == -1)
-			OTEL_ERR_RETURN_INT("Unable to read %s %s", desc, path_desc);
-		else if (rc == 1)
+		/* Both backends report only found (1) or not found (0) here. */
+		if (rc == 1)
 			retval++;
 		else if (arg_is_mandatory != 0)
 			OTEL_ERR_RETURN_INT(OTEL_ERROR_MSG_YAML_NOT_SPECIFIED, desc, path_desc);

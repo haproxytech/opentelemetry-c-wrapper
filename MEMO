@@ -1899,9 +1899,8 @@ The YAML module provides a dual-backend configuration parser that supports two
 YAML libraries selected at compile time via the HAVE_LIBFYAML_H preprocessor
 flag:
 
-  libfyaml -- a C library accessed through the fy_document_* API.  Uses
-  fy_document_scanf() for value extraction with a dynamically constructed format
-  string.
+  libfyaml -- a C library accessed through the fy_document_* API.  Values are
+  resolved with fy_node_by_path() and copied out of the scalar nodes.
 
   rapidyaml (default) -- a C++ library accessed through ryml::Tree with a custom
   ryml_get_node_by_path() traversal function that handles both map keys and
@@ -1944,14 +1943,12 @@ Error handling:
 
 Value extraction:
 
-  yaml_find() retrieves a scalar value by path.  The libfyaml path constructs
-  a scanf format string with OTEL_YAML_BUFLEN ("4095") as the field width to
-  prevent buffer overflow.  The rapidyaml path uses otelc_strlcpy() which is
-  length-safe.  Because that libfyaml format embeds the lookup path, and the
-  path in turn carries the context name via the resolved prefix, a '%' in the
-  name or fallback is rejected by yaml_resolve_prefix(); a conversion specifier
-  smuggled through the path would otherwise reach fy_document_scanf() with no
-  matching argument.
+  yaml_find() retrieves a scalar value by path.  Both backends resolve the node
+  first -- fyaml_copy_scalar() with fy_node_by_path(), the rapidyaml build with
+  the tree walker -- and copy the value with the length-safe otelc_strlcpy(),
+  so no lookup interprets the path as a format string.  The '%' rejections in
+  yaml_resolve_prefix() and yaml_get_node() remain as a defense in depth so
+  that conversion specifiers stay out of the resolved paths altogether.
 
   yaml_get_node_v() is the variadic core that parses typed properties (STR,
   BOOL, INT64, DOUBLE, MAP) from a named YAML node.  Integer parsing uses
@@ -1960,7 +1957,7 @@ Value extraction:
   templates are compile-time strings with a single %s placeholder.
 
   The PRAGMA_DIAG_IGNORE/PRAGMA_DIAG_RESTORE pairs around format-nonliteral
-  warnings are correctly scoped to the snprintf/scanf calls that use non-literal
+  warnings are correctly scoped to the snprintf calls that use non-literal
   format strings.
 
 Sequence operations:

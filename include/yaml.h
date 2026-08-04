@@ -18,7 +18,6 @@
 
 #define OTEL_YAML_BUFSIZ_1                4095
 #define OTEL_YAML_BUFSIZ                  (OTEL_YAML_BUFSIZ_1 + 1)
-#define OTEL_YAML_BUFLEN                  OTELC_STRINGIFY(OTEL_YAML_BUFSIZ_1)
 
 #define OTEL_YAML_NAME_DEFAULT            "default"
 
