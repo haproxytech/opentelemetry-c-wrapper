@@ -15,12 +15,14 @@ code, so the corpus gravitates toward the parser's dark corners on its own.
 
 Coverage-guided fuzzing only works when the fuzzer can observe the code that it
 exercises.  The harness therefore does not link against the regular build of
-the library: fuzz-yaml.sh builds a separate copy of it with clang, compiled with
-the -fsanitize=address,fuzzer-no-link options, so every branch taken inside
+the library: fuzz-build.sh builds a separate copy of it with clang, compiled
+with the -fsanitize=address,fuzzer-no-link options, so every branch taken inside
 the library feeds the mutation engine and the address sanitizer checks every
-heap access and reports leaked allocations on every error path.  The source
-tree is not touched; the instrumented copy lives out of tree and is built once,
-then reused.
+heap access and reports leaked allocations on every error path.  That copy is a
+snapshot of the source tree, configured and built inside the fuzzing build
+directory, so a harness builds whether or not the tree itself is configured and
+the tree is never written to; the snapshot is rebuilt from scratch as soon as a
+library source is newer than the instrumented library.
 
 The harness itself (fuzz-yaml.cpp) presents each input to otelc_init() through
 a memfd-backed path, which keeps the file-based API intact without touching any

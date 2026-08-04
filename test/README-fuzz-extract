@@ -17,14 +17,17 @@ nobody thought of.
 
 Coverage-guided fuzzing only works when the fuzzer can observe the code that it
 exercises.  The harness therefore does not link against the regular build of the
-library: fuzz-extract.sh builds a separate copy of it with clang, compiled with
+library: fuzz-build.sh builds a separate copy of it with clang, compiled with
 the -fsanitize=address,fuzzer-no-link options, so every branch taken inside the
 library feeds the mutation engine and the address sanitizer checks every heap
-access and reports leaked allocations on every error path.  The source tree is
-not touched; the instrumented copy lives out of tree and is built once, then
-reused.  Because autotools refuses an out-of-tree build while the source tree
-itself is configured, the script stops with a clear message when it finds a
-config.status there, and scripts/distclean prepares the tree.
+access and reports leaked allocations on every error path.  Because autotools
+refuses an out-of-tree build while the source tree itself is configured, that
+copy is a snapshot of the tree, configured and built inside the fuzzing build
+directory: a harness builds whether or not the tree is configured, and the tree
+is never written to.  The snapshot leaves the tree's build artifacts behind, so
+no object built by another compiler can survive into the instrumented library,
+and it is rebuilt from scratch as soon as a library source is newer than that
+library, so a campaign never runs against stale code.
 
 The harness (fuzz-extract.cpp) creates one tracer during initialization and
 reuses it for every input, which keeps the iteration rate high and puts the
