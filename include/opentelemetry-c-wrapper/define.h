@@ -27,9 +27,11 @@
 #ifdef __GNUC__
 #  define OTELC_NONNULL(...)       __attribute__((nonnull(__VA_ARGS__)))
 #  define OTELC_NONNULL_ALL        __attribute__((nonnull))
+#  define OTELC_PRINTF(f,a)        __attribute__((format(printf, f, a)))
 #else
 #  define OTELC_NONNULL(...)
 #  define OTELC_NONNULL_ALL
+#  define OTELC_PRINTF(f,a)
 #endif
 
 #define OTELC_SCOPE_VERSION        "1.2.0"

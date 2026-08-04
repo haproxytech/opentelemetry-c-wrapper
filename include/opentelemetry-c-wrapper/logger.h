@@ -179,7 +179,7 @@ struct otelc_logger_ops {
 	 *   cases.
 	 */
 	int (*log)(struct otelc_logger *logger, otelc_log_severity_t severity, int64_t event_id, const char *event_name, const uint8_t *span_id, size_t span_id_size, const uint8_t *trace_id, size_t trace_id_size, uint8_t trace_flags, const struct timespec *ts, const struct timespec *ts_obs, const struct otelc_kv *attr, size_t attr_len, const char *format, ...)
-		OTELC_NONNULL(1, 14);
+		OTELC_NONNULL(1, 14) OTELC_PRINTF(14, 15);
 
 	/***
 	 * NAME
@@ -219,7 +219,7 @@ struct otelc_logger_ops {
 	 *   cases.
 	 */
 	int (*log_span)(struct otelc_logger *logger, otelc_log_severity_t severity, int64_t event_id, const char *event_name, const struct otelc_span *span, const struct timespec *ts, const struct timespec *ts_obs, const struct otelc_kv *attr, size_t attr_len, const char *format, ...)
-		OTELC_NONNULL(1, 10);
+		OTELC_NONNULL(1, 10) OTELC_PRINTF(10, 11);
 
 	/***
 	 * NAME

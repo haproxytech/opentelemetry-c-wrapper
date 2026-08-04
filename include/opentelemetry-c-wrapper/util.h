@@ -246,7 +246,7 @@ void                   otelc_nsleep(time_t sec, long nsec);
 void                  *otelc_memdup(const void *s, size_t size);
 char                  *otelc_strdup(const char *s);
 char                  *otelc_strndup(const char *s, size_t size);
-int                    otelc_sprintf(char **ret, const char *format, ...) __attribute__((format(printf, 2, 3)));
+int                    otelc_sprintf(char **ret, const char *format, ...) OTELC_PRINTF(2, 3);
 ssize_t                otelc_strlcpy(char *dst, size_t dst_size, const char *src, size_t src_size);
 bool                   otelc_strtoi(const char *str, char **endptr, bool flag_end, int base, int *retval, int val_min, int val_max, char **err);
 const char            *otelc_strhex(const void *data, size_t size);
