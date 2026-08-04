@@ -1,0 +1,81 @@
+      ---------------------------------------------------------------
+              Fuzzing harness for the carrier extraction paths
+      ---------------------------------------------------------------
+
+
+1. Theory
+------------------------------------------------------------------------------
+
+The YAML configuration is written by the operator, but the propagation headers
+are not: traceparent, tracestate and baggage arrive from whoever sent the
+request, so in a deployment behind HAProxy they are the library's one genuinely
+remote input.  Every byte of them flows through the SDK propagators and then
+through the wrapper's carrier iteration, text map construction and span context
+handling, all of which allocate on paths a malformed header can steer.  The unit
+tests cover the header shapes a reviewer thinks of; a fuzzer covers the ones
+nobody thought of.
+
+Coverage-guided fuzzing only works when the fuzzer can observe the code that it
+exercises.  The harness therefore does not link against the regular build of the
+library: fuzz-extract.sh builds a separate copy of it with clang, compiled with
+the -fsanitize=address,fuzzer-no-link options, so every branch taken inside the
+library feeds the mutation engine and the address sanitizer checks every heap
+access and reports leaked allocations on every error path.  The source tree is
+not touched; the instrumented copy lives out of tree and is built once, then
+reused.  Because autotools refuses an out-of-tree build while the source tree
+itself is configured, the script stops with a clear message when it finds a
+config.status there, and scripts/distclean prepares the tree.
+
+The harness (fuzz-extract.cpp) creates one tracer during initialization and
+reuses it for every input, which keeps the iteration rate high and puts the
+whole budget into the extraction code rather than into provider setup.  Each
+input is cut into lines and each line is split at the first colon into a header
+name and its value, so the mutation engine can steer the name and the value
+independently; a line without a colon becomes a traceparent value, which keeps
+the W3C parser reachable even from a corpus of bare header values.  The result
+is presented twice, once through a text map reader and once through an HTTP
+headers reader, since the two carriers reach the propagators through different
+wrapper templates.  Whatever span context comes back is destroyed again, and the
+first input line is additionally passed to otelc_span_context_create() as a
+trace state header, with the identifier bytes taken from the input as well, so
+the tracestate parser and the identifier validation both run.  Everything the
+harness allocates per input is released before the next one, so the leak checker
+sees the carrier and span context lifecycle; the single context and tracer live
+for the whole process and their teardown paths are the one part this harness
+does not exercise.
+
+2. Practice
+------------------------------------------------------------------------------
+
+Usage, with the time limit in seconds and any further arguments passed on to
+the libFuzzer binary unchanged:
+
+  % ./fuzz-extract.sh [ time-limit [ libfuzzer-args ... ] ]
+
+The corpus persists under /tmp/otelc-fuzz/corpus-extract and is seeded with a
+W3C traceparent and tracestate pair, a baggage header with a percent-encoded
+value, a B3 header and a bare traceparent value; the crash artifacts are written
+to the /tmp/otelc-fuzz directory.  The script requires clang, because libFuzzer
+and the coverage instrumentation are clang features, and it reads its
+configuration file through the OTELC_FUZZ_CFG environment variable, pointed at
+test/otel-cfg.yml.  The speed_test context is used deliberately: its exporter
+writes to /dev/null, so no campaign fills a log file.
+
+The first campaign ran about three and a half million executions at roughly
+28000 runs a second, growing the corpus to a bit over six hundred units, and
+finished without any findings at all: no crashes, no address sanitizer reports,
+no memory leaks, no timeouts, and no aborts escaping the propagators.
+
+3. Conclusion
+------------------------------------------------------------------------------
+
+The extraction paths withstood a coverage-guided, sanitizer-instrumented attack
+on the library's remote input surface: malformed, truncated and hostile headers
+are rejected without corrupting or leaking memory, and an invalid carrier never
+produces a span context that the caller then has to distrust.
+
+The result is a statement about the configured backend and the default
+propagator set only.  Fuzzing the composite propagator build, running the same
+harness under the thread sanitizer with several tracers, and feeding it a
+dictionary built from the header grammars are the natural extensions when more
+assurance is wanted.
