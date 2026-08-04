@@ -109,7 +109,8 @@ template <typename T> otel_defer_struct<T>make_defer(T fn) { return { fn }; }
 #define OTEL_ERROR_MSG_INVALID_CTX    "Invalid context"
 #define OTEL_ERROR_MSG_INVALID_SIG    "Invalid signal"
 
-#define OTEL_SIGNAL_ERROR(e,f, ...)           do { if (otelc_sprintf(&(e), f, ##__VA_ARGS__) > 0) OTELC_DBG(OTEL, "%s", (e)); } while (0)
+/* The target is taken once: for a span it resolves through a function call. */
+#define OTEL_SIGNAL_ERROR(e,f, ...)           do { char **err_ptr_ = &(e); if (otelc_sprintf(err_ptr_, f, ##__VA_ARGS__) > 0) OTELC_DBG(OTEL, "%s", *err_ptr_); } while (0)
 #define OTEL_SIGNAL_RETURN(e,f, ...)          do { OTEL_SIGNAL_ERROR((e), f, ##__VA_ARGS__); OTELC_RETURN(); } while (0)
 #define OTEL_SIGNAL_RETURN_EX(e,t,r,f, ...)   do { OTEL_SIGNAL_ERROR((e), f, ##__VA_ARGS__); OTELC_RETURN##t(r); } while (0)
 #define OTEL_SIGNAL_RETURN_INT(e,f, ...)      OTEL_SIGNAL_RETURN_EX((e), _INT, OTELC_RET_ERROR, f, ##__VA_ARGS__)
@@ -121,7 +122,7 @@ template <typename T> otel_defer_struct<T>make_defer(T fn) { return { fn }; }
  * so a single OTEL_RETURN*(signal, ...) call works uniformly across all signal
  * types.
  */
-#define OTEL_ERR_span                  span->tracer->err
+#define OTEL_ERR_span                  *otel_span_err(span)
 #define OTEL_ERR_tracer                tracer->err
 #define OTEL_ERR_meter                 meter->err
 #define OTEL_ERR_logger                logger->err

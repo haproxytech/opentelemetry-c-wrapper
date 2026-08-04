@@ -16,7 +16,7 @@
 #ifndef _OPENTELEMETRY_C_WRAPPER_SPAN_H_
 #define _OPENTELEMETRY_C_WRAPPER_SPAN_H_
 
-#define OTEL_SPAN_ERROR(f, ...)            OTEL_SIGNAL_ERROR(span->tracer->err, f, ##__VA_ARGS__)
+#define OTEL_SPAN_ERROR(f, ...)            OTEL_SIGNAL_ERROR(*otel_span_err(span), f, ##__VA_ARGS__)
 #define OTEL_SPAN_RETURN(f, ...)           OTEL_RETURN(span, f, ##__VA_ARGS__)
 #define OTEL_SPAN_RETURN_EX(t,r,f, ...)    OTEL_RETURN_EX(span, t, (r), f, ##__VA_ARGS__)
 #define OTEL_SPAN_RETURN_INT(f, ...)       OTEL_RETURN_INT(span, f, ##__VA_ARGS__)
@@ -207,6 +207,7 @@ extern THREAD_LOCAL struct otel_handle<struct otel_span_context_handle *, OTEL_H
 #endif
 
 
+char                     **otel_span_err(const struct otelc_span *span);
 struct otelc_span         *otel_span_new(struct otelc_tracer *tracer);
 void                       otel_nolock_span_destroy(struct otelc_span **span);
 struct otelc_span_context *otel_span_context_new(void);

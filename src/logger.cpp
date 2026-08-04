@@ -478,7 +478,7 @@ static void otel_logger_span_extract(const struct otelc_span *span, uint8_t *spa
 		return;
 
 	if (OTELC_OPS(span, get_id, span_id, span_id_size, trace_id, trace_id_size, trace_flags) == OTELC_RET_ERROR)
-		OTELC_DBG(DEBUG, "%s", (OTEL_NULL(span->tracer) || OTEL_NULL(span->tracer->err)) ? "Unable to retrieve span context" : span->tracer->err);
+		OTELC_DBG(DEBUG, "%s", OTEL_NULL(*otel_span_err(span)) ? "Unable to retrieve span context" : *otel_span_err(span));
 }
 
 

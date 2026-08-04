@@ -27,6 +27,49 @@ THREAD_LOCAL struct otel_handle<struct otel_span_context_handle *, OTEL_HANDLE_S
 
 /***
  * NAME
+ *   otel_span_err - returns the target for span error reporting
+ *
+ * SYNOPSIS
+ *   char **otel_span_err(const struct otelc_span *span)
+ *
+ * ARGUMENTS
+ *   span - span instance
+ *
+ * DESCRIPTION
+ *   Returns the address of the owning tracer's error string, the target that the
+ *   span error macros write through.  In a debug build the tracer's liveness
+ *   marker is probed first: when the tracer was already destroyed, the access is
+ *   reported loudly and the error text is diverted into a sacrificial slot of
+ *   its own instead of the freed tracer structure.  The probe reads freed memory
+ *   and is best-effort by design, mirroring the accepted risk of the allocator
+ *   magic probe in src/dbg_malloc.cpp.  The last message written to that slot is
+ *   still allocated when the thread ends, so the tracker reports it as a leak;
+ *   that is accepted, since the slot is only ever reached by a caller that
+ *   already uses a destroyed tracer.
+ *
+ * RETURN VALUE
+ *   Returns the address of the error-string pointer to write through.
+ */
+char **otel_span_err(const struct otelc_span *span)
+{
+#ifdef OTELC_DBG_MEM
+	/* Deliberately not THREAD_LOCAL: the slot must stay per thread in
+	 * every build, including the one where that macro expands to nothing. */
+	static thread_local char *dead_slot = nullptr;
+
+	if (OTEL_NULL(span->tracer) || OTEL_TRACER_DEAD(span->tracer)) {
+		OTELC_DBG(ERROR, "SPAN_ERROR: %p: tracer %p is destroyed or invalid", span, span->tracer);
+
+		return &dead_slot;
+	}
+#endif
+
+	return &(span->tracer->err);
+}
+
+
+/***
+ * NAME
  *   otel_span_get_id - retrieves the identifiers associated with a span
  *
  * SYNOPSIS
@@ -194,7 +237,7 @@ static int otel_span_inject_carrier(const struct otelc_span *span, W *carrier, c
 	OTEL_LOCK_SPAN_HANDLE(_INT, span);
 
 	/* Inject the span context into the carrier via the per-tracer propagator. */
-	auto *impl = OTEL_NULL(span->tracer) ? nullptr : OTEL_CAST_STATIC(struct otel_tracer_impl *, span->tracer->impl);
+	auto *impl = (OTEL_NULL(span->tracer) || OTEL_TRACER_DEAD(span->tracer)) ? nullptr : OTEL_CAST_STATIC(struct otel_tracer_impl *, span->tracer->impl);
 	if (OTEL_NULL(impl) || OTEL_NULL(impl->propagator))
 		OTEL_SPAN_RETURN_INT(OTEL_ERROR_MSG_NO_PROPAGATOR);
 	/* Snapshot the propagator reference for the duration of the call. */
@@ -1037,7 +1080,7 @@ static int otel_span_add_one_event(const struct otelc_span *span, otel_attribute
 
 	OTELC_DBG(DEBUG, "'%s' -> %s", key, otelc_value_dump(value, ""));
 
-	OTEL_VALUE_ADD(_INT, attr, emplace_back, key, value, &(span->tracer->err), "Unable to add event");
+	OTEL_VALUE_ADD(_INT, attr, emplace_back, key, value, otel_span_err(span), "Unable to add event");
 
 	OTELC_RETURN_INT(OTELC_RET_OK);
 }
@@ -1278,7 +1321,7 @@ static int otel_span_add_link(const struct otelc_span *span, const struct otelc_
 		OTEL_CATCH_SIGNAL_RETURN( , OTEL_SPAN_RETURN_INT, OTEL_ERROR_MSG_LINK_ATTRS)
 
 		for (size_t i = 0; i < kv_len; ++i)
-			OTEL_VALUE_ADD(_INT, attribute, emplace_back, kv[i].key, &(kv[i].value), &(span->tracer->err), "Unable to add link");
+			OTEL_VALUE_ADD(_INT, attribute, emplace_back, kv[i].key, &(kv[i].value), otel_span_err(span), "Unable to add link");
 	}
 
 	/* Resolve the link target from either a span or a span context. */
@@ -1382,7 +1425,7 @@ static int otel_span_record_exception(const struct otelc_span *span, const char 
 	/* Add any extra user-supplied attributes to the exception event. */
 	if (!OTEL_NULL(kv) && (kv_len > 0))
 		for (size_t i = 0; i < kv_len; i++)
-			OTEL_VALUE_ADD(_INT, attr, emplace_back, kv[i].key, &(kv[i].value), &(span->tracer->err), "Unable to add exception attribute");
+			OTEL_VALUE_ADD(_INT, attr, emplace_back, kv[i].key, &(kv[i].value), otel_span_err(span), "Unable to add exception attribute");
 
 	handle->span->AddEvent(otel_nostd::string_view{"exception"}, timestamp, attr);
 

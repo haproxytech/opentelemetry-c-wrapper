@@ -21,11 +21,13 @@ __CPLUSPLUS_DECL_BEGIN
 /***
  * OTELC_DBG_MEM selects the debug ABI of the library: the otelc_dbg_* memory
  * channel, the (func, line) argument pairs that OTELC_DBG_ARGS inserts into
- * function signatures, and the extended otelc_ext_malloc_t/otelc_ext_free_t
- * callback types.  It is derived here from DEBUG and DEBUG_OTEL so that every
- * declaration conditioned on it stays consistent with the OTELC_DBG_IFDEF()
- * selection below, whichever of the three macros the consumer defines.  The
- * pkg-config file of the debug library provides -DOTELC_DBG_MEM.
+ * function signatures, the extended otelc_ext_malloc_t/otelc_ext_free_t
+ * callback types, and the liveness marker that the tracer structure carries
+ * only in this build.  It is derived here from DEBUG and DEBUG_OTEL so that
+ * every declaration conditioned on it stays consistent with the
+ * OTELC_DBG_IFDEF() selection below, whichever of the three macros the
+ * consumer defines.  The pkg-config file of the debug library provides
+ * -DOTELC_DBG_MEM.
  */
 #if defined(DEBUG) || defined(DEBUG_OTEL)
 #  ifndef OTELC_DBG_MEM

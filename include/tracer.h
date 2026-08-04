@@ -33,6 +33,14 @@
 
 #define OTEL_TRACER_LOGFILE(t)               (OTEL_CAST_STATIC(struct otel_tracer_impl *, (t)->impl)->logfile)
 
+#ifdef OTELC_DBG_MEM
+/* 8 bytes - TrCr (TrCr ^ 0xffffffff) */
+#  define OTEL_TRACER_MAGIC                  UINT64_C(0x54724372ab8dbc8d)
+#  define OTEL_TRACER_DEAD(t)                ((t)->magic != OTEL_TRACER_MAGIC)
+#else
+#  define OTEL_TRACER_DEAD(t)                false
+#endif
+
 /***
  * Per-instance implementation state for a tracer.  Holds the SDK TracerProvider
  * and the SDK Tracer obtained from it, the text-map propagator used by this

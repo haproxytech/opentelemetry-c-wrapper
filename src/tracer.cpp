@@ -1191,6 +1191,9 @@ static void otel_tracer_destroy(struct otelc_tracer **tracer)
 		(*tracer)->impl = nullptr;
 	}
 
+#ifdef OTELC_DBG_MEM
+	(*tracer)->magic = 0;
+#endif
 	OTELC_SFREE((*tracer)->err);
 	OTELC_SFREE((*tracer)->scope_name);
 	OTELC_SFREE((*tracer)->yaml_prefix);
@@ -1247,8 +1250,13 @@ static struct otelc_tracer *otel_tracer_new(void)
 		retptr->ops         = &otel_tracer_ops;
 		retptr->impl        = otel::new_nothrow<otel_tracer_impl>();
 
+		/* The marker is set last so a failed creation never leaves it behind. */
 		if (OTEL_NULL(retptr->impl))
 			OTELC_SFREE_CLEAR(retptr);
+#ifdef OTELC_DBG_MEM
+		else
+			retptr->magic = OTEL_TRACER_MAGIC;
+#endif
 	}
 
 	OTELC_RETURN_PTR(retptr);

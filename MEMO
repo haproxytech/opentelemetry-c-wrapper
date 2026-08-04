@@ -1296,6 +1296,13 @@ Tracer shutdown (otel_tracer_destroy):
   leftover span remains usable at the SDK level, but its error reporting and
   its inject operation still reach into the freed tracer structure.
 
+  In debug builds the tracer structure carries a liveness marker that destroy
+  clears just before the structure is freed.  The span error path probes the
+  marker and, for a dead tracer, reports the access loudly and diverts the error
+  text into a sacrificial thread-local slot, while the inject operation refuses
+  to reach the freed propagator; the probe itself reads freed memory and is
+  best-effort by design, like the allocator magic probe.
+
 
 ------------------------------------------------------------------------
 13. Meter/Metrics C++ API/SDK Wrapping Strategy

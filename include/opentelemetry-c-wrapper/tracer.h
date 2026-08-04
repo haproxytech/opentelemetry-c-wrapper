@@ -312,6 +312,9 @@ struct otelc_tracer {
 	const struct otelc_tracer_ops *ops;         /* Pointer to the operations vtable. */
 	const struct otelc_ctx        *ctx;         /* Owning library context; provides the YAML configuration. */
 	void                          *impl;        /* Opaque pointer to the C++ implementation state (provider, tracer, propagator). */
+#ifdef OTELC_DBG_MEM
+	uint64_t                       magic;       /* Debug liveness marker; cleared when the tracer is destroyed. */
+#endif
 };
 
 
