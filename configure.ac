@@ -128,6 +128,7 @@ dnl
 AX_PROG_CC_SET([])
 AX_PROG_CXX_SET([])
 AX_CXX_COMPILE_STDCXX([17], [ext], [mandatory])
+AX_ENABLE_HARDENING
 
 AM_CONDITIONAL([WANT_DEBUG], [test "${enable_debug}" = "yes"])
 

@@ -530,6 +530,61 @@ AC_DEFUN([AX_ENABLE_TSAN], [
 	)
 ])
 
+AC_DEFUN([AX_ENABLE_HARDENING], [
+	AC_ARG_ENABLE(
+		[hardening],
+		[AS_HELP_STRING([--enable-hardening], [build with the standard toolchain hardening flags])],
+		[
+			AS_IF(
+				[test "${enableval}" = "yes"],
+				[
+					dnl _FORTIFY_SOURCE requires optimization, which the
+					dnl debug build disables with -O0; glibc would warn
+					dnl in every unit, so the define is skipped there.
+					dnl Level 3 is preferred with level 2 as the fallback, so
+					dnl that a toolchain already defaulting to 3 is not
+					dnl silently downgraded here.
+					AS_IF(
+						[test "${enable_debug}" != "yes"],
+						[
+							_var_fortify=2
+							AX_CHECK_COMPILE_FLAG(
+								[-O2 -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=3],
+								[_var_fortify=3]
+							)
+							CPPFLAGS="${CPPFLAGS} -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=${_var_fortify}"
+						],
+						[]
+					)
+					AC_LANG_PUSH([C])
+					for _loop_cflags in -fstack-protector-strong -fstack-clash-protection -fcf-protection; do
+						AX_CHECK_COMPILE_FLAG(
+							[${_loop_cflags}],
+							[CFLAGS="${CFLAGS} ${_loop_cflags}"]
+						)
+					done
+					AC_LANG_POP([C])
+					AC_LANG_PUSH([C++])
+					for _loop_cxxflags in -fstack-protector-strong -fstack-clash-protection -fcf-protection; do
+						AX_CHECK_COMPILE_FLAG(
+							[${_loop_cxxflags}],
+							[CXXFLAGS="${CXXFLAGS} ${_loop_cxxflags}"]
+						)
+					done
+					AC_LANG_POP([C++])
+					for _loop_ldflags in -Wl,-z,relro -Wl,-z,now -Wl,-z,noexecstack; do
+						AX_CHECK_LINK_FLAG(
+							[${_loop_ldflags}],
+							[LDFLAGS="${LDFLAGS} ${_loop_ldflags}"]
+						)
+					done
+				],
+				[]
+			)
+		]
+	)
+])
+
 AC_DEFUN([AX_VARIABLE_SET], [
 _am_cache_test ()
 {

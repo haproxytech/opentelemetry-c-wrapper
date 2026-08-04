@@ -359,6 +359,14 @@ The autotools form is given first below, the CMake form second.
       Build with the thread sanitizer.  The two sanitizers are mutually
       exclusive, and asking for both fails at configuration time.
 
+  --enable-hardening, -DENABLE_HARDENING=ON
+      Add the toolchain hardening flags: the fortified source define, the
+      stack protector, the stack clash and control flow protections, and
+      the read-only relocation, immediate binding and non-executable
+      stack link flags.  Each flag is used only if the toolchain accepts
+      it, and the fortified source define is skipped in a debug build,
+      whose missing optimization it requires.
+
   --disable-threads, -DENABLE_THREADS=OFF
       Drop the pthread support that is otherwise compiled and linked in.
 
