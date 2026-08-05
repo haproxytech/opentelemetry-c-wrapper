@@ -6,6 +6,95 @@ commits, with a few directly related commits folded into a single bullet, and
 the git log keeps the full descriptions.
 
 
+Version 3.2.0 (2026-08-05)
+--------------------------
+
+Minor release on the 3.x line: the YAML configuration lookups moved off the
+scanf-style libfyaml path and validate their inputs, a libFuzzer harness now
+covers the carrier extraction paths, and the undefined behavior sanitizer and
+toolchain hardening options joined both build systems, together with new debug
+diagnostics and documentation work.  No exported interface changed, so only the
+library revision rose to 8:1:1, and the soname and the existing binaries stay
+compatible.
+
+  * VERSION: Bumped package version to 3.2.0; library version 8:1:1.
+  * DOC: Added the debug memory tracker chapter to the MEMO; it describes the
+    block metadata, the untracked and foreign block handling, the caller-owned
+    record table and the double-free defense, and the initialization chapter
+    gained the lazy handle map allocation and the thread-exit reaper.
+  * MINOR: Added a span helper entry trace and tracer destroy caveats; the span
+    attribute helper otel_span_set_one_attribute() now fires the entry trace,
+    and otel_tracer_destroy() now states that the call must not overlap other
+    operations and that the tracer's spans must already be ended.
+  * DOC: Documented the observable callback locking constraints; the callback
+    runs under the owning meter's callback-registry mutex, must not call the
+    meter operations, and belongs to the instruments of a single meter, with
+    the verified lock order recorded in the MEMO.
+  * DOC: Documented the logger cast risk and the zero-return ambiguity; the
+    cleared wrapper-level gate and an emitted record with an empty body also
+    return 0, and the otel_logs_logger downcast is marked as formally outside
+    the standard together with the reason it is accepted.
+  * MEDIUM: Rejected '%' in context names to protect libfyaml lookups; the scanf
+    format of the libfyaml yaml_find() took a conversion specifier smuggled
+    through a context name and triggered undefined behavior, and the rapidyaml
+    sequence-index parser is guarded against a size_t overflow.
+  * MINOR: Rejected empty strings in otelc_value_strtonum(); the missing endptr
+    check let an empty string convert to zero or false, and it is reported as
+    an error instead, matching the other numeric parsers.
+  * DOC: Trimmed the inline comments duplicating other documentation; the blocks
+    that repeated their own function description or the statement below them
+    were reduced to the one detail their surroundings did not carry, and every
+    mandated description and every NOTE was left as it was.
+  * BUILD: Added the --enable-hardening configure option; it now applies the
+    fortified source define, the stack protector, the stack clash and control
+    flow protections and the relro, now and noexecstack link flags, each only
+    when the toolchain accepts it, with the matching ENABLE_HARDENING option in
+    the CMake build.
+  * MINOR: Added printf-format attributes to the log operations; the new macro
+    OTELC_PRINTF() is applied to the log and log_span vtable members, so the
+    compiler checks the format string and its arguments at every call site that
+    goes through the operations table.
+  * MEDIUM: Replaced the libfyaml scanf lookups with direct node access; the
+    new fyaml_copy_scalar() helper resolves nodes with fy_node_by_path(), so
+    no lookup interprets the path as a scanf format anymore, and the libfyaml
+    build now returns multiline scalars whole, matching rapidyaml.
+  * MINOR: Added a debug liveness tripwire for spans of destroyed tracers; the
+    tracer carries a magic member cleared on destroy, and a debug build reports
+    a span operation that reaches a destroyed tracer loudly, diverting its error
+    text into a sacrificial slot, while the release builds keep the previous
+    behavior.
+  * MINOR: test: Added a fuzzing harness for the carrier extraction paths; each
+    input is split into carrier entries and extracted through both the text map
+    and the HTTP headers reader, and the first campaign found no crashes, no
+    sanitizer reports and no leaks.
+  * MINOR: test: Fixed the out-of-tree build of the fuzzing harnesses; the new
+    shared fuzz-build.sh script snapshots the source tree into the fuzzing build
+    directory, so a harness builds whether or not the tree itself is configured
+    and the tree is never written to.
+  * BUILD: Added the --enable-ubsan configure option; the library and the test
+    programs can be built with the undefined behavior sanitizer, combining with
+    either the address or the thread option, and the CMake build gained the
+    matching ENABLE_UBSAN option.
+  * MINOR: Confined the deliberate sanitizer violations to two helpers; the
+    memory tracker magic probe and the logger downcast moved into functions
+    carrying a no_sanitize attribute, so the sanitizer passes over the test
+    suites are free of reports while both checks stay active everywhere else.
+  * MINOR: Added a sanitizer runner for the test suites; scripts/sanitize.sh
+    builds the library under a sanitizer in a snapshot of the source tree, runs
+    the whole test suite against it and reports every suite whose log contains
+    sanitizer output, with the address and undefined behavior passes clean by
+    default.
+  * DOC: Recorded the ostream metric exporter race for an upstream report; the
+    SDK exporter formats its timestamps through the shared std::gmtime() buffer
+    while output is serialized per instance, and the MEMO notes the race, the
+    checked versions and the bounded consequence, with the SDK left untouched.
+  * MINOR: test: Added a libfyaml selector to the fuzzing harnesses; setting
+    OTELC_FUZZ_LIBFYAML now builds the instrumented library with the libfyaml
+    backend, in a snapshot and under a binary name of its own, and the first
+    campaign found a five-byte document on which libfyaml 0.9 never returns,
+    recorded for an upstream report.
+
+
 Version 3.1.0 (2026-07-24)
 --------------------------
 
