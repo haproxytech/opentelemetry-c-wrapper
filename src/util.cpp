@@ -1143,9 +1143,9 @@ struct otelc_text_map *otelc_text_map_new(OTELC_DBG_IFDEF(OTELC_ARGS(const char 
  *   line      - (debug-only) line number in the source code where this function is called
  *   text_map  - pointer to the text map to which the entry will be added
  *   key       - pointer to the key string
- *   key_len   - length of the key string
+ *   key_len   - length of the key string, or 0 if it is NUL terminated
  *   value     - pointer to the value string
- *   value_len - length of the value string
+ *   value_len - length of the value string, or 0 if it is NUL terminated
  *   flags     - bitmask controlling key/value ownership and lifetime
  *
  * DESCRIPTION
@@ -1156,7 +1156,9 @@ struct otelc_text_map *otelc_text_map_new(OTELC_DBG_IFDEF(OTELC_ARGS(const char 
  *
  *   If OTELC_TEXT_MAP_DUP_KEY or OTELC_TEXT_MAP_DUP_VALUE is specified, the
  *   corresponding data is copied into internally managed storage.  Otherwise,
- *   the text map stores the provided pointer directly.
+ *   the text map stores the provided pointer directly.  A length of 0 means
+ *   the datum is NUL terminated and is copied as a whole string, so a caller
+ *   holding a buffer without a terminator must never pass 0 for it.
  *
  *   If OTELC_TEXT_MAP_FREE_KEY or OTELC_TEXT_MAP_FREE_VALUE is specified, the
  *   corresponding data will be released when the entry is removed or when the
