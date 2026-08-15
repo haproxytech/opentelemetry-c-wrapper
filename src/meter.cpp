@@ -648,15 +648,6 @@ static int64_t otel_meter_create_instrument(struct otelc_meter *meter, const cha
 	OTEL_ARG_DEFAULT(desc, "");
 	OTEL_ARG_DEFAULT(unit, "");
 
-#ifdef OTELC_USE_INSTRUMENT_VALIDATOR
-	if (!otel_instrument_validator.ValidateName(name))
-		OTEL_METER_RETURN_INT("Invalid instrument name: \"%s\"", name);
-	else if (!otel_instrument_validator.ValidateUnit(unit))
-		OTEL_METER_RETURN_INT("Invalid instrument unit: \"%s\"", unit);
-	else if (!otel_instrument_validator.ValidateDescription(desc))
-		OTEL_METER_RETURN_INT("Invalid instrument description: \"%s\"", desc);
-#endif
-
 	auto *impl = OTEL_IMPL(meter, meter);
 	if (OTEL_NULL(impl))
 		OTEL_METER_RETURN_INT(OTEL_ERROR_MSG_INVALID_METER);
@@ -679,6 +670,19 @@ static int64_t otel_meter_create_instrument(struct otelc_meter *meter, const cha
 		OTELC_RETURN_EX(instrument_id, int64_t, "%" PRId64);
 
 	rdguard_instrument.unlock();
+
+	/***
+	 * Only a new instrument is validated, so an existing one is returned
+	 * above without paying for the regular expression matching.
+	 */
+#ifdef OTELC_USE_INSTRUMENT_VALIDATOR
+	if (!otel_instrument_validator.ValidateName(name))
+		OTEL_METER_RETURN_INT("Invalid instrument name: \"%s\"", name);
+	else if (!otel_instrument_validator.ValidateUnit(unit))
+		OTEL_METER_RETURN_INT("Invalid instrument unit: \"%s\"", unit);
+	else if (!otel_instrument_validator.ValidateDescription(desc))
+		OTEL_METER_RETURN_INT("Invalid instrument description: \"%s\"", desc);
+#endif
 
 	/* Only the creation winner reaches the exclusive map lock below. */
 	OTEL_LOCK_METER_CREATE();

@@ -1424,21 +1424,22 @@ Instrument creation (otel_meter_create_instrument):
 
   Creates and registers a metric instrument:
 
-    1. Validate name, description, unit (optionally via
-       InstrumentMetaDataValidator when OTELC_USE_INSTRUMENT_VALIDATOR
-       is defined).
-    2. Duplicate detection: probe of the case-folded instrument_index (name
-       folded to lower case, '/' separator, decimal type), first under the
-       shared lock, then again under the meter's create_mutex with a shared
-       re-probe.  Returns existing ID if found.
-    3. Dispatch to the appropriate meter_ptr->Create*() call based on type.
-    4. Wrap result in otel_instrument_handle and emplace into the
+    1. Duplicate detection: probe of the case-folded instrument_index (name
+       folded to lower case, '/' separator, decimal type) under the shared
+       lock.  Returns existing ID if found.
+    2. Validate name, description, unit (via InstrumentMetaDataValidator
+       when OTELC_USE_INSTRUMENT_VALIDATOR is defined), which only an
+       instrument missing from that probe reaches.
+    3. Re-probe under the meter's create_mutex, as another thread may have
+       created the instrument meanwhile.  Returns existing ID if found.
+    4. Dispatch to the appropriate meter_ptr->Create*() call based on type.
+    5. Wrap result in otel_instrument_handle and emplace into the
        otel_instrument handle map.
-    5. For observable instruments, automatically register the callback via
+    6. For observable instruments, automatically register the callback via
        otel_nolock_meter_add_instrument_callback.
-    6. Register the instrument_index entry last, so a failed creation never
+    7. Register the instrument_index entry last, so a failed creation never
        leaves a stale index entry.
-    7. On any failure after emplacement, roll back by erasing from the map and
+    8. On any failure after emplacement, roll back by erasing from the map and
        deleting the handle.
 
 Value recording:

@@ -49,12 +49,13 @@
 #define OTELC_USE_INTERNAL_INCLUDES
 
 /***
- * Disabled by default because the OTel C++ SDK meter already performs the
- * same metadata validation internally when an instrument is created, so
- * this check only adds redundant std::regex matching to every call to
- * otel_meter_create_instrument().
+ * The OTel C++ SDK meter validates the same metadata internally, but it only
+ * logs the rejection and hands back a no-op instrument, so the caller is told
+ * that an instrument which records nothing was created.  Validating here is
+ * what turns that into a reported failure.  The check runs only where an
+ * instrument is really created, not on every call.
  */
-#undef OTELC_USE_INSTRUMENT_VALIDATOR
+#define OTELC_USE_INSTRUMENT_VALIDATOR
 
 #ifdef OTELC_USE_THREAD_SHARED_HANDLE
 #  define OTELC_USE_THREAD_SHARED_HANDLE_IFDEF(a,b)   a

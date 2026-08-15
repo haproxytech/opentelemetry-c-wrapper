@@ -23,10 +23,9 @@ When OTELC_USER_CONFIG is not defined, the following defaults apply:
   OTELC_USE_RUNTIME_CONTEXT            undefined
 
 The macro definitions outside the OTELC_USER_CONFIG block are not configurable:
-OTELC_USE_INSTRUMENT_VALIDATOR is always undefined, OTELC_USE_INTERNAL_INCLUDES
-is always defined, and a DEBUG build defines OTEL_CPP_USE_DEBUG_OUTPUT together
-with OTELC_DBG_MEM, the macro that gates the debug memory ABI of the public
-headers.
+OTELC_USE_INSTRUMENT_VALIDATOR and OTELC_USE_INTERNAL_INCLUDES are both always
+defined, and a DEBUG build defines OTEL_CPP_USE_DEBUG_OUTPUT together with the
+OTELC_DBG_MEM macro, which gates the debug memory ABI of the public headers.
 
 
 2. OTELC_USE_THREAD_SHARED_HANDLE
@@ -171,27 +170,28 @@ and does not rely on implicit context propagation.
 7. OTELC_USE_INSTRUMENT_VALIDATOR
 ------------------------------------------------------------------------------
 
-Default: undefined (not user-configurable; defined outside OTELC_USER_CONFIG).
+Default: defined (not user-configurable; defined outside OTELC_USER_CONFIG).
 
 Enables instrument metadata validation when creating metric instruments.
 
 When defined, otel_meter_create_instrument() calls
 InstrumentMetaDataValidator::ValidateName(),
 InstrumentMetaDataValidator::ValidateUnit(), and
-InstrumentMetaDataValidator::ValidateDescription() before creating each
-instrument.  The validator is a file-static const object whose two std::regex
-members are compiled once, at construction; ValidateName() and ValidateUnit()
-perform a std::regex match on every call, and ValidateDescription() currently
-always returns true.
+InstrumentMetaDataValidator::ValidateDescription() once the instrument is known
+not to exist yet, so that one returned from the map is never validated a second
+time.  The validator is a file-static const object whose two std::regex members
+are compiled once, at construction; ValidateName() and ValidateUnit() perform
+a std::regex match on every call, and ValidateDescription() currently always
+returns true.
 
 When undefined, the validation is skipped entirely and instrument names, units,
 and descriptions are passed through without checking.
 
-This macro is intentionally kept undefined because the OTel C++ SDK's meter
-already performs the same metadata validation internally when an instrument is
-created, so the wrapper-side check only adds redundant std::regex matching to
-every instrument creation.  It exists solely for development-time validation
-and should not be enabled in production builds.
+This macro is kept defined because it is the only way a rejected instrument is
+reported to the caller.  The OTel C++ SDK's meter validates the same metadata
+internally, but it merely logs the rejection and returns a no-op instrument, so
+the caller would otherwise be told that an instrument which records nothing was
+created successfully.
 
 
 8. Custom configuration
