@@ -20,6 +20,7 @@ global:
 	otelc_strctrl;
 	otelc_strhex;
 	otelc_version;
+	otelc_cfg_validate;
 	otelc_init;
 	otelc_ctx_nstate_get;
 	otelc_deinit;

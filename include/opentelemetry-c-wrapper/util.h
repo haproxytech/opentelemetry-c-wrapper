@@ -266,6 +266,7 @@ struct otelc_kv       *otelc_kv_new(size_t n);
 int                    otelc_kv_add(struct otelc_kv **kv, size_t *kv_len, const char *key, const void *data, size_t data_size);
 void                   otelc_kv_destroy(struct otelc_kv **kv, size_t n);
 
+int                    otelc_cfg_validate(const char *cfgfile, const char *name, char **err);
 struct otelc_ctx      *otelc_init(const char *cfgfile, const char *name, char **err);
 int                    otelc_ctx_nstate_get(const struct otelc_ctx *ctx, otelc_signal_t signal, char *errbuf, size_t errsize);
 void                   otelc_close_cfg(struct otelc_ctx *ctx);

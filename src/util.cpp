@@ -1908,16 +1908,25 @@ int otelc_statistics_check(const struct otelc_meter *meter, int type, size_t siz
 }
 
 
+/* YAML base path of each signal section, indexed by otelc_signal_t. */
+static const char *otel_signal_bases[OTELC_SIGNAL_MAX] = {
+	OTEL_YAML_TRACER_PREFIX, /* OTELC_SIGNAL_TRACES */
+	OTEL_YAML_METER_PREFIX,  /* OTELC_SIGNAL_METRICS */
+	OTEL_YAML_LOGGER_PREFIX, /* OTELC_SIGNAL_LOGS */
+};
+
+
 /***
  * NAME
  *   otelc_load_handle_map_shards - applies the handle_map_shards YAML override
  *
  * SYNOPSIS
- *   static int otelc_load_handle_map_shards(OTEL_YAML_DOC *fyd, char **err)
+ *   static int otelc_load_handle_map_shards(OTEL_YAML_DOC *fyd, bool flag_apply, char **err)
  *
  * ARGUMENTS
- *   fyd - pointer to the YAML document
- *   err - address of a pointer to store an error message on failure
+ *   fyd        - pointer to the YAML document
+ *   flag_apply - whether a valid value may be applied to the live setting
+ *   err        - address of a pointer to store an error message on failure
  *
  * DESCRIPTION
  *   Reads the optional top-level handle_map_shards key from the YAML document
@@ -1926,21 +1935,23 @@ int otelc_statistics_check(const struct otelc_meter *meter, int type, size_t siz
  *   otel_handle_map_shards global, which is consulted when span and span
  *   context maps are constructed.  Later calls still validate the value but
  *   do not change the live setting, because the maps may already exist with a
- *   different shard count.  Absence of the key leaves the current value
+ *   different shard count.  With flag_apply false the value is only validated
+ *   and never applied, so a configuration check does not consume the
+ *   first-application slot.  Absence of the key leaves the current value
  *   untouched and is not an error.
  *
  * RETURN VALUE
  *   Returns OTELC_RET_OK on success or when the key is absent, or
  *   OTELC_RET_ERROR on a YAML lookup error or an invalid value.
  */
-static int otelc_load_handle_map_shards(OTEL_YAML_DOC *fyd, char **err)
+static int otelc_load_handle_map_shards(OTEL_YAML_DOC *fyd, bool flag_apply, char **err)
 {
 	static std::atomic_flag applied = ATOMIC_FLAG_INIT;
 	char                    buf[OTEL_YAML_BUFSIZ] = "", *endptr = nullptr;
 	int64_t                 value;
 	int                     rc;
 
-	OTELC_FUNC("%p, %p:%p", fyd, OTELC_DPTR_ARGS(err));
+	OTELC_FUNC("%p, %hhu, %p:%p", fyd, flag_apply, OTELC_DPTR_ARGS(err));
 
 	rc = yaml_find(fyd, err, false, "handle_map_shards", "/handle_map_shards", buf, sizeof(buf));
 	if (rc == OTELC_RET_ERROR)
@@ -1953,10 +1964,83 @@ static int otelc_load_handle_map_shards(OTEL_YAML_DOC *fyd, char **err)
 	if ((*endptr != '\0') || (errno != 0) || !OTELC_IN_RANGE(value, INT64_C(1), INT64_C(65536)) || ((value & (value - 1)) != 0))
 		OTEL_ERR_RETURN_INT("'%s': invalid handle_map_shards (must be a power of two in 1..65536)", buf);
 
-	if (!applied.test_and_set())
+	if (flag_apply && !applied.test_and_set())
 		otel_handle_map_shards.store(OTEL_CAST_STATIC(size_t, value));
 
 	OTELC_RETURN_INT(OTELC_RET_OK);
+}
+
+
+/***
+ * NAME
+ *   otelc_cfg_validate - validates a YAML configuration without initializing
+ *
+ * SYNOPSIS
+ *   int otelc_cfg_validate(const char *cfgfile, const char *name, char **err)
+ *
+ * ARGUMENTS
+ *   cfgfile - path to the YAML configuration file
+ *   name    - caller-provided name identifying the context
+ *   err     - address of a pointer to store an error message on failure
+ *
+ * DESCRIPTION
+ *   Performs the configuration checks of otelc_init() without creating a
+ *   library context and without touching any process-wide state.  The YAML
+ *   document is parsed, the optional top-level handle_map_shards key is
+ *   validated but never applied, and the resolution of the supplied name is
+ *   probed against each signal section exactly as otelc_init() records it.
+ *   A name that matches nothing in a present section is reported as an error,
+ *   because a signal instance created against it would fail; a section that
+ *   is absent, or one served by the 'default' entry or the flat legacy
+ *   layout, passes.  The document is closed again before returning, which
+ *   makes the function suitable for configuration checks in which the library
+ *   is never initialized.
+ *   An error message stored in *err is allocated by the library and must be
+ *   released with OTELC_SFREE().
+ *
+ * RETURN VALUE
+ *   Returns OTELC_RET_OK when the configuration is usable,
+ *   or OTELC_RET_ERROR on failure.
+ */
+int otelc_cfg_validate(const char *cfgfile, const char *name, char **err)
+{
+#define OTELC_SIGNAL_DEF(a,b)     b,
+	static const char *sig_name[] = { OTELC_SIGNAL_DEFINES }; /* Indexed by otelc_signal_t. */
+#undef OTELC_SIGNAL_DEF
+#define OTELC_CTX_NAME_DEF(a,b)   b,
+	static const char *nstate_msg[] = { OTELC_CTX_NAME_DEFINES };
+#undef OTELC_CTX_NAME_DEF
+	OTEL_YAML_DOC    *fyd;
+	const char       *ctx_name;
+	otelc_ctx_name_t  nstate;
+	int               i, retval = OTELC_RET_OK;
+
+	OTELC_FUNC("\"%s\", \"%s\", %p:%p", OTELC_STR_ARG(cfgfile), OTELC_STR_ARG(name), OTELC_DPTR_ARGS(err));
+
+	if (OTEL_NULL(cfgfile))
+		OTEL_ERR_RETURN_INT("Invalid configuration file path");
+
+	fyd = yaml_open(cfgfile, err);
+	if (OTEL_NULL(fyd))
+		OTELC_RETURN_INT(OTELC_RET_ERROR);
+
+	if (otelc_load_handle_map_shards(fyd, false, err) == OTELC_RET_ERROR)
+		retval = OTELC_RET_ERROR;
+
+	ctx_name = OTELC_STR_IS_VALID(name) ? name : OTEL_YAML_NAME_DEFAULT;
+
+	for (i = 0; (retval == OTELC_RET_OK) && (i < OTEL_CAST_STATIC(int, OTELC_TABLESIZE(otel_signal_bases))); i++) {
+		nstate = yaml_probe_nstate(fyd, otel_signal_bases[i], ctx_name, OTELC_STR_IS_VALID(name));
+		if ((nstate == OTELC_CTX_NAME_NOT_FOUND) || (nstate == OTELC_CTX_NAME_UNSET_NOT_FOUND)) {
+			OTEL_SIGNAL_ERROR(*err, "'%s' signal: %s", sig_name[i], nstate_msg[nstate]);
+
+			retval = OTELC_RET_ERROR;
+		}
+	}
+
+	yaml_close(&fyd);
+
+	OTELC_RETURN_INT(retval);
 }
 
 
@@ -1994,11 +2078,6 @@ static int otelc_load_handle_map_shards(OTEL_YAML_DOC *fyd, char **err)
  */
 struct otelc_ctx *otelc_init(const char *cfgfile, const char *name, char **err)
 {
-	static const char *signal_bases[OTELC_SIGNAL_MAX] = {
-		OTEL_YAML_TRACER_PREFIX, /* OTELC_SIGNAL_TRACES */
-		OTEL_YAML_METER_PREFIX,  /* OTELC_SIGNAL_METRICS */
-		OTEL_YAML_LOGGER_PREFIX, /* OTELC_SIGNAL_LOGS */
-	};
 	struct otelc_ctx *retptr = nullptr;
 	int               i;
 
@@ -2026,14 +2105,14 @@ struct otelc_ctx *otelc_init(const char *cfgfile, const char *name, char **err)
 		OTELC_SFREE(retptr->name);
 		OTELC_SFREE_CLEAR(retptr);
 	}
-	else if (otelc_load_handle_map_shards(retptr->fyd, err) == OTELC_RET_ERROR) {
+	else if (otelc_load_handle_map_shards(retptr->fyd, true, err) == OTELC_RET_ERROR) {
 		yaml_close(&(retptr->fyd));
 		OTELC_SFREE(retptr->name);
 		OTELC_SFREE_CLEAR(retptr);
 	}
 	else {
-		for (i = 0; i < OTEL_CAST_STATIC(int, OTELC_TABLESIZE(signal_bases)); i++)
-			retptr->nstate[i] = yaml_probe_nstate(retptr->fyd, signal_bases[i], retptr->name, OTELC_STR_IS_VALID(name));
+		for (i = 0; i < OTEL_CAST_STATIC(int, OTELC_TABLESIZE(otel_signal_bases)); i++)
+			retptr->nstate[i] = yaml_probe_nstate(retptr->fyd, otel_signal_bases[i], retptr->name, OTELC_STR_IS_VALID(name));
 	}
 
 	OTELC_RETURN_PTR(retptr);
