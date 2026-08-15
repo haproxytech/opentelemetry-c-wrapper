@@ -1098,6 +1098,12 @@ or a file).
       file-backed ostream exporter can be configured per instance; the stdout
       and stderr variants are not limited.
 
+Unlike the otlp_file exporter, this one writes without any size limit and never
+rotates, so a file destination grows for as long as telemetry is produced and is
+bounded only by the free space of its filesystem.  Traffic alone can therefore
+fill that filesystem, which is why a file destination suits development rather
+than production.
+
 
 In-Memory exporter (memory)
 
