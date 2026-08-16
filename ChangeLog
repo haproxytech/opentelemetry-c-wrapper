@@ -6,6 +6,39 @@ commits, with a few directly related commits folded into a single bullet, and
 the git log keeps the full descriptions.
 
 
+Version 3.3.0 (2026-08-17)
+--------------------------
+
+Minor release on the 3.x line: the destroy-time provider flush budget became
+configurable per signal, with a budget of zero dropping the queued telemetry,
+the new otelc_cfg_validate() call checks a configuration without initializing
+the library, and an instrument that the SDK rejects is now reported as an error.
+The signal structs and their operations vtables changed layout, so the library
+current rose and its age was reset (9:0:0): the soname changes and the existing
+binaries must be recompiled against the new shared object.
+
+  * VERSION: Bumped package version to 3.3.0; library version 9:0:0.
+  * MINOR: Added otelc_cfg_validate() for initialization-free config checks;
+    the new entry point parses the YAML document, validates handle_map_shards
+    without applying it and probes the name resolution of each signal section,
+    so a caller rejects a broken configuration without creating a context.
+  * DOC: Documented the zero length convention for text map entries; a length
+    of zero makes otelc_text_map_add() copy the datum as a whole NUL terminated
+    string, which the argument list did not state.
+  * BUG/MEDIUM: meter: Reported a failure when the SDK rejects an instrument;
+    the SDK only logs the rejection and hands back a no-op instrument, so the
+    re-enabled wrapper check turns such a rejection into a reported error and
+    sits behind the duplicate probe, validating only a new instrument.
+  * DOC: Documented that the ostream exporter output is not limited; unlike the
+    otlp_file exporter it neither caps nor rotates what it writes, so a file
+    destination keeps growing, bounded only by the free space of its filesystem.
+  * MINOR: Made the destroy-time provider flush budget configurable; the new
+    flush_timeout member of the signal structs replaces the hard-coded five
+    second budget, a value of zero shuts the exporters down and drops the queued
+    telemetry immediately, and the per-signal flush_timeout YAML key and the
+    new set_flush_timeout vtable operation set it at start time and at runtime.
+
+
 Version 3.2.0 (2026-08-05)
 --------------------------
 
