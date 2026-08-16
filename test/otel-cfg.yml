@@ -311,6 +311,7 @@ signals:
   traces:
     default:
       scope_name: "OTEL C wrapper - traces"
+#     flush_timeout: 5000
       exporters:
         - exporter_traces_ostream
         - exporter_traces_otlp_file
@@ -351,6 +352,7 @@ signals:
   metrics:
     default:
       scope_name: "OTEL C wrapper - metrics"
+#     flush_timeout: 5000
       exporters:
         - exporter_metrics_ostream
         - exporter_metrics_otlp_file
@@ -388,6 +390,7 @@ signals:
       scope_name: "OTEL C wrapper - logs"
       # Optional initial minimum log severity; TRACE (the default) allows all.
       min_severity: TRACE
+#     flush_timeout: 5000
       exporters:
         - exporter_logs_ostream
         - exporter_logs_otlp_file

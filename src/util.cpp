@@ -2189,11 +2189,12 @@ int otelc_ctx_nstate_get(const struct otelc_ctx *ctx, otelc_signal_t signal, cha
  *   with any signal instances passed in.  It destroys the registered tracer,
  *   meter, and logger when they are non-NULL, closes the YAML configuration
  *   document attached to the context, frees the context itself, and clears
- *   each pointer.  Only per-context state is touched: the SDK internal log
- *   handler and the external callbacks registered via otelc_ext_init() are
- *   process-wide and remain valid for any other live context.  Once the final
- *   context has been destroyed, a single otelc_lib_shutdown() call resets those
- *   process-wide hooks.
+ *   each pointer.  Each destroy applies the flush_timeout budget of its
+ *   instance, as the destroy operations document.  Only per-context state is
+ *   touched: the SDK internal log handler and the external callbacks
+ *   registered via otelc_ext_init() are process-wide and remain valid for any
+ *   other live context.  Once the final context has been destroyed, a single
+ *   otelc_lib_shutdown() call resets those process-wide hooks.
  *
  * RETURN VALUE
  *   This function does not return a value.

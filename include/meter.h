@@ -298,7 +298,9 @@ struct T {
  * through the shared re-probe.  Lock order: create_mutex first, then the
  * handle map mutex; never the other way around.  The logfile comes first so
  * that it is destroyed last, after the provider members that may still flush
- * into it.
+ * into it.  The exporters vector holds non-owning views of the SDK exporters
+ * living inside the provider's readers; destroy uses it to shut delivery down
+ * when the flush budget is zero.
  */
 struct otel_meter_impl {
 	std::ofstream                                                                logfile;
@@ -308,6 +310,7 @@ struct otel_meter_impl {
 	struct otel_handle<struct otel_view_handle *, true, otel_shared_mutex>       view{1};
 	std::unordered_map<std::string, int64_t>                                     instrument_index;
 	std::mutex                                                                   create_mutex;
+	std::vector<otel_sdk_metrics::PushMetricExporter *>                          exporters;
 
 	otel_meter_impl();
 	~otel_meter_impl();

@@ -1089,7 +1089,9 @@ static int otel_meter_shutdown(struct otelc_meter *meter, const struct timespec 
  *   components are initialized individually: one or more exporter-reader
  *   pairs, and finally provider.  When the YAML configuration specifies a
  *   sequence of exporters (and optionally a matching sequence of readers),
- *   each pair is created and passed to the provider.
+ *   each pair is created and passed to the provider.  The optional
+ *   flush_timeout key of the subtree sets the destroy-time provider flush
+ *   budget; without it the current budget is kept.
  *
  *   A restart of an already started meter must not run concurrently with the
  *   instrument or flush operations of that meter, because those operations
@@ -1102,8 +1104,9 @@ static int otel_meter_shutdown(struct otelc_meter *meter, const struct timespec 
 static int otel_meter_start(struct otelc_meter *meter)
 {
 	std::vector<std::unique_ptr<otel_sdk_metrics::PeriodicExportingMetricReader>> readers;
+	std::vector<otel_sdk_metrics::PushMetricExporter *>                           exporters;
 	std::shared_ptr<otel_metrics::MeterProvider>                                  provider;
-	char                                                                          scope_name[OTEL_YAML_BUFSIZ];
+	char                                                                          scope_name[OTEL_YAML_BUFSIZ], flush_timeout[OTEL_YAML_BUFSIZ];
 	char                                                                          path_e[OTEL_YAML_BUFSIZ], path_r[OTEL_YAML_BUFSIZ];
 	int                                                                           retval = OTELC_RET_ERROR;
 
@@ -1128,6 +1131,11 @@ static int otel_meter_start(struct otelc_meter *meter)
 	meter->scope_name = OTELC_STRDUP(__func__, __LINE__, scope_name);
 	if (OTEL_NULL(meter->scope_name))
 		OTEL_METER_RETURN_INT(OTEL_ERROR_MSG_ENOMEM("scope name"));
+
+	OTEL_YAML_PATH(path_e, meter, "/flush_timeout");
+	if (yaml_find(meter->ctx->fyd, &(meter->err), 0, "OpenTelemetry meter flush timeout", path_e, flush_timeout, sizeof(flush_timeout)) > 0)
+		if (!otelc_strtoi(flush_timeout, nullptr, true, 0, &(meter->flush_timeout), 0, OTELC_FLUSH_TIMEOUT_MS_MAX, nullptr))
+			OTEL_METER_RETURN_INT("'%s': invalid flush timeout", flush_timeout);
 
 	OTEL_YAML_PATH(path_e, meter, OTEL_YAML_EXPORTERS);
 	OTEL_YAML_PATH(path_r, meter, OTEL_YAML_READERS);
@@ -1164,11 +1172,17 @@ static int otel_meter_start(struct otelc_meter *meter)
 
 			if (otel_meter_exporter_create(meter, exporter, exporter_name) != OTELC_RET_OK)
 				OTELC_RETURN_INT(OTELC_RET_ERROR);
-			else if (otel_meter_reader_create(meter, exporter, reader, (*reader_name != '\0') ? reader_name : nullptr) != OTELC_RET_OK)
+
+			auto *exporter_sdk = exporter.get();
+
+			if (otel_meter_reader_create(meter, exporter, reader, (*reader_name != '\0') ? reader_name : nullptr) != OTELC_RET_OK)
 				OTELC_RETURN_INT(OTELC_RET_ERROR);
 
 			try {
 				OTEL_DBG_THROW();
+				/* Track the exporter only once the reader owns it. */
+				if (!OTEL_NULL(exporter_sdk) && OTEL_NULL(exporter))
+					exporters.push_back(exporter_sdk);
 				readers.push_back(std::move(reader));
 			}
 			OTEL_CATCH_SIGNAL_RETURN( , OTEL_METER_RETURN_INT, OTEL_ERROR_MSG_ADD_METRIC_READER)
@@ -1180,11 +1194,16 @@ static int otel_meter_start(struct otelc_meter *meter)
 		/* Use default exporter and reader when no sequence is defined. */
 		if ((retval = otel_meter_exporter_create(meter, exporter)) == OTELC_RET_ERROR)
 			OTELC_RETURN_INT(retval);
-		else if ((retval = otel_meter_reader_create(meter, exporter, reader)) == OTELC_RET_ERROR)
+
+		auto *exporter_sdk = exporter.get();
+
+		if ((retval = otel_meter_reader_create(meter, exporter, reader)) == OTELC_RET_ERROR)
 			OTELC_RETURN_INT(retval);
 
 		try {
 			OTEL_DBG_THROW();
+			if (!OTEL_NULL(exporter_sdk) && OTEL_NULL(exporter))
+				exporters.push_back(exporter_sdk);
 			readers.push_back(std::move(reader));
 		}
 		OTEL_CATCH_SIGNAL_RETURN( , OTEL_METER_RETURN_INT, OTEL_ERROR_MSG_ADD_METRIC_READER)
@@ -1204,6 +1223,7 @@ static int otel_meter_start(struct otelc_meter *meter)
 
 		impl->meter    = std::move(meter_maybe);
 		impl->provider = provider;
+		impl->exporters = std::move(exporters);
 	}
 
 	OTELC_DBG_METER(OTEL, "meter", meter);
@@ -1285,6 +1305,42 @@ static int otel_meter_set_enabled(struct otelc_meter *meter, bool enabled)
 
 /***
  * NAME
+ *   otel_meter_set_flush_timeout - sets the destroy-time flush budget at runtime
+ *
+ * SYNOPSIS
+ *   static int otel_meter_set_flush_timeout(struct otelc_meter *meter, int flush_timeout)
+ *
+ * ARGUMENTS
+ *   meter         - meter instance
+ *   flush_timeout - new destroy-time provider flush budget in milliseconds
+ *
+ * DESCRIPTION
+ *   Sets the budget of the provider flush that the destroy operation performs.
+ *   A value of zero makes destroy shut the exporters down instead, dropping
+ *   the telemetry still queued.  A value outside the range 0 to
+ *   OTELC_FLUSH_TIMEOUT_MS_MAX is rejected.
+ *
+ * RETURN VALUE
+ *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR in case of an error.
+ */
+static int otel_meter_set_flush_timeout(struct otelc_meter *meter, int flush_timeout)
+{
+	OTELC_FUNC("%p, %d", meter, flush_timeout);
+
+	if (OTEL_NULL(meter))
+		OTELC_RETURN_INT(OTELC_RET_ERROR);
+
+	if (!OTELC_IN_RANGE(flush_timeout, 0, OTELC_FLUSH_TIMEOUT_MS_MAX))
+		OTEL_METER_RETURN_INT(OTEL_ERROR_MSG_INVALID_FLUSH_TIMEOUT, flush_timeout);
+
+	meter->flush_timeout = flush_timeout;
+
+	OTELC_RETURN_INT(OTELC_RET_OK);
+}
+
+
+/***
+ * NAME
  *   otel_meter_destroy - stops the meter and frees all associated memory
  *
  * SYNOPSIS
@@ -1317,9 +1373,15 @@ static void otel_meter_destroy(struct otelc_meter **meter)
 
 	/* The maps live inside the impl; no global SDK provider is touched. */
 	if (!OTEL_NULL(impl)) {
-		const auto provider_sdk = OTEL_METER_PROVIDER(impl->provider);
-		if (!OTEL_NULL(provider_sdk))
-			(void)provider_sdk->ForceFlush(std::chrono::microseconds{5000000});
+		if ((*meter)->flush_timeout > 0) {
+			const auto provider_sdk = OTEL_METER_PROVIDER(impl->provider);
+			if (!OTEL_NULL(provider_sdk))
+				(void)provider_sdk->ForceFlush(std::chrono::milliseconds{(*meter)->flush_timeout});
+		} else {
+			/* A shut-down exporter fails the teardown drain instantly, dropping the queued telemetry. */
+			for (auto *exporter : impl->exporters)
+				(void)exporter->Shutdown(std::chrono::microseconds{1});
+		}
 
 		impl->view.clear_locked();
 		impl->instrument.clear_locked();
@@ -1349,6 +1411,7 @@ const static struct otelc_meter_ops otel_meter_ops = {
 	.get_instrument             = otel_meter_get_instrument,             /* lock otel_instrument (shared) */
 	.enabled                    = otel_meter_enabled,                    /* Locking not required. */
 	.set_enabled                = otel_meter_set_enabled,                /* Locking not required. */
+	.set_flush_timeout          = otel_meter_set_flush_timeout,          /* Locking not required. */
 	.force_flush                = otel_meter_force_flush,                /* Locking not required. */
 	.shutdown                   = otel_meter_shutdown,                   /* Locking not required. */
 	.start                      = otel_meter_start,                      /* Locking not required. */
@@ -1369,7 +1432,8 @@ const static struct otelc_meter_ops otel_meter_ops = {
  * DESCRIPTION
  *   Allocates and initializes a new meter instance in an unstarted state.
  *   The caller is responsible for starting and eventually destroying the
- *   meter.
+ *   meter.  The destroy-time provider flush budget defaults to
+ *   OTELC_FLUSH_TIMEOUT_MS.
  *
  * RETURN VALUE
  *   Returns a pointer to a newly created meter instance on success, or nullptr
@@ -1386,6 +1450,7 @@ static struct otelc_meter *otel_meter_new(void)
 		retptr->scope_name  = nullptr;
 		retptr->yaml_prefix = nullptr;
 		retptr->enabled     = true;
+		retptr->flush_timeout = OTELC_FLUSH_TIMEOUT_MS;
 		retptr->ops         = &otel_meter_ops;
 		retptr->impl        = otel::new_nothrow<otel_meter_impl>();
 
@@ -1413,6 +1478,9 @@ static struct otelc_meter *otel_meter_new(void)
  *   otel_meter_new().  On failure, an error message may be written
  *   to *err if provided.  The supplied context must be non-NULL and
  *   is retained by the meter for later configuration lookups.
+ *   The destroy-time provider flush budget defaults to
+ *   OTELC_FLUSH_TIMEOUT_MS and can be overridden via the YAML configuration
+ *   or changed at runtime through the set_flush_timeout operation.
  *   An error message stored in *err is allocated by the library and must be
  *   released with OTELC_SFREE().
  *

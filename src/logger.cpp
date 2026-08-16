@@ -244,6 +244,42 @@ static int otel_logger_set_min_severity(struct otelc_logger *logger, otelc_log_s
 
 /***
  * NAME
+ *   otel_logger_set_flush_timeout - sets the destroy-time flush budget at runtime
+ *
+ * SYNOPSIS
+ *   static int otel_logger_set_flush_timeout(struct otelc_logger *logger, int flush_timeout)
+ *
+ * ARGUMENTS
+ *   logger        - logger instance
+ *   flush_timeout - new destroy-time provider flush budget in milliseconds
+ *
+ * DESCRIPTION
+ *   Sets the budget of the provider flush that the destroy operation performs.
+ *   A value of zero makes destroy shut the exporters down instead, dropping
+ *   the telemetry still queued.  A value outside the range 0 to
+ *   OTELC_FLUSH_TIMEOUT_MS_MAX is rejected.
+ *
+ * RETURN VALUE
+ *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR in case of an error.
+ */
+static int otel_logger_set_flush_timeout(struct otelc_logger *logger, int flush_timeout)
+{
+	OTELC_FUNC("%p, %d", logger, flush_timeout);
+
+	if (OTEL_NULL(logger))
+		OTELC_RETURN_INT(OTELC_RET_ERROR);
+
+	if (!OTELC_IN_RANGE(flush_timeout, 0, OTELC_FLUSH_TIMEOUT_MS_MAX))
+		OTEL_LOGGER_RETURN_INT(OTEL_ERROR_MSG_INVALID_FLUSH_TIMEOUT, flush_timeout);
+
+	logger->flush_timeout = flush_timeout;
+
+	OTELC_RETURN_INT(OTELC_RET_OK);
+}
+
+
+/***
+ * NAME
  *   otel_logger_record_create - creates and populates a log record
  *
  * SYNOPSIS
@@ -753,7 +789,9 @@ static int otel_logger_shutdown(struct otelc_logger *logger, const struct timesp
  *   processors (and optionally a matching sequence of exporters), each pair is
  *   created and passed to the provider.  The optional min_severity key of the
  *   subtree sets the initial minimum severity threshold; without it the
- *   current threshold is kept.
+ *   current threshold is kept.  The optional flush_timeout key of the subtree
+ *   sets the destroy-time provider flush budget; without it the current
+ *   budget is kept.
  *
  * RETURN VALUE
  *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR in case of an error.
@@ -762,7 +800,8 @@ static int otel_logger_start(struct otelc_logger *logger)
 {
 	std::shared_ptr<otel_logs::LoggerProvider>                      provider;
 	std::vector<std::unique_ptr<otel_sdk_logs::LogRecordProcessor>> processors;
-	char                                                            scope_name[OTEL_YAML_BUFSIZ], min_severity[OTEL_YAML_BUFSIZ] = "";
+	std::vector<otel_sdk_logs::LogRecordExporter *>                 exporters;
+	char                                                            scope_name[OTEL_YAML_BUFSIZ], min_severity[OTEL_YAML_BUFSIZ] = "", flush_timeout[OTEL_YAML_BUFSIZ];
 	char                                                            path_p[OTEL_YAML_BUFSIZ], path_e[OTEL_YAML_BUFSIZ];
 	int                                                             retval = OTELC_RET_ERROR;
 
@@ -792,6 +831,11 @@ static int otel_logger_start(struct otelc_logger *logger)
 
 		logger->min_severity = severity;
 	}
+
+	OTEL_YAML_PATH(path_p, logger, "/flush_timeout");
+	if (yaml_find(logger->ctx->fyd, &(logger->err), 0, "OpenTelemetry logger flush timeout", path_p, flush_timeout, sizeof(flush_timeout)) > 0)
+		if (!otelc_strtoi(flush_timeout, nullptr, true, 0, &(logger->flush_timeout), 0, OTELC_FLUSH_TIMEOUT_MS_MAX, nullptr))
+			OTEL_LOGGER_RETURN_INT("'%s': invalid flush timeout", flush_timeout);
 
 	OTEL_YAML_PATH(path_p, logger, OTEL_YAML_PROCESSORS);
 	OTEL_YAML_PATH(path_e, logger, OTEL_YAML_EXPORTERS);
@@ -828,11 +872,17 @@ static int otel_logger_start(struct otelc_logger *logger)
 
 			if (otel_logger_exporter_create(logger, exporter, exporter_name) != OTELC_RET_OK)
 				OTELC_RETURN_INT(OTELC_RET_ERROR);
-			else if (otel_logger_processor_create(logger, exporter, processor, processor_name) != OTELC_RET_OK)
+
+			auto *exporter_sdk = exporter.get();
+
+			if (otel_logger_processor_create(logger, exporter, processor, processor_name) != OTELC_RET_OK)
 				OTELC_RETURN_INT(OTELC_RET_ERROR);
 
 			try {
 				OTEL_DBG_THROW();
+				/* Track the exporter only once the processor owns it. */
+				if (!OTEL_NULL(exporter_sdk) && OTEL_NULL(exporter))
+					exporters.push_back(exporter_sdk);
 				processors.push_back(std::move(processor));
 			}
 			OTEL_CATCH_SIGNAL_RETURN( , OTEL_LOGGER_RETURN_INT, OTEL_ERROR_MSG_ADD_PROCESSOR)
@@ -844,11 +894,16 @@ static int otel_logger_start(struct otelc_logger *logger)
 		/* Use default exporter and processor when no sequence is defined. */
 		if ((retval = otel_logger_exporter_create(logger, exporter)) == OTELC_RET_ERROR)
 			OTELC_RETURN_INT(retval);
-		else if ((retval = otel_logger_processor_create(logger, exporter, processor)) == OTELC_RET_ERROR)
+
+		auto *exporter_sdk = exporter.get();
+
+		if ((retval = otel_logger_processor_create(logger, exporter, processor)) == OTELC_RET_ERROR)
 			OTELC_RETURN_INT(retval);
 
 		try {
 			OTEL_DBG_THROW();
+			if (!OTEL_NULL(exporter_sdk) && OTEL_NULL(exporter))
+				exporters.push_back(exporter_sdk);
 			processors.push_back(std::move(processor));
 		}
 		OTEL_CATCH_SIGNAL_RETURN( , OTEL_LOGGER_RETURN_INT, OTEL_ERROR_MSG_ADD_PROCESSOR)
@@ -871,6 +926,7 @@ static int otel_logger_start(struct otelc_logger *logger)
 
 		impl->logger   = std::move(logger_maybe);
 		impl->provider = provider;
+		impl->exporters = std::move(exporters);
 	}
 
 	OTELC_DBG_LOGGER(OTEL, "logger", logger);
@@ -912,9 +968,15 @@ static void otel_logger_destroy(struct otelc_logger **logger)
 		impl->logger = {};
 
 		/* No global SDK provider is touched. */
-		const auto provider_sdk = OTEL_LOGGER_PROVIDER(impl->provider);
-		if (!OTEL_NULL(provider_sdk))
-			(void)provider_sdk->ForceFlush(std::chrono::microseconds{5000000});
+		if ((*logger)->flush_timeout > 0) {
+			const auto provider_sdk = OTEL_LOGGER_PROVIDER(impl->provider);
+			if (!OTEL_NULL(provider_sdk))
+				(void)provider_sdk->ForceFlush(std::chrono::milliseconds{(*logger)->flush_timeout});
+		} else {
+			/* A shut-down exporter fails the teardown drain instantly, dropping the queued telemetry. */
+			for (auto *exporter : impl->exporters)
+				(void)exporter->Shutdown(std::chrono::microseconds{1});
+		}
 
 		impl->provider = {};
 
@@ -935,6 +997,7 @@ const static struct otelc_logger_ops otel_logger_ops = {
 	.enabled          = otel_logger_enabled,          /* Locking not required. */
 	.set_enabled      = otel_logger_set_enabled,      /* Locking not required. */
 	.set_min_severity = otel_logger_set_min_severity, /* Locking not required. */
+	.set_flush_timeout = otel_logger_set_flush_timeout, /* Locking not required. */
 	.log              = otel_logger_log,              /* Locking not required. */
 	.log_span         = otel_logger_log_span,         /* Locking not required. */
 	.log_body         = otel_logger_log_body,         /* Locking not required. */
@@ -960,7 +1023,8 @@ const static struct otelc_logger_ops otel_logger_ops = {
  *   Allocates and initializes a new logger instance in an unstarted state.
  *   The minimum log severity threshold defaults to OTELC_LOG_SEVERITY_TRACE
  *   (all severity levels allowed).  The caller is responsible for starting
- *   and eventually destroying the logger.
+ *   and eventually destroying the logger.  The destroy-time provider flush
+ *   budget defaults to OTELC_FLUSH_TIMEOUT_MS.
  *
  * RETURN VALUE
  *   Returns a pointer to a newly created logger instance on success, or nullptr
@@ -978,6 +1042,7 @@ static struct otelc_logger *otel_logger_new(void)
 		retptr->yaml_prefix  = nullptr;
 		retptr->min_severity = OTELC_LOG_SEVERITY_TRACE;
 		retptr->enabled      = true;
+		retptr->flush_timeout = OTELC_FLUSH_TIMEOUT_MS;
 		retptr->ops          = &otel_logger_ops;
 		retptr->impl         = otel::new_nothrow<otel_logger_impl>();
 
@@ -1008,6 +1073,9 @@ static struct otelc_logger *otel_logger_new(void)
  *   set_min_severity operation.  On failure, an error message may be written
  *   to *err if provided.  The supplied context must be non-NULL and
  *   is retained by the logger for later configuration lookups.
+ *   The destroy-time provider flush budget defaults to
+ *   OTELC_FLUSH_TIMEOUT_MS and can be overridden via the YAML configuration
+ *   or changed at runtime through the set_flush_timeout operation.
  *   An error message stored in *err is allocated by the library and must be
  *   released with OTELC_SFREE().
  *

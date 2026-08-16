@@ -831,6 +831,42 @@ static int otel_tracer_set_enabled(struct otelc_tracer *tracer, bool enabled)
 
 /***
  * NAME
+ *   otel_tracer_set_flush_timeout - sets the destroy-time flush budget at runtime
+ *
+ * SYNOPSIS
+ *   static int otel_tracer_set_flush_timeout(struct otelc_tracer *tracer, int flush_timeout)
+ *
+ * ARGUMENTS
+ *   tracer        - tracer instance
+ *   flush_timeout - new destroy-time provider flush budget in milliseconds
+ *
+ * DESCRIPTION
+ *   Sets the budget of the provider flush that the destroy operation performs.
+ *   A value of zero makes destroy shut the exporters down instead, dropping
+ *   the telemetry still queued.  A value outside the range 0 to
+ *   OTELC_FLUSH_TIMEOUT_MS_MAX is rejected.
+ *
+ * RETURN VALUE
+ *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR in case of an error.
+ */
+static int otel_tracer_set_flush_timeout(struct otelc_tracer *tracer, int flush_timeout)
+{
+	OTELC_FUNC("%p, %d", tracer, flush_timeout);
+
+	if (OTEL_NULL(tracer))
+		OTELC_RETURN_INT(OTELC_RET_ERROR);
+
+	if (!OTELC_IN_RANGE(flush_timeout, 0, OTELC_FLUSH_TIMEOUT_MS_MAX))
+		OTEL_TRACER_RETURN_INT(OTEL_ERROR_MSG_INVALID_FLUSH_TIMEOUT, flush_timeout);
+
+	tracer->flush_timeout = flush_timeout;
+
+	OTELC_RETURN_INT(OTELC_RET_OK);
+}
+
+
+/***
+ * NAME
  *   otel_tracer_force_flush - forces the export of any buffered spans
  *
  * SYNOPSIS
@@ -899,7 +935,9 @@ static int otel_tracer_shutdown(struct otelc_tracer *tracer, const struct timesp
  *   exporter-processor pairs, provider, and finally the text-map propagator.
  *   When the YAML configuration specifies a sequence of processors (and
  *   optionally a matching sequence of exporters), each pair is created and
- *   passed to the provider.
+ *   passed to the provider.  The optional flush_timeout key of the subtree
+ *   sets the destroy-time provider flush budget; without it the current
+ *   budget is kept.
  *
  * RETURN VALUE
  *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR in case of an error.
@@ -908,8 +946,9 @@ static int otel_tracer_start(struct otelc_tracer *tracer)
 {
 	std::unique_ptr<otel_sdk_trace::Sampler>                    sampler;
 	std::vector<std::unique_ptr<otel_sdk_trace::SpanProcessor>> processors;
+	std::vector<otel_sdk_trace::SpanExporter *>                 exporters;
 	std::unique_ptr<otel_trace::TracerProvider>                 provider;
-	char                                                        scope_name[OTEL_YAML_BUFSIZ];
+	char                                                        scope_name[OTEL_YAML_BUFSIZ], flush_timeout[OTEL_YAML_BUFSIZ];
 	char                                                        path_p[OTEL_YAML_BUFSIZ], path_e[OTEL_YAML_BUFSIZ];
 	int                                                         retval = OTELC_RET_ERROR;
 
@@ -927,6 +966,11 @@ static int otel_tracer_start(struct otelc_tracer *tracer)
 	tracer->scope_name = OTELC_STRDUP(__func__, __LINE__, scope_name);
 	if (OTEL_NULL(tracer->scope_name))
 		OTEL_TRACER_RETURN_INT(OTEL_ERROR_MSG_ENOMEM("scope name"));
+
+	OTEL_YAML_PATH(path_p, tracer, "/flush_timeout");
+	if (yaml_find(tracer->ctx->fyd, &(tracer->err), 0, "OpenTelemetry tracer flush timeout", path_p, flush_timeout, sizeof(flush_timeout)) > 0)
+		if (!otelc_strtoi(flush_timeout, nullptr, true, 0, &(tracer->flush_timeout), 0, OTELC_FLUSH_TIMEOUT_MS_MAX, nullptr))
+			OTEL_TRACER_RETURN_INT("'%s': invalid flush timeout", flush_timeout);
 
 	if ((retval = otel_sampler_create(tracer, sampler)) == OTELC_RET_ERROR)
 		OTELC_RETURN_INT(retval);
@@ -967,11 +1011,17 @@ static int otel_tracer_start(struct otelc_tracer *tracer)
 
 			if (otel_tracer_exporter_create(tracer, exporter, exporter_name) != OTELC_RET_OK)
 				OTELC_RETURN_INT(OTELC_RET_ERROR);
-			else if (otel_tracer_processor_create(tracer, exporter, processor, processor_name) != OTELC_RET_OK)
+
+			auto *exporter_sdk = exporter.get();
+
+			if (otel_tracer_processor_create(tracer, exporter, processor, processor_name) != OTELC_RET_OK)
 				OTELC_RETURN_INT(OTELC_RET_ERROR);
 
 			try {
 				OTEL_DBG_THROW();
+				/* Track the exporter only once the processor owns it. */
+				if (!OTEL_NULL(exporter_sdk) && OTEL_NULL(exporter))
+					exporters.push_back(exporter_sdk);
 				processors.push_back(std::move(processor));
 			}
 			OTEL_CATCH_SIGNAL_RETURN( , OTEL_TRACER_RETURN_INT, OTEL_ERROR_MSG_ADD_PROCESSOR)
@@ -983,11 +1033,16 @@ static int otel_tracer_start(struct otelc_tracer *tracer)
 		/* Use default exporter and processor when no sequence is defined. */
 		if ((retval = otel_tracer_exporter_create(tracer, exporter)) == OTELC_RET_ERROR)
 			OTELC_RETURN_INT(retval);
-		else if ((retval = otel_tracer_processor_create(tracer, exporter, processor)) == OTELC_RET_ERROR)
+
+		auto *exporter_sdk = exporter.get();
+
+		if ((retval = otel_tracer_processor_create(tracer, exporter, processor)) == OTELC_RET_ERROR)
 			OTELC_RETURN_INT(retval);
 
 		try {
 			OTEL_DBG_THROW();
+			if (!OTEL_NULL(exporter_sdk) && OTEL_NULL(exporter))
+				exporters.push_back(exporter_sdk);
 			processors.push_back(std::move(processor));
 		}
 		OTEL_CATCH_SIGNAL_RETURN( , OTEL_TRACER_RETURN_INT, OTEL_ERROR_MSG_ADD_PROCESSOR)
@@ -1062,7 +1117,10 @@ static int otel_tracer_start(struct otelc_tracer *tracer)
 		OTEL_CATCH_SIGNAL_RETURN({
 			impl->tracer   = {};
 			impl->provider = {};
+			impl->exporters.clear();
 		}, OTEL_TRACER_RETURN_INT, "Unable to install tracer state")
+
+		impl->exporters = std::move(exporters);
 	}
 
 	OTELC_DBG_TRACER(OTEL, "tracer", tracer);
@@ -1180,9 +1238,15 @@ static void otel_tracer_destroy(struct otelc_tracer **tracer)
 
 	/* No global SDK provider is touched. */
 	if (!OTEL_NULL(impl)) {
-		const auto provider_sdk = OTEL_TRACER_PROVIDER(impl->provider);
-		if (!OTEL_NULL(provider_sdk))
-			(void)provider_sdk->ForceFlush(std::chrono::microseconds{5000000});
+		if ((*tracer)->flush_timeout > 0) {
+			const auto provider_sdk = OTEL_TRACER_PROVIDER(impl->provider);
+			if (!OTEL_NULL(provider_sdk))
+				(void)provider_sdk->ForceFlush(std::chrono::milliseconds{(*tracer)->flush_timeout});
+		} else {
+			/* A shut-down exporter fails the teardown drain instantly, dropping the queued telemetry. */
+			for (auto *exporter : impl->exporters)
+				(void)exporter->Shutdown(std::chrono::microseconds{1});
+		}
 
 		impl->propagator = {};
 		impl->provider   = {};
@@ -1211,6 +1275,7 @@ const static struct otelc_tracer_ops otel_tracer_ops = {
 	.extract_http_headers    = otel_tracer_extract_http_headers,    /* lock span_context */
 	.enabled                 = otel_tracer_enabled,                 /* Locking not required. */
 	.set_enabled             = otel_tracer_set_enabled,             /* Locking not required. */
+	.set_flush_timeout       = otel_tracer_set_flush_timeout,       /* Locking not required. */
 	.force_flush             = otel_tracer_force_flush,             /* Locking not required. */
 	.shutdown                = otel_tracer_shutdown,                /* Locking not required. */
 	.start                   = otel_tracer_start,                   /* Locking not required. */
@@ -1231,6 +1296,7 @@ const static struct otelc_tracer_ops otel_tracer_ops = {
  * DESCRIPTION
  *   Allocates and initializes a new tracer instance in an unstarted state.  The
  *   caller is responsible for starting and eventually destroying the tracer.
+ *   The destroy-time provider flush budget defaults to OTELC_FLUSH_TIMEOUT_MS.
  *
  * RETURN VALUE
  *   Returns a pointer to a newly created tracer instance on success, or nullptr
@@ -1247,6 +1313,7 @@ static struct otelc_tracer *otel_tracer_new(void)
 		retptr->scope_name  = nullptr;
 		retptr->yaml_prefix = nullptr;
 		retptr->enabled     = true;
+		retptr->flush_timeout = OTELC_FLUSH_TIMEOUT_MS;
 		retptr->ops         = &otel_tracer_ops;
 		retptr->impl        = otel::new_nothrow<otel_tracer_impl>();
 
@@ -1279,6 +1346,9 @@ static struct otelc_tracer *otel_tracer_new(void)
  *   otel_tracer_new().  On failure, an error message may be written
  *   to *err if provided.  The supplied context must be non-NULL and
  *   is retained by the tracer for later configuration lookups.
+ *   The destroy-time provider flush budget defaults to
+ *   OTELC_FLUSH_TIMEOUT_MS and can be overridden via the YAML configuration
+ *   or changed at runtime through the set_flush_timeout operation.
  *   An error message stored in *err is allocated by the library and must be
  *   released with OTELC_SFREE().
  *

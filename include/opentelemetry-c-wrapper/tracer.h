@@ -19,10 +19,10 @@
 __CPLUSPLUS_DECL_BEGIN
 
 #define OTELC_DBG_TRACER(l,h,p)                                                       \
-	OTELC_DBG_STRUCT(_##l, h, h " %p:{ %p:\"%s\" %p:\"%s\" %hhu %p %p }", (p),    \
+	OTELC_DBG_STRUCT(_##l, h, h " %p:{ %p:\"%s\" %p:\"%s\" %hhu %d %p %p }", (p), \
 	                 (p)->err, OTELC_STR_ARG((p)->err),                           \
 	                 (p)->scope_name, OTELC_STR_ARG((p)->scope_name),             \
-	                 (p)->enabled, (p)->ops, (p)->ctx)
+	                 (p)->enabled, (p)->flush_timeout, (p)->ops, (p)->ctx)
 
 /***
  * The tracer operations vtable.
@@ -194,6 +194,30 @@ struct otelc_tracer_ops {
 
 	/***
 	 * NAME
+	 *   set_flush_timeout - sets the destroy-time flush budget at runtime
+	 *
+	 * SYNOPSIS
+	 *   int (*set_flush_timeout)(struct otelc_tracer *tracer, int flush_timeout)
+	 *
+	 * ARGUMENTS
+	 *   tracer        - tracer instance
+	 *   flush_timeout - new destroy-time provider flush budget in milliseconds
+	 *
+	 * DESCRIPTION
+	 *   Sets the budget of the provider flush that the destroy operation
+	 *   performs.  A value of zero makes destroy shut the exporters down
+	 *   instead, dropping the telemetry still queued.  A value outside
+	 *   the range 0 to OTELC_FLUSH_TIMEOUT_MS_MAX is rejected.
+	 *
+	 * RETURN VALUE
+	 *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR in case of
+	 *   an error.
+	 */
+	int (*set_flush_timeout)(struct otelc_tracer *tracer, int flush_timeout)
+		OTELC_NONNULL_ALL;
+
+	/***
+	 * NAME
 	 *   force_flush - forces the export of any buffered spans
 	 *
 	 * SYNOPSIS
@@ -283,7 +307,10 @@ struct otelc_tracer_ops {
 	 *
 	 * DESCRIPTION
 	 *   Stops the tracer and releases all resources and memory associated
-	 *   with the tracer instance.
+	 *   with the tracer instance.  Before the provider is released it is
+	 *   force-flushed with a budget of flush_timeout milliseconds; a
+	 *   flush_timeout of zero instead shuts the exporters down, so the
+	 *   teardown drops any telemetry still queued.
 	 *
 	 *   The caller must drain every concurrent operation on this tracer
 	 *   instance before invoking destroy: no other thread may be inside
@@ -309,6 +336,7 @@ struct otelc_tracer {
 	char                          *scope_name;  /* Tracer instrumentation scope name. */
 	char                          *yaml_prefix; /* Resolved YAML path of the tracer signal configuration. */
 	bool                           enabled;     /* Wrapper-level gate; when false, new spans are not created. */
+	int                            flush_timeout; /* Destroy-time provider flush budget in milliseconds; zero drops pending telemetry. */
 	const struct otelc_tracer_ops *ops;         /* Pointer to the operations vtable. */
 	const struct otelc_ctx        *ctx;         /* Owning library context; provides the YAML configuration. */
 	void                          *impl;        /* Opaque pointer to the C++ implementation state (provider, tracer, propagator). */

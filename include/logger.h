@@ -35,12 +35,15 @@
  * by this logger.  All members are owned by the instance, so multiple loggers
  * can coexist without sharing process-wide state.  The logfile comes first
  * so that it is destroyed last, after the provider members that may still
- * flush into it.
+ * flush into it.  The exporters vector holds non-owning views of the SDK
+ * exporters living inside the provider's processors; destroy uses it to shut
+ * delivery down when the flush budget is zero.
  */
 struct otel_logger_impl {
 	std::ofstream                                     logfile;
 	otel_nostd::shared_ptr<otel_logs::LoggerProvider> provider;
 	otel_nostd::shared_ptr<otel_logs::Logger>         logger;
+	std::vector<otel_sdk_logs::LogRecordExporter *>   exporters;
 };
 
 #endif /* _OPENTELEMETRY_C_WRAPPER_LOGGER_H_ */

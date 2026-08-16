@@ -40,6 +40,10 @@
 #define OTELC_SPAN_ID_SIZE         8
 #define OTELC_TRACE_ID_SIZE        16
 
+/* Default and maximum destroy-time provider flush budget [ms]. */
+#define OTELC_FLUSH_TIMEOUT_MS     5000
+#define OTELC_FLUSH_TIMEOUT_MS_MAX 600000
+
 #define OTELC_RET_ERROR            -1
 #define OTELC_RET_OK               0
 

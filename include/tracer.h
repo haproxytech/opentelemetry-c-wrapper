@@ -48,13 +48,16 @@
  * owned by this tracer.  All members are owned by the instance, so multiple
  * tracers can coexist without sharing process-wide state.  The logfile comes
  * first so that it is destroyed last, after the provider members that may
- * still flush into it.
+ * still flush into it.  The exporters vector holds non-owning views of the
+ * SDK exporters living inside the provider's processors; destroy uses it to
+ * shut delivery down when the flush budget is zero.
  */
 struct otel_tracer_impl {
 	std::ofstream                                                        logfile;
 	otel_nostd::shared_ptr<otel_trace::TracerProvider>                   provider;
 	otel_nostd::shared_ptr<otel_trace::Tracer>                           tracer;
 	otel_nostd::shared_ptr<otel_context::propagation::TextMapPropagator> propagator;
+	std::vector<otel_sdk_trace::SpanExporter *>                          exporters;
 };
 
 #endif /* _OPENTELEMETRY_C_WRAPPER_TRACER_H_ */

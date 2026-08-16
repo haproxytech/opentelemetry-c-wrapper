@@ -615,10 +615,12 @@ The three signal instances share a common layout.  Every one of them carries
 an 'err' member holding the text of the last error the instance recorded, a
 'scope_name' member with the instrumentation scope name read from the YAML
 configuration, an 'enabled' gate that suppresses the work of the instance while
-it is false, a 'ctx' pointer to the owning context, and the 'ops' pointer to
-the vtable.  A logger carries a 'min_severity' member as well.  The remaining
-members are internal, and the library context itself, struct otelc_ctx, stays
-opaque.
+it is false, a 'flush_timeout' budget in milliseconds for the provider flush
+performed by the destroy operation (a zero flush budget shuts the exporters
+down instead, dropping the queued telemetry), a 'ctx' pointer to the owning
+context, and the 'ops' pointer to the vtable.  A logger carries a 'min_severity'
+member as well.  The remaining members are internal, and the library context
+itself, struct otelc_ctx, stays opaque.
 
 Operations are invoked through the ops pointer, with the instance repeated as
 the first argument:
@@ -668,6 +670,10 @@ The otelc_deinit() function accepts pointers to the context and to all three
 signal types and destroys whichever ones are non-NULL:
 
   otelc_deinit(&ctx, &tracer, &meter, &logger);
+
+otelc_deinit() first flushes each provider within its instance's flush_timeout
+budget, or drops the queued telemetry outright when that budget is zero; see
+section 5.1.
 
 It only touches per-context state.  The SDK internal log handler installed via
 otelc_log_set_handler() and the malloc/free/thread-id callbacks registered via
@@ -1416,6 +1422,10 @@ Traces signal
   providers (string)
       Provider name from the top-level 'providers' section.
 
+  flush_timeout (integer, default: 5000, range: 0-600000)
+      Destroy-time provider flush budget in milliseconds.  Zero shuts the
+      exporters down instead, dropping the telemetry still queued.
+
 
 Metrics signal
 
@@ -1430,6 +1440,10 @@ Metrics signal
 
   providers (string)
       Provider name from the top-level 'providers' section.
+
+  flush_timeout (integer, default: 5000, range: 0-600000)
+      Destroy-time provider flush budget in milliseconds.  Zero shuts the
+      exporters down instead, dropping the telemetry still queued.
 
 
 Logs signal
@@ -1452,6 +1466,10 @@ Logs signal
       TRACE2, TRACE3, TRACE4, DEBUG, DEBUG2, DEBUG3, DEBUG4, INFO, INFO2, INFO3,
       INFO4, WARN, WARN2, WARN3, WARN4, ERROR, ERROR2, ERROR3, ERROR4, FATAL,
       FATAL2, FATAL3, FATAL4.
+
+  flush_timeout (integer, default: 5000, range: 0-600000)
+      Destroy-time provider flush budget in milliseconds.  Zero shuts the
+      exporters down instead, dropping the telemetry still queued.
 
 
 6.10. Environment variables

@@ -372,10 +372,11 @@ carry no telemetry state of their own:
   extracted from a carrier.
 
 Each signal instance carries an `err` member with the text of the last error it
-recorded, a `scope_name` member, an `enabled` gate, a `ctx` back-pointer and the
-`ops` pointer.  The `err` string belongs to the instance and is released with
-it; the strings returned through an `err` argument belong to the caller and go
-to `OTELC_SFREE()`.  The library context itself is opaque.
+recorded, a `scope_name` member, an `enabled` gate, a `flush_timeout` budget,
+a `ctx` back-pointer and the `ops` pointer.  The `err` string belongs to the
+instance and is released with it; the strings returned through an `err` argument
+belong to the caller and go to `OTELC_SFREE()`.  The library context itself is
+opaque.
 
 Operations are invoked through the `ops` pointer:
 
@@ -527,6 +528,11 @@ A complete example covering all three signals is in `test/otel-cfg.yml`.
 The `signals/logs` subtree accepts an optional `min_severity` key that sets
 the initial minimum log severity (for example `INFO`); the threshold can be
 changed at runtime with the logger's `set_min_severity` operation.
+
+Every signal subtree accepts an optional `flush_timeout` key with the budget,
+in milliseconds, of the provider flush that the destroy operation performs;
+zero shuts the exporters down instead, dropping the telemetry still queued,
+and the `set_flush_timeout` operation changes the budget at runtime.
 
 ### Thread Settings
 
