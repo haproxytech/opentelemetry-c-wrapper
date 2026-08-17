@@ -2,12 +2,11 @@
 #
 # Copyright 2026 HAProxy Technologies, Miroslav Zagorac <mzagorac@haproxy.com>
 #
-SH_PKG_URL="https://github.com/abseil/abseil-cpp/archive/refs/tags/20250127.1.tar.gz"
+SH_PKG_URL="https://github.com/biojppm/rapidyaml/releases/download/v0.15.2/rapidyaml-0.15.2-src.tgz"
 
 . "$(realpath "$(dirname "${0}")")/common.sh"
 
 
 sh_configure_cmake \
-	-DABSL_ENABLE_INSTALL=ON \
-	-DABSL_PROPAGATE_CXX_STD=ON
+	-DRYML_BUILD_TOOLS=ON
 sh_make

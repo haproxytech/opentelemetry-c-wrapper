@@ -2,7 +2,7 @@
 #
 # Copyright 2026 HAProxy Technologies, Miroslav Zagorac <mzagorac@haproxy.com>
 #
-SH_PKG_URL="https://github.com/grpc/grpc/archive/refs/tags/v1.70.2.tar.gz"
+SH_PKG_URL="https://github.com/grpc/grpc/archive/refs/tags/v1.82.1.tar.gz"
 
 . "$(realpath "$(dirname "${0}")")/common.sh"
 

@@ -15,8 +15,13 @@ test "${SH_ARG_LIB_TYPE}" = "static"  && SH_SHARED_LIBS="OFF"
 # CMAKE_POLICY_VERSION_MINIMUM=3.5 is an added option in case cmake version 4.1
 # (the latest) is used.
 #
+# find_package(ryml) is disabled because the SDK does not check the ryml
+# version, so a stale ryml in the prefix would silently override the pinned
+# one; the pinned version is always fetched and built instead.
+#
 sh_configure_cmake \
 	-DBUILD_PACKAGE=ON \
+	-DCMAKE_DISABLE_FIND_PACKAGE_ryml=ON \
 	-DCMAKE_POSITION_INDEPENDENT_CODE=ON \
 	-DCMAKE_CXX_STANDARD=17 \
 	-DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
