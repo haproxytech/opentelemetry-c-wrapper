@@ -36,8 +36,16 @@
 #ifdef HAVE_LIBFYAML_H
 #  include <libfyaml.h>
 #else
+#  include <c4/yml/version.hpp>
 #  include <ryml_std.hpp>
 #  include <ryml.hpp>
+
+/*
+ * Non-zero when the ryml library compiled against is at least maj.min.
+ * ryml 0.11.0 replaced the single Callbacks error member with the split
+ * basic/parse/visit callbacks, so their use sites are gated on this.
+ */
+#  define RYML_VERSION_GE(maj, min)       ((RYML_VERSION_MAJOR > (maj)) || ((RYML_VERSION_MAJOR == (maj)) && (RYML_VERSION_MINOR >= (min))))
 #endif
 
 #include <atomic>

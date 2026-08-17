@@ -88,6 +88,42 @@ static ryml::NodeRef ryml_get_node_by_path(ryml::Tree *tree, const char *path)
 }
 
 
+#if RYML_VERSION_GE(0, 11)
+
+/***
+ * NAME
+ *   ryml_throw_error - handles YAML parsing errors
+ *
+ * SYNOPSIS
+ *   template <typename T>
+ *   static void ryml_throw_error(c4::csubstr msg, const T &errdata, void *user_data)
+ *
+ * ARGUMENTS
+ *   msg       - error message string
+ *   errdata   - error details reported by ryml (unused)
+ *   user_data - user-provided data (unused)
+ *
+ * DESCRIPTION
+ *   Callback function used by the YAML parser to report errors.  It throws a
+ *   std::runtime_error containing the error message.  ryml 0.11.0 split the
+ *   single error callback into the basic, parse and visit callbacks, which
+ *   differ only in the type of the error details argument; the template covers
+ *   all three.
+ *
+ * RETURN VALUE
+ *   This function does not return normally; it always throws an exception.
+ */
+template <typename T>
+static void ryml_throw_error(c4::csubstr msg, const T &errdata __maybe_unused, void *user_data __maybe_unused)
+{
+	if (!OTEL_NULL(msg.str) && (msg.len > 0))
+		throw std::runtime_error(std::string(msg.str, msg.len));
+	else
+		throw std::runtime_error("Unknown YAML parsing error");
+}
+
+#else
+
 /***
  * NAME
  *   ryml_throw_error - handles YAML parsing errors
@@ -115,6 +151,8 @@ static void ryml_throw_error(const char *msg, size_t len, ryml::Location loc __m
 	else
 		throw std::runtime_error("Unknown YAML parsing error");
 }
+
+#endif /* RYML_VERSION_GE(0, 11) */
 
 
 /***
@@ -321,7 +359,13 @@ OTEL_YAML_DOC *yaml_open(const char *file, char **err)
 		(void)content.assign((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
 
 		auto callbacks = ryml::get_callbacks();
+#if RYML_VERSION_GE(0, 11)
+		callbacks.m_error_basic = ryml_throw_error<ryml::ErrorDataBasic>;
+		callbacks.m_error_parse = ryml_throw_error<ryml::ErrorDataParse>;
+		callbacks.m_error_visit = ryml_throw_error<ryml::ErrorDataVisit>;
+#else
 		callbacks.m_error = ryml_throw_error;
+#endif /* RYML_VERSION_GE(0, 11) */
 
 		OTEL_DBG_THROW();
 		auto tree = std::unique_ptr<ryml::Tree>(new(std::nothrow) ryml::Tree(callbacks));
