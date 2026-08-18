@@ -6,7 +6,7 @@
 # the curated set of pinned third-party C/C++ dependencies it expects to find
 # at build time.  Each dependency is cloned from GitHub into the layout that
 # the upstream build system expects, with a local main/master branch checked
-# out at the requested tag and all nested submodules initialized recursively.
+# out at the requested tag and submodules initialized where needed.
 #
 # By default the origin remote is dropped from every clone, producing a fully
 # offline working copy that builds without any further network access -- ideal
@@ -20,7 +20,7 @@ SH_OPT_REMOTE="${2:-}"
   SH_GIT_OPTS="-c advice.detachedHead=false clone --single-branch --depth 1 --branch"
        SH_PWD=
   SH_TAG_REPO="
-	master v1.3.0      - jupp0r/prometheus-cpp              third_party/prometheus-cpp
+	master v1.3.0      1 jupp0r/prometheus-cpp              third_party/prometheus-cpp
 	master 2025.09.17  - Microsoft/vcpkg                    tools/vcpkg
 	main   v4.2.1      - microsoft/GSL                      third_party/ms-gsl
 	main   v1.17.0     - google/googletest                  third_party/googletest
@@ -30,13 +30,13 @@ SH_OPT_REMOTE="${2:-}"
 	master v1.6.0      - opentracing/opentracing-cpp        third_party/opentracing-cpp
 	master 20250512.1  - abseil/abseil-cpp                  build/_deps/abseil-cpp-src
 	master curl-8_21_0 - curl/curl                          build/_deps/curl-src
-	main   v35.1       - protocolbuffers/protobuf           build/_deps/protobuf-src
+	main   v35.1       1 protocolbuffers/protobuf           build/_deps/protobuf-src
 	master v1.82.1     1 grpc/grpc                          build/_deps/grpc-src
 	master v0.15.2     2 biojppm/rapidyaml                  build/_deps/ryml-src
 	master v1.3.2      - madler/zlib                        build/_deps/zlib-src
 "
 
-sh_get()
+sh_get ()
 {
 	local _arg_repo="${1}"
 	local _arg_branch="${2}"

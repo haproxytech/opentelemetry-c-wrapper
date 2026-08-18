@@ -70,7 +70,12 @@ sh_make ()
 
 sh_archive ()
 {
-	if test ! -f "${SH_PKG}"; then
+	#
+	# A tree assembled by the opentelemetry-cpp-monorepo.sh script is used
+	# as is: the release tarball is neither downloaded nor extracted over
+	# it, so building from the assembled tree never touches the network.
+	#
+	if test ! -f "${SH_PKG}/.monorepo"; then
 		test -f "${SH_PKG}.tar.gz" || wget "${SH_PKG_URL}" -O "${SH_PKG}.tar.gz"
 		tar xf "${SH_PKG}.tar.gz"
 	fi
