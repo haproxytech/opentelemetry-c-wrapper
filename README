@@ -23,6 +23,7 @@ Summary
      5.3. Contexts and ownership
      5.4. Return values and error reporting
      5.5. Utility types and functions
+     5.6. Operation semantics
    6. YAML configuration
      6.1. Document structure
      6.2. Value conventions
@@ -588,8 +589,9 @@ public headers reside under include/opentelemetry-c-wrapper/, and including
 <opentelemetry-c-wrapper/include.h> pulls in every one of them.  Section 5.1
 introduces the objects the API is built from, section 5.2 the order in which
 they are created and destroyed, section 5.3 the ownership rules that govern
-their lifetimes, section 5.4 the return values, and section 5.5 the utility
-types and functions that surround them.
+their lifetimes, section 5.4 the return values, section 5.5 the utility types
+and functions that surround them, and section 5.6 what a repeated invocation
+of an operation does.
 
 
 5.1. Objects and operations
@@ -751,6 +753,115 @@ Additional utility functions are also available; the most notable are:
   * otelc_ctx_nstate_get()      - read how the context name resolved
   * otelc_pipeline_status_get() - read the export-pipeline status
   * otelc_span_context_create() - construct a span context from raw IDs
+
+
+5.6. Operation semantics
+------------------------------------------------------------------------------
+
+What a repeated invocation of an operation does depends on the operation, and
+every mutating operation falls into one of the classes below.  The class is
+decided partly by the wrapper itself and partly by the OpenTelemetry C++ SDK
+underneath it; the _var, _kv_var and _kv_n variants of one base name always
+share the class of that name.
+
+  * additive          - every call appends a new item
+  * overwrite per key - the last call wins for the named key, the others stay
+  * last wins         - a single slot that every call replaces
+  * once              - the first call decides; a repeat fails or is ignored
+  * per call          - no shared state, so every call acts independently or
+                        returns a fresh result
+
+Common to the tracer, the meter and the logger:
+
+  * start             - last wins: every start builds the provider anew and
+                        replaces the previous one; exactly as for destroy, every
+                        concurrent operation must be drained before a restart
+  * set_enabled       - last wins
+  * set_flush_timeout - last wins
+  * force_flush       - per call
+  * shutdown          - once: the SDK provider shuts down on the first call; a
+                        repeat does no work and returns without an error
+  * destroy           - once: the operation consumes the handle and sets the
+                        caller's pointer to NULL
+
+The tracer adds:
+
+  * start_span            - per call: every call starts one new, independent
+                            span; the with-options variant fixes the parent,
+                            the kind, the timestamps and creation-time links,
+                            which no later operation can amend
+  * extract_text_map      - per call: every call builds one new span context
+                            from the carrier
+  * extract_http_headers  - per call, exactly like extract_text_map, over the
+                            HTTP header carrier
+
+The span:
+
+  * set_attribute       - overwrite per key with the ostream exporter, whose
+                          span data keeps the attributes in a map keyed by the
+                          attribute name; the OTLP exporters append every call,
+                          so a repeated key is exported twice
+  * add_event           - additive: every call appends one more span event
+  * add_link            - additive: every single call appends one more link
+  * record_exception    - additive: every call appends one more event named
+                          'exception' that carries the type, the message, the
+                          stacktrace and the attributes
+  * set_status          - last wins: the SDK stores the code and description
+                          with no precedence at all, so a later call replaces
+                          an earlier error
+  * set_operation_name  - last wins
+  * set_baggage         - overwrite per key: a repeated key replaces its value,
+                          per the W3C baggage rules
+  * inject_text_map     - last wins at the carrier: every invocation releases
+                          the entries a previous one stored in the writer's map
+                          and writes the current set
+  * inject_http_headers - last wins, exactly like inject_text_map, over the
+                          HTTP header carrier
+  * end                 - once: the very first call hands the span data over
+                          to the processor and consumes the handle, as destroy
+                          does, so no later operation can reach the span
+  * end_with_options    - once, exactly like end; the status argument is applied
+                          first, under the set_status semantics
+  * destroy             - once: consumes the handle; a span that was never ended
+                          is ended implicitly
+
+The span context:
+
+  * trace_state_set     - per call: the modified W3C header is returned with
+                          the key replaced in the result; the stored context
+                          itself never changes
+  * trace_state_delete  - per call, exactly like trace_state_set, with the key
+                          removed from the result
+  * destroy             - once: consumes the handle
+
+The meter adds:
+
+  * create_instrument       - once per name and type pair: a repeated create
+                              returns the existing instrument ID, and the first
+                              creator's description and unit stay in effect
+  * update_instrument       - additive for the counters and the histograms,
+                              which accumulate every measurement; last wins
+                              for a gauge, which keeps the latest value per
+                              attribute set within a collection cycle; no-op
+                              for an observable instrument, whose callback
+                              supplies the value
+  * add_view                - once per view name: a repeated name returns the
+                              existing view ID
+  * add_instrument_callback - additive: every call registers one more observable
+                              callback on the instrument, and the operation
+                              remove_instrument_callback removes one of them
+                              per call
+
+The logger adds:
+
+  * log              - additive: every single call emits one more log record;
+                       log_span, log_body and log_body_span behave the same
+                       and differ only in how the body and the span correlation
+                       are supplied
+  * set_min_severity - last wins
+
+Section 5.3 describes what remains callable on a span or a span context that
+outlives its tracer.
 
 
 6. YAML configuration
