@@ -14,8 +14,6 @@ SH_DIR="$(realpath "$(dirname "${0}")")"
 . "${SH_DIR}/common.sh"
 
 
-# libfyaml is no longer needed because opentelemetry-cpp already provides ryml.
-#
 "${SH_DIR}/aws-lc-AWS-LC-FIPS-3.0.0-install.sh"
 "${SH_DIR}/curl-curl-8_21_0-install.sh"
 "${SH_DIR}/abseil-cpp-20250512.1-install.sh"
@@ -28,6 +26,9 @@ SH_DIR="$(realpath "$(dirname "${0}")")"
 "${SH_DIR}/grpc-1.82.1-install.sh"
 #"${SH_DIR}/rapidyaml-0.15.2-src-install.sh"
 "${SH_DIR}/opentelemetry-cpp-1.28.0-install.sh"
+
+# libfyaml is no longer needed because opentelemetry-cpp already provides ryml.
+#
 #"${SH_DIR}/libfyaml-0.9-install.sh"
 
 sh_ldd_check
