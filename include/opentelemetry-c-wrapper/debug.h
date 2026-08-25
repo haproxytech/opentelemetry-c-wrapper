@@ -35,7 +35,11 @@ __CPLUSPLUS_DECL_BEGIN
 #  endif
 #endif
 
-#ifdef OTELC_DBG_MEM
+/*
+ * The debug levels and their mask are visible in every build, so a
+ * configuration value can be checked against OTELC_DBG_LEVEL_MASK even
+ * where the debug ABI is compiled out.
+ */
 #define  OTELC_DBG_LEVEL_DEFINES                                                                  \
 	OTELC_DBG_LEVEL_DEF(LOG)     /* Low-level logging infrastructure messages. */             \
 	OTELC_DBG_LEVEL_DEF(FUNC)    /* Function entry/exit and call-tracing messages. */         \
@@ -65,6 +69,7 @@ enum OTELC_DBG_LEVEL_enum {
 };
 #undef OTELC_DBG_LEVEL_DEF
 
+#ifdef OTELC_DBG_MEM
 #  define OTELC_DBG_IFDEF(a,b)     a
 #  define OTELC_DBG_INDENT_STEP    2
 #  define OTELC_DBG_INDENT         otelc_dbg_indent, "                                        > "
