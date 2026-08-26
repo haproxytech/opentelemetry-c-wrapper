@@ -33,6 +33,7 @@ otel_c_wrapper_test_dbg_LDFLAGS = @OPENTELEMETRY_C_WRAPPER_LDFLAGS@
          test_multi_dbg_SOURCES = test-multi.c test-util.c opentelemetry.c
            test_multi_dbg_LDADD = @OPENTELEMETRY_C_WRAPPER_LIBS@ $(top_builddir)/src/libopentelemetry-c-wrapper_dbg.la
          test_multi_dbg_LDFLAGS = @OPENTELEMETRY_C_WRAPPER_LDFLAGS@
+            test_multi_dbg_LINK = $(CXXLINK)
 
 else
 
@@ -61,6 +62,7 @@ otel_c_wrapper_test_LDFLAGS = @OPENTELEMETRY_C_WRAPPER_LDFLAGS@
          test_multi_SOURCES = test-multi.c test-util.c opentelemetry.c
            test_multi_LDADD = @OPENTELEMETRY_C_WRAPPER_LIBS@ $(top_builddir)/src/libopentelemetry-c-wrapper.la
          test_multi_LDFLAGS = @OPENTELEMETRY_C_WRAPPER_LDFLAGS@
+            test_multi_LINK = $(CXXLINK)
 endif
 
 install-exec-local:
