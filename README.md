@@ -56,8 +56,9 @@ cd scripts/build
 The `lib-type` argument controls how the OTel C++ SDK is built: `dynamic` (the
 default) produces shared libraries and takes zlib from the system, while the
 `static` variant produces static archives and compiles zlib into the prefix
-as well.  AWS-LC and curl are built by the bundle in both cases.  Use `static`
-when the OTel C wrapper itself will be linked statically.
+as well.  The SSL library (AWS-LC, or OpenSSL in its place) and curl are built
+by the bundle in both cases.  Use `static` when the OTel C wrapper itself will
+be linked statically.
 
 By default, libraries are installed under `/opt`.  A sequential alternative
 (`build.sh`) is also available.
