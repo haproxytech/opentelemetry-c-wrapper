@@ -162,7 +162,8 @@ Every program reads `otel-cfg.yml` and looks up the signal entry named
 PASS or FAIL line per test case and exits non-zero when a case fails.
 
 Signal-specific test programs (`test-tracer`, `test-meter`, `test-logger`,
-`test-yaml`, `test-multi`) are also built by `make test`.
+`test-yaml`, `test-multi`) are also built by `make test`, and a debug build
+adds `test-memory`, which exercises the debug memory allocator.
 
 The names in the test directory are libtool wrapper scripts.  The real binaries
 sit in `test/.libs` and carry an rpath to the installed library, so running one
