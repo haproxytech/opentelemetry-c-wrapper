@@ -162,7 +162,9 @@ private:
  * within one function.  OTEL_LOCK_METER_CREATE takes the per-meter creation
  * mutex that serializes create_instrument and add_view.  OTEL_LOCK_TRACER
  * creates a lock_guard in the shared-handle build and expands to while (0) in
- * the thread-local build.  Use them at function scope or inside a
+ * the thread-local build, and OTEL_LOCK_TRACER_COUNT does the same for the
+ * mutex that keeps a tracer count transition together with the map allocation
+ * or teardown it triggers.  Use them at function scope or inside a
  * brace-enclosed block; placing them as the body of a single-statement
  * if/while/for changes the lifetime of the lock guard so the lock is released
  * before the next statement runs.
@@ -187,10 +189,12 @@ private:
 #define OTEL_LOCK_METER_SHARED(...)    OTEL_12(__VA_ARGS__, OTEL_LOCK_METER_SHARED_2, OTEL_LOCK_METER_SHARED_1)(__VA_ARGS__)
 #ifdef OTELC_USE_THREAD_SHARED_HANDLE
 #  define OTEL_LOCK_TRACER(a,n)      const std::lock_guard<std::mutex> guard_##a(OTEL_HANDLE(otel_##a, get_shard(n).mutex))
+#  define OTEL_LOCK_TRACER_COUNT()   const std::lock_guard<std::mutex> guard_count(otel_tracer_count_mutex)
 #  define THREAD_LOCAL
 constexpr bool OTEL_HANDLE_SHARED = true;
 #else
 #  define OTEL_LOCK_TRACER(...)      while (0)
+#  define OTEL_LOCK_TRACER_COUNT()   while (0)
 #  define THREAD_LOCAL               thread_local
 constexpr bool OTEL_HANDLE_SHARED = false;
 #endif
