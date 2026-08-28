@@ -122,6 +122,7 @@ template <typename T> otel_defer_struct<T>make_defer(T fn) { return { fn }; }
 #define OTEL_ERROR_MSG_ENOMEM(s)      "Unable to allocate memory for " s
 #define OTEL_ERROR_MSG_INVALID_CTX    "Invalid context"
 #define OTEL_ERROR_MSG_INVALID_SIG    "Invalid signal"
+#define OTEL_ERROR_MSG_CTX_NAME       "'%s': invalid character in YAML context name"
 
 /* The target is taken once: for a span it resolves through a function call. */
 #define OTEL_SIGNAL_ERROR(e,f, ...)           do { char **err_ptr_ = &(e); if (otelc_sprintf(err_ptr_, f, ##__VA_ARGS__) > 0) OTELC_DBG(OTEL, "%s", *err_ptr_); } while (0)
