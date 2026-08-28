@@ -16,6 +16,10 @@
 # only constructs, is reported as a race.  Its findings are worth reading one by
 # one, but they are not a gate until the SDK itself is built with the sanitizer.
 #
+# The test-memory_dbg program is not run: its double free cases depend on the
+# glibc allocator, which the sanitizers replace, and its oversized allocation
+# aborts under the address sanitizer unless allocator_may_return_null is set.
+#
 #   Usage: ./scripts/sanitize.sh [-a] [-t] [-u]
 #
 #     -a  run the address sanitizer pass

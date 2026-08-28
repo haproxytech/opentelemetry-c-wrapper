@@ -9,7 +9,7 @@ yml_DATA = otel-cfg.yml
 
 if WANT_DEBUG
                   TEST_BIN_NAME = otel-c-wrapper-test_dbg
-                 check_PROGRAMS = otel-c-wrapper-test_dbg test-tracer_dbg test-meter_dbg test-logger_dbg test-yaml_dbg test-multi_dbg
+                 check_PROGRAMS = otel-c-wrapper-test_dbg test-tracer_dbg test-meter_dbg test-logger_dbg test-yaml_dbg test-multi_dbg test-memory_dbg
 otel_c_wrapper_test_dbg_SOURCES = test.c opentelemetry.c
   otel_c_wrapper_test_dbg_LDADD = @OPENTELEMETRY_C_WRAPPER_LIBS@ $(top_builddir)/src/libopentelemetry-c-wrapper_dbg.la -lm
 otel_c_wrapper_test_dbg_LDFLAGS = @OPENTELEMETRY_C_WRAPPER_LDFLAGS@
@@ -34,6 +34,10 @@ otel_c_wrapper_test_dbg_LDFLAGS = @OPENTELEMETRY_C_WRAPPER_LDFLAGS@
            test_multi_dbg_LDADD = @OPENTELEMETRY_C_WRAPPER_LIBS@ $(top_builddir)/src/libopentelemetry-c-wrapper_dbg.la
          test_multi_dbg_LDFLAGS = @OPENTELEMETRY_C_WRAPPER_LDFLAGS@
             test_multi_dbg_LINK = $(CXXLINK)
+        test_memory_dbg_SOURCES = test-memory.c test-util.c
+          test_memory_dbg_LDADD = @OPENTELEMETRY_C_WRAPPER_LIBS@ $(top_builddir)/src/libopentelemetry-c-wrapper_dbg.la
+        test_memory_dbg_LDFLAGS = @OPENTELEMETRY_C_WRAPPER_LDFLAGS@
+           test_memory_dbg_LINK = $(CXXLINK)
 
 else
 

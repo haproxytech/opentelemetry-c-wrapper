@@ -1126,6 +1126,13 @@ add_custom_target(test DEPENDS
     test-multi${_test_suffix}
 )
 
+## test-memory  (debug memory allocator test -- debug build only, not installed)
+if(ENABLE_DEBUG)
+    add_wrapper_executable(test-memory${_test_suffix}
+        SOURCES test/test-memory.c test/test-util.c)
+    add_dependencies(test test-memory${_test_suffix})
+endif()
+
 ## ---------------------------------------------------------------------------
 ## Installation RPATH
 ## ---------------------------------------------------------------------------

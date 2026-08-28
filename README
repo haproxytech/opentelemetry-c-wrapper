@@ -436,6 +436,8 @@ The programs are:
                           paths included
   * test-multi          - exercises several contexts and signal instances
                           side by side
+  * test-memory         - exercises the debug memory allocator, the rejected
+                          double frees included (debug build only)
 
 Every program reads its configuration from otel-cfg.yml in the current directory
 and looks up the signal entry named 'default'; the --config and --name options
