@@ -16,7 +16,7 @@
 #include "include.h"
 
 
-static struct otelc_dbg_mem *dbg_mem = nullptr;
+static std::atomic<struct otelc_dbg_mem *> dbg_mem{nullptr};
 
 
 /***
@@ -87,6 +87,37 @@ static DBG_MEM_NO_ASAN bool otelc_dbg_is_wrapper_block(const struct otelc_dbg_me
 
 /***
  * NAME
+ *   otelc_dbg_is_table_record - tells whether a record pointer lies inside the tracking table
+ *
+ * SYNOPSIS
+ *   static bool otelc_dbg_is_table_record(const struct otelc_dbg_mem *mem, const struct otelc_dbg_mem_data *data)
+ *
+ * ARGUMENTS
+ *   mem  - a pointer to the memory debugger state structure
+ *   data - the record pointer taken from a block header
+ *
+ * DESCRIPTION
+ *   A block header is stored inside the block itself, and the C library reuses
+ *   those bytes for its own free lists once the block is released.  The record
+ *   pointer read from a header is therefore checked to lie inside the table and
+ *   on a record boundary before it is dereferenced.
+ *
+ * RETURN VALUE
+ *   Returns true if data addresses a record of the table, false otherwise.
+ */
+static bool otelc_dbg_is_table_record(const struct otelc_dbg_mem *mem, const struct otelc_dbg_mem_data *data)
+{
+	const uintptr_t offset = OTEL_CAST_REINTERPRET(uintptr_t, data) - OTEL_CAST_REINTERPRET(uintptr_t, mem->data);
+
+	if (offset >= (mem->count * sizeof(*data)))
+		return false;
+
+	return (offset % sizeof(*data)) == 0;
+}
+
+
+/***
+ * NAME
  *   otelc_dbg_mem_add - adds a memory allocation to the tracking list
  *
  * SYNOPSIS
@@ -110,6 +141,8 @@ static DBG_MEM_NO_ASAN bool otelc_dbg_is_wrapper_block(const struct otelc_dbg_me
  */
 static void otelc_dbg_mem_add(const char *func, int line, void *ptr, size_t size, struct otelc_dbg_mem_data *data, int op_idx)
 {
+	struct otelc_dbg_mem *mem = dbg_mem;
+
 	OTELC_FUNC_EX(MEM, "\"%s\", %d, %p, %zu, %p, %d", OTELC_STR_ARG(func), line, ptr, size, data, op_idx);
 
 	(void)snprintf(data->func, sizeof(data->func), "%s:%d", OTELC_STR_ARG(func), line);
@@ -118,8 +151,8 @@ static void otelc_dbg_mem_add(const char *func, int line, void *ptr, size_t size
 	data->size = size;
 	data->used = true;
 
-	dbg_mem->size += size;
-	dbg_mem->op_cnt[op_idx]++;
+	mem->size += size;
+	mem->op_cnt[op_idx]++;
 
 	otelc_dbg_set_metadata(ptr, data);
 
@@ -210,13 +243,19 @@ static void otelc_dbg_mem_alloc(const char *func, int line, void *old_ptr, void 
 			DBG_MEM_ERR("unset metadata: MEM_REALLOC %s:%d(%p -> %p %zu)", func, line, old_ptr, DBG_MEM_PTR(ptr), size);
 		}
 		else if (metadata->magic != DBG_MEM_MAGIC) {
-			DBG_MEM_ERR("invalid magic: MEM_REALLOC %s:%d(%p -> %p %zu) 0x%016" PRIu64, func, line, old_ptr, DBG_MEM_PTR(ptr), size, metadata->magic);
+			DBG_MEM_ERR("invalid magic: MEM_REALLOC %s:%d(%p -> %p %zu) 0x%016" PRIx64, func, line, old_ptr, DBG_MEM_PTR(ptr), size, metadata->magic);
+		}
+		else if (!otelc_dbg_is_table_record(mem, metadata->data)) {
+			DBG_MEM_ERR("foreign metadata: MEM_REALLOC %s:%d(%p -> %p %zu) %p", func, line, old_ptr, DBG_MEM_PTR(ptr), size, metadata->data);
 		}
 		else if (metadata->data->used && (metadata->data->ptr == DBG_MEM_DATA(old_ptr))) {
 			OTELC_DBG(MEM, "MEM_REALLOC: %s:%d(%p %zu -> %p %zu)", func, line, old_ptr, metadata->data->size, DBG_MEM_PTR(ptr), size);
 
 			mem->size -= metadata->data->size;
 			otelc_dbg_mem_add(func, line, ptr, size, metadata->data, OTELC_DBG_MEM_OP_REALLOC);
+		}
+		else {
+			DBG_MEM_ERR("invalid ptr: MEM_REALLOC %s:%d(%p -> %p %zu) %s %hhu", func, line, old_ptr, DBG_MEM_PTR(ptr), size, metadata->data->func, metadata->data->used);
 		}
 	} else {
 		otelc_dbg_set_metadata(ptr, nullptr);
@@ -279,9 +318,10 @@ static void otelc_dbg_mem_alloc(const char *func, int line, void *old_ptr, void 
  * DESCRIPTION
  *   Marks a tracked memory allocation as released.  This is called by the
  *   debugging version of free to update the status of an allocation in the
- *   memory debugger.  The release is rejected when the tracking record shows
- *   that the block is not currently allocated or does not match the pointer,
- *   which indicates a double or stray free.
+ *   memory debugger.  The release is rejected when the record pointer of the
+ *   header lies outside the tracking table, or when the record shows that the
+ *   block is not currently allocated or does not match the pointer; both cases
+ *   indicate a double or stray free.
  *
  * RETURN VALUE
  *   Returns OTELC_RET_OK when the block may be released, or OTELC_RET_ERROR
@@ -329,7 +369,12 @@ static int otelc_dbg_mem_release(const char *func, int line, void *ptr, int op_i
 		DBG_MEM_ERR("unset metadata: MEM_%s %s:%d(%p)", (op_idx == OTELC_DBG_MEM_OP_FREE) ? "FREE" : "RELEASE", func, line, ptr);
 	}
 	else if (metadata->magic != DBG_MEM_MAGIC) {
-		DBG_MEM_ERR("invalid magic: MEM_%s %s:%d(%p) 0x%016" PRIu64, (op_idx == OTELC_DBG_MEM_OP_FREE) ? "FREE" : "RELEASE", func, line, ptr, metadata->magic);
+		DBG_MEM_ERR("invalid magic: MEM_%s %s:%d(%p) 0x%016" PRIx64, (op_idx == OTELC_DBG_MEM_OP_FREE) ? "FREE" : "RELEASE", func, line, ptr, metadata->magic);
+	}
+	else if (!otelc_dbg_is_table_record(mem, metadata->data)) {
+		DBG_MEM_ERR("foreign metadata: MEM_%s %s:%d(%p) %p", (op_idx == OTELC_DBG_MEM_OP_FREE) ? "FREE" : "RELEASE", func, line, ptr, metadata->data);
+
+		retval = OTELC_RET_ERROR;
 	}
 	else if (metadata->data->used && (metadata->data->ptr == metadata)) {
 		OTELC_DBG(MEM, "MEM_%s: %s:%d(%p %zu)", (op_idx == OTELC_DBG_MEM_OP_FREE) ? "FREE" : "RELEASE", func, line, ptr, metadata->data->size);
@@ -357,6 +402,140 @@ static int otelc_dbg_mem_release(const char *func, int line, void *ptr, int op_i
 	}
 
 	OTELC_RETURN_INT(retval);
+}
+
+
+/***
+ * NAME
+ *   otelc_dbg_mem_check - verifies the record of a tracked block before a reallocation
+ *
+ * SYNOPSIS
+ *   static int otelc_dbg_mem_check(const char *func, int line, void *ptr)
+ *
+ * ARGUMENTS
+ *   func - the name of the calling function
+ *   line - the line number of the call
+ *   ptr  - the address of the data being reallocated
+ *
+ * DESCRIPTION
+ *   Checks, under the tracker mutex, that the record referenced by the header
+ *   of a block lies inside the tracking table and still describes the block as
+ *   allocated.  The header alone is not trusted because the C library reuses
+ *   its bytes once the block is released, so a stale record pointer found there
+ *   may point anywhere.  The check runs before the block is handed over to
+ *   realloc(), which would otherwise operate on released memory.
+ *
+ * RETURN VALUE
+ *   Returns OTELC_RET_OK when the block may be reallocated, or OTELC_RET_ERROR
+ *   when the pointer is rejected.
+ */
+static int otelc_dbg_mem_check(const char *func, int line, void *ptr)
+{
+	struct otelc_dbg_mem          *mem = dbg_mem;
+	struct otelc_dbg_mem_metadata *metadata = DBG_MEM_DATA(ptr);
+	int                            rc, retval = OTELC_RET_OK;
+
+	OTELC_FUNC_EX(MEM, "\"%s\", %d, %p", OTELC_STR_ARG(func), line, ptr);
+
+	if (OTEL_NULL(mem))
+		OTELC_RETURN_INT(retval);
+
+	if ((rc = pthread_mutex_lock(&(mem->mutex))) != 0) {
+		DBG_MEM_ERR("unable to lock mutex: %s", otel_strerror(rc));
+
+		OTELC_RETURN_INT(retval);
+	}
+
+	if (dbg_mem != mem) {
+		/* The tracker was disabled while waiting for the mutex. */
+		(void)pthread_mutex_unlock(&(mem->mutex));
+
+		OTELC_RETURN_INT(retval);
+	}
+
+	if (!otelc_dbg_is_table_record(mem, metadata->data)) {
+		DBG_MEM_ERR("foreign metadata: MEM_REALLOC %s:%d(%p) %p", OTELC_STR_ARG(func), line, ptr, metadata->data);
+
+		retval = OTELC_RET_ERROR;
+	}
+	else if (!metadata->data->used || (metadata->data->ptr != metadata)) {
+		DBG_MEM_ERR("invalid ptr: MEM_REALLOC %s:%d(%p) %s %hhu", OTELC_STR_ARG(func), line, ptr, metadata->data->func, metadata->data->used);
+
+		retval = OTELC_RET_ERROR;
+	}
+
+	if ((rc = pthread_mutex_unlock(&(mem->mutex))) != 0)
+		DBG_MEM_ERR("unable to unlock mutex: %s", otel_strerror(rc));
+
+	OTELC_RETURN_INT(retval);
+}
+
+
+/***
+ * NAME
+ *   otelc_dbg_mem_is_stale - tells whether a block without a valid header came from this allocator
+ *
+ * SYNOPSIS
+ *   static bool otelc_dbg_mem_is_stale(const char *func, int line, void *ptr, const char *op)
+ *
+ * ARGUMENTS
+ *   func - the name of the calling function
+ *   line - the line number of the call
+ *   ptr  - the address of the data being released or reallocated
+ *   op   - the name of the memory operation, used in the diagnostic
+ *
+ * DESCRIPTION
+ *   A block whose header carries no valid metadata is either foreign or a block
+ *   of this allocator whose header the C library overwrote when the block was
+ *   released.  The records assigned so far are searched under the tracker mutex
+ *   for the real base of the block to tell the two apart; a match is reported
+ *   as a stale block together with its allocation site and its current state.
+ *   Only this path pays for the search.  The search finds a released block only
+ *   while its record still holds the old base; once a full table has reused the
+ *   record, a later double free of that block reaches the C library.  A foreign
+ *   block that happens to start where a released block once did is misreported;
+ *   such a coincidence is rare.
+ *
+ * RETURN VALUE
+ *   Returns true if the block came from this allocator and must not be passed
+ *   to the C library, false if it is foreign.
+ */
+static bool otelc_dbg_mem_is_stale(const char *func, int line, void *ptr, const char *op)
+{
+	struct otelc_dbg_mem *mem = dbg_mem;
+	const void           *base = DBG_MEM_DATA(ptr);
+	bool                  retval = false;
+	int                   rc;
+
+	OTELC_FUNC_EX(MEM, "\"%s\", %d, %p, \"%s\"", OTELC_STR_ARG(func), line, ptr, op);
+
+	if (OTEL_NULL(mem))
+		OTELC_RETURN_EX(retval, bool, "%hhu");
+
+	if ((rc = pthread_mutex_lock(&(mem->mutex))) != 0) {
+		DBG_MEM_ERR("unable to lock mutex: %s", otel_strerror(rc));
+
+		OTELC_RETURN_EX(retval, bool, "%hhu");
+	}
+
+	if (dbg_mem != mem) {
+		/* The tracker was disabled while waiting for the mutex. */
+		(void)pthread_mutex_unlock(&(mem->mutex));
+
+		OTELC_RETURN_EX(retval, bool, "%hhu");
+	}
+
+	for (size_t i = 0; (i < mem->assigned) && !retval; i++)
+		if (mem->data[i].ptr == base) {
+			DBG_MEM_ERR("stale block: MEM_%s %s:%d(%p) %s %s", op, OTELC_STR_ARG(func), line, ptr, mem->data[i].func, mem->data[i].used ? "header lost" : "already released");
+
+			retval = true;
+		}
+
+	if ((rc = pthread_mutex_unlock(&(mem->mutex))) != 0)
+		DBG_MEM_ERR("unable to unlock mutex: %s", otel_strerror(rc));
+
+	OTELC_RETURN_EX(retval, bool, "%hhu");
 }
 
 
@@ -450,6 +629,8 @@ void *otelc_dbg_calloc(const char *func, int line, size_t nelem, size_t elsize)
  *   Changes the size of the memory block pointed to by ptr and records
  *   debugging information about the reallocation.  This is a wrapper around
  *   the standard realloc function that integrates with the memory debugger.
+ *   A pointer the tracker rejects as a released or unknown block is reported
+ *   and a null pointer is returned, with the memory left untouched.
  *
  * RETURN VALUE
  *   Returns a pointer to the reallocated memory, or nullptr on failure.
@@ -472,10 +653,15 @@ void *otelc_dbg_realloc(const char *func, int line, void *ptr, size_t size)
 
 		/***
 		 * If memory is not allocated via these debug functions, it must
-		 * not be reallocated via them either.
+		 * not be reallocated via them either, unless the block turns
+		 * out to be a released block of this allocator whose header
+		 * the C library has overwritten; see otelc_dbg_free().
 		 */
 		if (!otelc_dbg_is_wrapper_block(metadata)) {
-			retptr = realloc(ptr, size);
+			if (otelc_dbg_mem_is_stale(func, line, ptr, "REALLOC"))
+				retptr = nullptr;
+			else
+				retptr = realloc(ptr, size);
 
 			OTELC_RETURN_PTR(retptr);
 		}
@@ -492,6 +678,10 @@ void *otelc_dbg_realloc(const char *func, int line, void *ptr, size_t size)
 			retptr = realloc(DBG_MEM_DATA(ptr), DBG_MEM_SIZE(size));
 
 			otelc_dbg_set_metadata(retptr, nullptr);
+		}
+		else if (otelc_dbg_mem_check(func, line, ptr) == OTELC_RET_ERROR) {
+			/* Released or corrupted block; leave it untouched. */
+			retptr = nullptr;
 		}
 		else {
 			retptr = realloc(DBG_MEM_DATA(ptr), DBG_MEM_SIZE(size));
@@ -548,10 +738,22 @@ void otelc_dbg_free(const char *func, int line, void *ptr)
 	 * otelc_dbg_is_wrapper_block() carries DBG_MEM_NO_ASAN.  A foreign block
 	 * whose preceding bytes happen to match the magic would be mistaken for
 	 * a tracked one; the probability of that is negligible.
+	 *
+	 * A block of this allocator loses its header on release, because the C
+	 * library reuses those bytes for its free lists.  A pointer without the
+	 * magic is therefore looked up by its base among the assigned records
+	 * before it is handed to free(): a match is a double free, or a live
+	 * block whose header was overwritten, and is reported instead.  A block
+	 * that the C library served from its own mapping is unmapped by its
+	 * first free, so a second free of it faults in the probe itself; that
+	 * case cannot be diagnosed here, and neither can the second free of a
+	 * block that never had a record because no tracker existed, or it was
+	 * disabled or its table was full, when the block was allocated.
 	 */
 	metadata = DBG_MEM_DATA(ptr);
 	if (!otelc_dbg_is_wrapper_block(metadata)) {
-		free(ptr);
+		if (!otelc_dbg_mem_is_stale(func, line, ptr, "FREE"))
+			free(ptr);
 
 		OTELC_RETURN();
 	}
@@ -683,8 +885,8 @@ char *otelc_dbg_strndup(const char *func, int line, const char *s, size_t size)
  *
  * DESCRIPTION
  *   Initializes the memory debugger with the provided state and metadata
- *   storage.  This must be called before any of the debugging memory functions
- *   are used.
+ *   storage.  Allocations made before this call are not tracked, but they stay
+ *   valid and are released correctly by the debugging free function.
  *
  * RETURN VALUE
  *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR on failure.

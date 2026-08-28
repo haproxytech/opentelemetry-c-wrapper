@@ -507,8 +507,9 @@ void otelc_nsleep(time_t sec, long nsec)
  *   copied data.  The trailing null byte ensures that the result can be safely
  *   used as a C string if the source data is textual.
  *
- *   If s is a null pointer, if size is 0, or if size + 1 would overflow, no
- *   allocation is performed and a null pointer is returned.
+ *   If s is a null pointer or if size + 1 would overflow, no allocation is
+ *   performed and a null pointer is returned.  A size of 0 yields a block that
+ *   holds only the terminating null byte.
  *
  * RETURN VALUE
  *   Returns a pointer to the newly allocated memory block, or a null pointer
@@ -518,7 +519,7 @@ void *otelc_memdup(const void *s, size_t size)
 {
 	void *retptr = nullptr;
 
-	if (OTEL_NULL(s) || (size == 0) || (size == SIZE_MAX))
+	if (OTEL_NULL(s) || (size == SIZE_MAX))
 		return retptr;
 
 	retptr = OTELC_MALLOC(__func__, __LINE__, size + 1);
