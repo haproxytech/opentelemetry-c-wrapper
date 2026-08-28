@@ -600,8 +600,9 @@ contention; the shard count is set with the top-level `handle_map_shards` YAML
 key.  That shared-handle model is what the default build selects, and it is what
 allows a span started on one thread to be ended on another.  The alternative
 model, chosen at compile time, keeps the handles thread-local: it removes the
-locking altogether but confines each span to the thread that made it, as
-[`README-configuration`](README-configuration) describes.
+locking altogether but confines each span to the thread that made it, and it
+requires every tracer to be destroyed on the thread that created it, as the
+[`README-configuration`](README-configuration) file describes.
 
 Before `start()` or `destroy()` runs on a tracer, meter or logger, the caller
 has to drain every concurrent operation on that same instance and end the spans

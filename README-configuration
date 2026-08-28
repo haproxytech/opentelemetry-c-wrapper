@@ -52,7 +52,11 @@ OTEL_LOCK_TRACER() compiles to a no-op.
 The shared-handle model is required for applications where one thread may
 access spans created by another (e.g. a span started on an accept thread and
 ended on a worker thread).  The thread-local model eliminates all lock overhead
-but restricts each span to the thread that created it.
+but restricts each span to the thread that created it, and it requires every
+tracer to be destroyed on the thread that created it: the tracer count guarding
+the per-thread maps is thread-local as well, so a tracer destroyed elsewhere
+leaves the creating thread's maps behind and drives the other thread's count
+below zero.
 
 
 3. OTELC_USE_STATIC_HANDLE
@@ -75,11 +79,14 @@ and otel_span_context handle maps through otel::new_nothrow(), which converts
 a constructor exception into a nullptr result as well.  The function is invoked
 on every otelc_tracer_create() call in the shared-handle model and on every
 otel_tracer_start_span_with_options() and otel_tracer_extract_carrier() call
-in the thread-local model, but only the first invocation, per process or per
-thread, allocates.  A newly allocated map continues the handle numbering of
-the previous map generation, and in the thread-local model the initialization
-also arms a thread-exit reaper that releases the calling thread's maps when
-the thread terminates.
+in the thread-local model, but it allocates only when the maps are absent: on
+the first invocation, per process or per thread, and once more after the last
+tracer's destroy has released them.  In the shared-handle model the tracer count
+and the map allocation or teardown change together under one mutex, so a create
+never observes maps that a concurrent last destroy is removing.  A fresh map
+continues the handle numbering of the previous generation of maps, and in the
+thread-local model the initialization also arms a thread-exit reaper, which
+releases the calling thread's maps when the thread terminates.
 
 The dynamic model avoids constructing handle maps for threads that never create
 spans.  The static model avoids the null-pointer check and the allocation call
