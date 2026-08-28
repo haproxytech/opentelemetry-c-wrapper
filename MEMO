@@ -2347,11 +2347,16 @@ Untracked and foreign blocks:
   real base directly, re-initializing the header after each realloc so the stale
   self-pointer is never followed.
 
-  A pointer whose header carries no valid magic value was not produced by these
-  wrappers at all; it is freed or reallocated transparently through the plain
-  C library calls.  The magic probe reads below the payload, which is formally
-  undefined for these foreign blocks; in practice the read lands inside the
-  allocator's chunk header, and the accepted risk is documented at the probe
+  A pointer whose header carries no valid magic value is either foreign or a
+  block of this allocator whose header the C library overwrote when the block
+  was released.  The assigned records are searched for the real base of the
+  block to tell the two apart: a match is reported as a stale block, a double
+  free or a live block with a lost header, and the pointer is not passed on,
+  while a foreign block is freed or reallocated transparently through the plain
+  C library calls.  The search finds a released block only while its record
+  still holds the old base.  The magic probe reads below the payload, which is
+  formally undefined for these foreign blocks; in practice the read lands inside
+  the allocator's chunk header, and the accepted risk is documented at the probe
   in src/dbg_malloc.cpp.  The probe is confined to otelc_dbg_is_wrapper_block(),
   which carries the DBG_MEM_NO_ASAN attribute because the address sanitizer
   reports that read as a heap underflow and offers no runtime suppression for
@@ -2359,11 +2364,18 @@ Untracked and foreign blocks:
 
 Double-free defense:
 
-  A release is rejected when the record shows that the block is not currently
-  allocated or does not match the pointer, which indicates a double or stray
-  free.  The memory is then deliberately left untouched after the diagnostic,
-  accepting a leak rather than risking heap corruption; records whose pointer
-  matches the rejected block are listed as possible previous uses.
+  A record pointer read from a header is trusted only once it has been checked
+  to lie inside the record table and on a record boundary, because the C library
+  reuses the header bytes of a released block for its free lists.  A release is
+  rejected when the record pointer fails that check or the record shows that the
+  block is not currently allocated or does not match the pointer, which marks a
+  double or stray free.  The memory is then deliberately left untouched after
+  the diagnostic, accepting a leak rather than risking heap corruption; unless
+  the record pointer failed the table check, the records whose pointer matches
+  the rejected block are listed as possible previous uses.
+
+  A reallocation runs the same record check before the block is handed to the C
+  library, and a failed check yields a null pointer with the memory untouched.
 
 Error string tracking:
 
