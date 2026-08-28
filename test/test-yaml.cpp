@@ -1749,8 +1749,9 @@ static void test_otelc_init_null_file(void)
  *   cfg_file - path to the YAML configuration file
  *
  * DESCRIPTION
- *   Verifies that otelc_init() accepts a nullptr context name and
- *   substitutes the default context name for it.
+ *   Verifies that otelc_init() accepts a nullptr context name as well as an
+ *   empty one and substitutes the default context name for both, so the two
+ *   spellings of an unset name produce the same context.
  *
  * RETURN VALUE
  *   This function does not return a value.
@@ -1759,16 +1760,66 @@ static void test_otelc_init_null_name(const char *cfg_file)
 {
 	struct otelc_ctx *ctx;
 	char             *err = nullptr;
-	int               result = TEST_FAIL;
+	int               result = TEST_PASS;
 
 	ctx = otelc_init(cfg_file, nullptr, &err);
-	if (_nNULL(ctx))
-		result = TEST_PASS;
+	if (_NULL(ctx) || (strcmp(ctx->name, DEFAULT_CTX_NAME) != 0))
+		result = TEST_FAIL;
+
+	otelc_deinit(&ctx, nullptr, nullptr, nullptr);
+	OTELC_SFREE_CLEAR(err);
+
+	ctx = otelc_init(cfg_file, "", &err);
+	if (_NULL(ctx) || (strcmp(ctx->name, DEFAULT_CTX_NAME) != 0))
+		result = TEST_FAIL;
 
 	otelc_deinit(&ctx, nullptr, nullptr, nullptr);
 	OTELC_SFREE(err);
 
-	test_report("otelc_init nullptr name", result);
+	test_report("otelc_init nullptr/empty name", result);
+}
+
+
+/***
+ * NAME
+ *   test_otelc_init_percent_name - tests rejection of a '%' in the context name
+ *
+ * SYNOPSIS
+ *   static void test_otelc_init_percent_name(const char *cfg_file)
+ *
+ * ARGUMENTS
+ *   cfg_file - path to the YAML configuration file
+ *
+ * DESCRIPTION
+ *   Verifies that otelc_init() and otelc_cfg_validate() both reject a context
+ *   name containing the '%' character with the same error message, so that a
+ *   name no signal instance could ever be created against never yields a
+ *   context and never passes the configuration check.
+ *
+ * RETURN VALUE
+ *   This function does not return a value.
+ */
+static void test_otelc_init_percent_name(const char *cfg_file)
+{
+	struct otelc_ctx *ctx;
+	char             *err = nullptr, expect[128];
+	int               result = TEST_PASS;
+
+	(void)snprintf(expect, sizeof(expect), OTEL_ERROR_MSG_CTX_NAME, "web%1");
+
+	ctx = otelc_init(cfg_file, "web%1", &err);
+	if (_nNULL(ctx) || _NULL(err) || (strcmp(err, expect) != 0))
+		result = TEST_FAIL;
+
+	otelc_deinit(&ctx, nullptr, nullptr, nullptr);
+	OTELC_SFREE_CLEAR(err);
+
+	if ((otelc_cfg_validate(cfg_file, "web%1", &err) != OTELC_RET_ERROR) || _NULL(err) || (strcmp(err, expect) != 0))
+		result = TEST_FAIL;
+
+	OTELC_SFREE(err);
+
+	test_report("otelc_init percent in name", result);
 }
 
 
@@ -1911,6 +1962,71 @@ static void test_otelc_deinit_reinit(const char *cfg_file)
 	OTELC_SFREE(err);
 
 	test_report("otelc_deinit + reinit", result);
+}
+
+
+/***
+ * NAME
+ *   test_otelc_cfg_validate - tests the initialization-free configuration check
+ *
+ * SYNOPSIS
+ *   static void test_otelc_cfg_validate(const char *cfg_file, const char *temp_file, const char *path)
+ *
+ * ARGUMENTS
+ *   cfg_file  - path to the YAML configuration file with named entries
+ *   temp_file - path to the temporary YAML file with a flat traces section
+ *   path      - path of a scratch YAML file the test writes and removes
+ *
+ * DESCRIPTION
+ *   Verifies that otelc_cfg_validate() accepts the configurations that
+ *   otelc_init() accepts: a named entry, an unset name served by 'default', a
+ *   missing name that falls back to 'default', and the flat traces section of
+ *   the temporary file with its other sections absent.  A missing file path,
+ *   an unreadable file, a present section that matches neither the name nor
+ *   'default' nor the flat layout, and an invalid handle_map_shards value must
+ *   be rejected with an error message.
+ *
+ * RETURN VALUE
+ *   This function does not return a value.
+ */
+static void test_otelc_cfg_validate(const char *cfg_file, const char *temp_file, const char *path)
+{
+	char *err = nullptr;
+	int   result = TEST_PASS;
+
+	if ((otelc_cfg_validate(cfg_file, DEFAULT_CTX_NAME, &err) != OTELC_RET_OK) || _nNULL(err))
+		result = TEST_FAIL;
+	if ((otelc_cfg_validate(cfg_file, nullptr, &err) != OTELC_RET_OK) || _nNULL(err))
+		result = TEST_FAIL;
+	if ((otelc_cfg_validate(cfg_file, "missing", &err) != OTELC_RET_OK) || _nNULL(err))
+		result = TEST_FAIL;
+	if ((otelc_cfg_validate(temp_file, "missing", &err) != OTELC_RET_OK) || _nNULL(err))
+		result = TEST_FAIL;
+	OTELC_SFREE_CLEAR(err);
+
+	if ((otelc_cfg_validate(nullptr, DEFAULT_CTX_NAME, &err) != OTELC_RET_ERROR) || _NULL(err))
+		result = TEST_FAIL;
+	OTELC_SFREE_CLEAR(err);
+
+	if ((otelc_cfg_validate("/nonexistent/otel-cfg.yml", DEFAULT_CTX_NAME, &err) != OTELC_RET_ERROR) || _NULL(err))
+		result = TEST_FAIL;
+	OTELC_SFREE_CLEAR(err);
+
+	if (write_yaml_content(path, "signals:\n  traces:\n    other:\n      scope_name: other\n") == -1)
+		result = TEST_FAIL;
+	else if ((otelc_cfg_validate(path, "none", &err) != OTELC_RET_ERROR) || _NULL(err) || (strstr(err, "'traces' signal") == nullptr))
+		result = TEST_FAIL;
+	OTELC_SFREE_CLEAR(err);
+
+	if (write_yaml_content(path, "handle_map_shards: 3\n") == -1)
+		result = TEST_FAIL;
+	else if ((otelc_cfg_validate(path, nullptr, &err) != OTELC_RET_ERROR) || _NULL(err))
+		result = TEST_FAIL;
+	OTELC_SFREE(err);
+
+	(void)unlink(path);
+
+	test_report("otelc_cfg_validate", result);
 }
 
 
@@ -2130,6 +2246,112 @@ static void test_otelc_lib_shutdown(const char *cfg_file)
 }
 
 
+#if defined(OTELC_USE_THREAD_SHARED_HANDLE) && !defined(OTELC_USE_STATIC_HANDLE)
+
+/***
+ * NAME
+ *   span_map_shards_after_init - reports the shard count of a fresh span map
+ *
+ * SYNOPSIS
+ *   static size_t span_map_shards_after_init(const char *cfg_file)
+ *
+ * ARGUMENTS
+ *   cfg_file - path to the YAML configuration file
+ *
+ * DESCRIPTION
+ *   Creates a context from the configuration file and a tracer against it,
+ *   which builds the process-wide span handle maps with the shard count in
+ *   effect at that moment, reads the count back from the statistics string
+ *   and tears both down again, so the maps are gone when the function returns.
+ *
+ * RETURN VALUE
+ *   Returns the shard count of the span handle map, or 0 when the context, the
+ *   tracer or the statistics string could not be produced.
+ */
+static size_t span_map_shards_after_init(const char *cfg_file)
+{
+	struct otelc_ctx    *ctx;
+	struct otelc_tracer *tracer = nullptr;
+	char                *err = nullptr, buffer[BUFSIZ] = "";
+	size_t               total, buckets, retval = 0;
+
+	ctx = otelc_init(cfg_file, nullptr, &err);
+	if (_nNULL(ctx))
+		tracer = otelc_tracer_create(ctx, &err);
+
+	if (_nNULL(tracer)) {
+		otelc_statistics(nullptr, buffer, sizeof(buffer));
+
+		if (sscanf(buffer, "span:{ < %zu/%zu/%zu >", &total, &buckets, &retval) != 3)
+			retval = 0;
+	}
+
+	otelc_deinit(&ctx, &tracer, nullptr, nullptr);
+	OTELC_SFREE(err);
+
+	return retval;
+}
+
+
+/***
+ * NAME
+ *   test_otelc_lib_shutdown_shards - tests the reset of the shard count latch
+ *
+ * SYNOPSIS
+ *   static void test_otelc_lib_shutdown_shards(const char *cfg_file, const char *path)
+ *
+ * ARGUMENTS
+ *   cfg_file - path to the YAML configuration file
+ *   path     - path of a scratch YAML file the test writes and removes
+ *
+ * DESCRIPTION
+ *   Verifies that the first otelc_init() call whose configuration carries a
+ *   valid handle_map_shards key sets the shard count of the span handle maps,
+ *   that a later call with a different value leaves the live setting alone, and
+ *   that otelc_lib_shutdown() restores the compile-time default and lets the
+ *   next call apply its value again.  A tracer create rebuilds the maps after
+ *   every init, so the count in effect is read through otelc_statistics().  The
+ *   configuration file carries no handle_map_shards key of its own.
+ *
+ * RETURN VALUE
+ *   This function does not return a value.
+ */
+static void test_otelc_lib_shutdown_shards(const char *cfg_file, const char *path)
+{
+	int result = TEST_PASS;
+
+	otelc_lib_shutdown();
+
+	if (write_yaml_content(path, "handle_map_shards: 16\nsignals:\n  traces:\n    scope_name: shards\n") == -1)
+		result = TEST_FAIL;
+	else if (span_map_shards_after_init(path) != 16)
+		result = TEST_FAIL;
+
+	if (write_yaml_content(path, "handle_map_shards: 32\nsignals:\n  traces:\n    scope_name: shards\n") == -1)
+		result = TEST_FAIL;
+	else if (span_map_shards_after_init(path) != 16)
+		result = TEST_FAIL;
+
+	otelc_lib_shutdown();
+
+	if (span_map_shards_after_init(path) != 32)
+		result = TEST_FAIL;
+
+	otelc_lib_shutdown();
+
+	if (span_map_shards_after_init(cfg_file) != OTEL_HANDLE_MAP_SHARDS)
+		result = TEST_FAIL;
+
+	otelc_lib_shutdown();
+
+	(void)unlink(path);
+
+	test_report("otelc_lib_shutdown handle_map_shards", result);
+}
+
+#endif /* OTELC_USE_THREAD_SHARED_HANDLE && !OTELC_USE_STATIC_HANDLE */
+
+
 /***
  * NAME
  *   main - program entry point
@@ -2320,8 +2542,16 @@ int main(int argc, char **argv)
 	test_otelc_init_valid(cfg_file);
 	test_otelc_init_null_file();
 	test_otelc_init_null_name(cfg_file);
+	test_otelc_init_percent_name(cfg_file);
 	test_otelc_init_nstate(cfg_file, temp_path);
 	test_otelc_deinit_reinit(cfg_file);
+
+	/***
+	 * otelc_cfg_validate tests.
+	 */
+	OTELC_LOG(stdout, "");
+	OTELC_LOG(stdout, "[otelc_cfg_validate]");
+	test_otelc_cfg_validate(cfg_file, temp_path, bad_path);
 
 	/***
 	 * otelc_close_cfg / otelc_lib_shutdown tests.
@@ -2330,6 +2560,9 @@ int main(int argc, char **argv)
 	OTELC_LOG(stdout, "[otelc_close_cfg / otelc_lib_shutdown]");
 	test_otelc_close_cfg(cfg_file);
 	test_otelc_lib_shutdown(cfg_file);
+#if defined(OTELC_USE_THREAD_SHARED_HANDLE) && !defined(OTELC_USE_STATIC_HANDLE)
+	test_otelc_lib_shutdown_shards(cfg_file, bad_path);
+#endif
 
 	(void)unlink(temp_path);
 
