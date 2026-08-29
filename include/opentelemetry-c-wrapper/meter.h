@@ -379,8 +379,9 @@ struct otelc_meter_ops {
 	 * DESCRIPTION
 	 *   Sets the budget of the provider flush that the destroy operation
 	 *   performs.  A value of zero makes destroy shut the exporters down
-	 *   instead, dropping the telemetry still queued.  A value outside
-	 *   the range 0 to OTELC_FLUSH_TIMEOUT_MS_MAX is rejected.
+	 *   instead, dropping the telemetry still queued; a flush that does
+	 *   not complete within a positive budget ends the same way.  A value
+	 *   outside the range 0 to OTELC_FLUSH_TIMEOUT_MS_MAX is rejected.
 	 *
 	 * RETURN VALUE
 	 *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR in case of
@@ -486,8 +487,9 @@ struct otelc_meter_ops {
 	 *   Stops the meter and releases all resources and memory associated
 	 *   with the meter instance.  Before the provider is released it is
 	 *   force-flushed with a budget of flush_timeout milliseconds; a
-	 *   flush_timeout of zero instead shuts the exporters down, so the
-	 *   teardown drops any telemetry still queued.
+	 *   flush_timeout of zero, or a flush that does not complete within
+	 *   the budget, instead shuts the exporters down, so the teardown
+	 *   drops any telemetry still queued rather than blocking.
 	 *
 	 *   The caller must drain every concurrent operation on this meter
 	 *   instance before invoking destroy: no other thread may be inside
