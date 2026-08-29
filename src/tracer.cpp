@@ -196,6 +196,44 @@ static int otel_tracer_handle_init(void)
 
 /***
  * NAME
+ *   otel_tracer_flush_budget - shares the flush budget among the processors
+ *
+ * SYNOPSIS
+ *   static int otel_tracer_flush_budget(int flush_timeout, size_t count)
+ *
+ * ARGUMENTS
+ *   flush_timeout - budget of the whole provider flush, in milliseconds
+ *   count         - number of exporters of the provider, one per processor
+ *
+ * DESCRIPTION
+ *   The SDK trace provider hands the timeout it is given to each of its
+ *   processors in turn without subtracting the time already spent, so a
+ *   pipeline whose exporters all stall would take the whole budget once per
+ *   processor.  The budget is therefore divided among them here, with one
+ *   millisecond as the floor, so that the flush of the provider stays within
+ *   it.  The log and the metric providers of the SDK subtract the elapsed time
+ *   themselves and are given the budget unchanged.
+ *
+ * RETURN VALUE
+ *   Returns the budget of a single processor flush, in milliseconds.
+ */
+static int otel_tracer_flush_budget(int flush_timeout, size_t count)
+{
+	int retval = flush_timeout;
+
+	OTELC_FUNC("%d, %zu", flush_timeout, count);
+
+	if (count > 1)
+		retval = flush_timeout / OTEL_CAST_STATIC(int, count);
+	if (retval < 1)
+		retval = 1;
+
+	OTELC_RETURN_INT(retval);
+}
+
+
+/***
+ * NAME
  *   otel_tracer_register - counts a new tracer in and prepares the handle maps
  *
  * SYNOPSIS
@@ -984,7 +1022,8 @@ static int otel_tracer_set_enabled(struct otelc_tracer *tracer, bool enabled)
  * DESCRIPTION
  *   Sets the budget of the provider flush that the destroy operation performs.
  *   A value of zero makes destroy shut the exporters down instead, dropping
- *   the telemetry still queued.  A value outside the range 0 to
+ *   the telemetry still queued; a flush that does not complete within a
+ *   positive budget ends the same way.  A value outside the range 0 to
  *   OTELC_FLUSH_TIMEOUT_MS_MAX is rejected.
  *
  * RETURN VALUE
@@ -1197,6 +1236,19 @@ static int otel_tracer_start(struct otelc_tracer *tracer)
 
 		otel_nostd::shared_ptr<otel_trace::Tracer> tracer_maybe{};
 
+#ifndef OTELC_USE_MULTIPLE_PROCESSORS
+		/***
+		 * This build hands only the first processor to the provider,
+		 * and the local vector releases the others together with the
+		 * exporters they own when this function returns.  Only the
+		 * exporter of the installed processor may stay tracked; the
+		 * entries are pushed in step with the processors, so the rest
+		 * are dropped here.
+		 */
+		if (exporters.size() > 1)
+			exporters.resize(1);
+#endif
+
 		tracer_maybe = provider->GetTracer(tracer->scope_name, OTELC_SCOPE_VERSION, OTELC_SCOPE_SCHEMA_URL);
 		if (OTEL_NULL(tracer_maybe))
 			OTEL_TRACER_RETURN_INT("Unable to get tracer from provider");
@@ -1282,13 +1334,19 @@ static int otel_tracer_start(struct otelc_tracer *tracer)
  *
  * DESCRIPTION
  *   Stops the tracer and releases all resources and memory associated with the
- *   tracer instance.  As the public destroy operation documents, the call must
- *   not overlap other operations on the same tracer: dropping the SDK handle
- *   stops only the callers that arrive after the drop, it does not synchronize
- *   with a snapshot already in flight.  The spans created by this tracer must
- *   already have been ended; a span left over while other tracers keep the
- *   handle maps alive stays usable at the SDK level, but its error reporting
- *   and its inject operation still reach into the freed tracer structure.
+ *   tracer instance.  The provider is force-flushed with a budget of
+ *   flush_timeout milliseconds, shared among its processors by
+ *   otel_tracer_flush_budget(); when the budget is zero, or the flush does not
+ *   complete within it, the exporters are shut down before the provider is
+ *   released, so the teardown drain drops the telemetry still queued instead
+ *   of blocking without a limit.  As the public destroy operation documents,
+ *   the call must not overlap other operations on the same tracer: dropping
+ *   the SDK handle stops only the callers that arrive after the drop, it does
+ *   not synchronize with a snapshot already in flight.  The spans created by
+ *   this tracer must already have been ended; a span left over while other
+ *   tracers keep the handle maps alive stays usable at the SDK level, but its
+ *   error reporting and its inject operation still reach into the freed tracer
+ *   structure.
  *
  * RETURN VALUE
  *   This function does not return a value.
@@ -1313,15 +1371,29 @@ static void otel_tracer_destroy(struct otelc_tracer **tracer)
 
 	/* No global SDK provider is touched. */
 	if (!OTEL_NULL(impl)) {
-		if ((*tracer)->flush_timeout > 0) {
+		const int flush_timeout = OTEL_ATOMIC_LOAD((*tracer)->flush_timeout);
+		bool      flag_flushed = false;
+
+		if (flush_timeout > 0) {
 			const auto provider_sdk = OTEL_TRACER_PROVIDER(impl->provider);
-			if (!OTEL_NULL(provider_sdk))
-				(void)provider_sdk->ForceFlush(std::chrono::milliseconds{(*tracer)->flush_timeout});
-		} else {
-			/* A shut-down exporter fails the teardown drain instantly, dropping the queued telemetry. */
+			if (!OTEL_NULL(provider_sdk)) {
+				const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds{flush_timeout};
+				const int  budget   = otel_tracer_flush_budget(flush_timeout, impl->exporters.size());
+
+				/***
+				 * The SDK trace provider folds the processor
+				 * results into a value that starts as true,
+				 * so its flush never reports a timeout; the
+				 * elapsed time tells a timed-out flush apart.
+				 */
+				flag_flushed = provider_sdk->ForceFlush(std::chrono::milliseconds{budget}) && (std::chrono::steady_clock::now() < deadline);
+			}
+		}
+
+		/* A shut-down exporter fails the teardown drain instantly, dropping the queued telemetry. */
+		if (!flag_flushed)
 			for (auto *exporter : impl->exporters)
 				(void)exporter->Shutdown(std::chrono::microseconds{1});
-		}
 
 		impl->propagator = {};
 		impl->provider   = {};

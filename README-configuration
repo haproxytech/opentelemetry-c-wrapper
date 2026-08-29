@@ -135,7 +135,10 @@ the same way.
 
 When undefined, only the first processor in the vector is passed to the provider
 constructor.  Any additional processors configured in YAML are silently ignored,
-resulting in a single export pipeline per signal.
+resulting in a single export pipeline per signal.  They are still created, so a
+faulty entry still fails the start, and they are released together with the
+exporters they own when the start returns; only the exporter of the installed
+processor stays tracked by the instance.
 
 
 6. OTELC_USE_RUNTIME_CONTEXT

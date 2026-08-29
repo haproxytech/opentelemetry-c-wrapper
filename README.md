@@ -541,8 +541,9 @@ changed at runtime with the logger's `set_min_severity` operation.
 
 Every signal subtree accepts an optional `flush_timeout` key with the budget,
 in milliseconds, of the provider flush that the destroy operation performs;
-zero shuts the exporters down instead, dropping the telemetry still queued,
-and the `set_flush_timeout` operation changes the budget at runtime.
+zero shuts the exporters down instead, dropping the telemetry still queued, and
+a flush that runs out of budget ends the same way.  The `set_flush_timeout`
+operation changes the budget at runtime.
 
 ### Thread Settings
 
