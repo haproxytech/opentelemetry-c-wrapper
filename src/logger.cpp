@@ -146,7 +146,7 @@ static int otel_logger_enabled(struct otelc_logger *logger, otelc_log_severity_t
 	if (OTEL_NULL(logger_shared))
 		OTEL_LOGGER_RETURN_INT(OTEL_ERROR_MSG_INVALID_LOGGER);
 
-	if (!logger->enabled)
+	if (!OTEL_ATOMIC_LOAD(logger->enabled))
 		OTELC_RETURN_INT(false);
 
 	auto *logger_ptr = logger_shared.get();
@@ -186,7 +186,7 @@ static int otel_logger_set_enabled(struct otelc_logger *logger, bool enabled)
 	if (OTEL_NULL(logger))
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
 
-	logger->enabled = enabled;
+	OTEL_ATOMIC_STORE(logger->enabled, enabled);
 
 	OTELC_RETURN_INT(OTELC_RET_OK);
 }
@@ -236,7 +236,7 @@ static int otel_logger_set_min_severity(struct otelc_logger *logger, otelc_log_s
 
 	otel_logger_severity_set(logger_ptr, log_severity);
 
-	logger->min_severity = severity;
+	OTEL_ATOMIC_STORE(logger->min_severity, severity);
 
 	OTELC_RETURN_INT(OTELC_RET_OK);
 }
@@ -272,7 +272,7 @@ static int otel_logger_set_flush_timeout(struct otelc_logger *logger, int flush_
 	if (!OTELC_IN_RANGE(flush_timeout, 0, OTELC_FLUSH_TIMEOUT_MS_MAX))
 		OTEL_LOGGER_RETURN_INT(OTEL_ERROR_MSG_INVALID_FLUSH_TIMEOUT, flush_timeout);
 
-	logger->flush_timeout = flush_timeout;
+	OTEL_ATOMIC_STORE(logger->flush_timeout, flush_timeout);
 
 	OTELC_RETURN_INT(OTELC_RET_OK);
 }
@@ -420,7 +420,7 @@ static int otel_logger_log_v(struct otelc_logger *logger, otelc_log_severity_t s
 
 	if (OTEL_NULL(logger))
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
-	else if (!logger->enabled)
+	else if (!OTEL_ATOMIC_LOAD(logger->enabled))
 		OTELC_RETURN_INT(0);
 	else if (OTEL_NULL(format))
 		OTEL_LOGGER_RETURN_INT("Invalid format string");
@@ -639,7 +639,7 @@ static int otel_logger_log_body(struct otelc_logger *logger, otelc_log_severity_
 
 	if (OTEL_NULL(logger))
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
-	else if (!logger->enabled)
+	else if (!OTEL_ATOMIC_LOAD(logger->enabled))
 		OTELC_RETURN_INT(0);
 	else if (OTEL_NULL(body))
 		OTEL_LOGGER_RETURN_INT("Invalid body value");
@@ -921,7 +921,7 @@ static int otel_logger_start(struct otelc_logger *logger)
 		if (OTEL_NULL(logger_maybe))
 			OTEL_LOGGER_RETURN_INT("Unable to get logger from provider");
 
-		const auto severity = otel_logger_severity(logger, logger->min_severity);
+		const auto severity = otel_logger_severity(logger, OTEL_ATOMIC_LOAD(logger->min_severity));
 		otel_logger_severity_set(logger_maybe.get(), severity);
 
 		impl->logger   = std::move(logger_maybe);

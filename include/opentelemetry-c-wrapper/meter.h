@@ -493,10 +493,10 @@ struct otelc_meter_ops {
 	 *   instance before invoking destroy: no other thread may be inside
 	 *   create_instrument, update_instrument, update_instrument_kv_n,
 	 *   add_instrument_callback, remove_instrument_callback, add_view,
-	 *   get_instrument, enabled, force_flush, or shutdown for the same
-	 *   meter when destroy runs.  Destroy frees the underlying
-	 *   implementation state, so any in-flight call that races with it
-	 *   will dereference freed memory.
+	 *   get_instrument, enabled, set_enabled, set_flush_timeout,
+	 *   force_flush, or shutdown for the same meter when destroy runs.
+	 *   Destroy frees the underlying implementation state, so any
+	 *   in-flight call that races with it will dereference freed memory.
 	 *
 	 * RETURN VALUE
 	 *   This function does not return a value.

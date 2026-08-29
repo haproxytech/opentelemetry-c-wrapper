@@ -68,6 +68,13 @@ template <typename T> otel_defer_struct<T>make_defer(T fn) { return { fn }; }
 #define OTEL_ARG_DEFAULT(p,v)         do { if (OTEL_NULL(p)) (p) = (v); } while (0)
 
 /***
+ * Relaxed atomic access to the plain members that a setter may change while
+ * other operations on the same instance read them.
+ */
+#define OTEL_ATOMIC_LOAD(m)           __atomic_load_n(&(m), __ATOMIC_RELAXED)
+#define OTEL_ATOMIC_STORE(m,v)        __atomic_store_n(&(m), (v), __ATOMIC_RELAXED)
+
+/***
  * The pointer argument of OTEL_EXT_FREE_CLEAR() is evaluated more than once,
  * so it must be a side-effect-free lvalue.
  */
