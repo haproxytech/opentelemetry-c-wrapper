@@ -248,7 +248,7 @@ static int64_t otel_meter_add_view(struct otelc_meter *meter, const char *view_n
 
 	if (OTEL_NULL(meter))
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
-	else if (!meter->enabled)
+	else if (!OTEL_ATOMIC_LOAD(meter->enabled))
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
 	else if (OTEL_NULL(view_name))
 		OTEL_METER_RETURN_INT("Invalid view name");
@@ -634,7 +634,7 @@ static int64_t otel_meter_create_instrument(struct otelc_meter *meter, const cha
 
 	if (OTEL_NULL(meter))
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
-	else if (!meter->enabled)
+	else if (!OTEL_ATOMIC_LOAD(meter->enabled))
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
 	else if (OTEL_NULL(name))
 		OTEL_METER_RETURN_INT(OTEL_ERROR_MSG_INVALID_INSTRUMENT);
@@ -1265,7 +1265,7 @@ static int otel_meter_enabled(struct otelc_meter *meter)
 	if (OTEL_NULL(impl) || OTEL_NULL(impl->meter))
 		OTEL_METER_RETURN_INT(OTEL_ERROR_MSG_INVALID_METER);
 
-	OTELC_RETURN_INT(meter->enabled);
+	OTELC_RETURN_INT(OTEL_ATOMIC_LOAD(meter->enabled));
 }
 
 
@@ -1297,7 +1297,7 @@ static int otel_meter_set_enabled(struct otelc_meter *meter, bool enabled)
 	if (OTEL_NULL(meter))
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
 
-	meter->enabled = enabled;
+	OTEL_ATOMIC_STORE(meter->enabled, enabled);
 
 	OTELC_RETURN_INT(OTELC_RET_OK);
 }
@@ -1333,7 +1333,7 @@ static int otel_meter_set_flush_timeout(struct otelc_meter *meter, int flush_tim
 	if (!OTELC_IN_RANGE(flush_timeout, 0, OTELC_FLUSH_TIMEOUT_MS_MAX))
 		OTEL_METER_RETURN_INT(OTEL_ERROR_MSG_INVALID_FLUSH_TIMEOUT, flush_timeout);
 
-	meter->flush_timeout = flush_timeout;
+	OTEL_ATOMIC_STORE(meter->flush_timeout, flush_timeout);
 
 	OTELC_RETURN_INT(OTELC_RET_OK);
 }
