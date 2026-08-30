@@ -54,6 +54,161 @@
 #define OTEL_ERROR_MSG_ADD_HTTP_HEADER            "Unable to add HTTP header"
 
 /***
+ * Base of the ostream exporters that own the file they write to.  The SDK
+ * ostream exporters only keep a reference to their stream, so the wrappers
+ * carry the file stream in this base, which is constructed before, and
+ * destroyed after, the wrapped exporter.  The file is named at construction
+ * and opened by open() in append mode only once the whole pipeline is built,
+ * so a start that fails up to that point leaves the previous pipeline and its
+ * files untouched; truncate() empties the file right before the new pipeline
+ * replaces the old one, so only a failure in that last step leaves an emptied
+ * file behind.  Every file-backed exporter thus has a stream of its own: an
+ * instance may hold several of them, and a repeated start may reopen a file
+ * once the previous pipeline has been flushed.
+ */
+class otel_file_exporter
+{
+public:
+	otel_file_exporter(const char *filename);
+	virtual ~otel_file_exporter() = default;
+
+	bool        open() noexcept;
+	void        truncate() noexcept;
+	const char *filename() const noexcept { return filename_; }
+
+protected:
+	std::ofstream file_;
+
+private:
+	char          filename_[PATH_MAX];
+};
+
+#ifdef HAVE_OTEL_EXPORTER_OSTREAM
+/***
+ * Ostream exporters that own the file they write to; each flushes its stream
+ * after every export, since the SDK exporters leave the records in the stream
+ * buffer.
+ */
+class otel_file_span_exporter : public otel_sdk_trace::SpanExporter, public otel_file_exporter
+{
+public:
+	otel_file_span_exporter(const char *filename);
+
+	std::unique_ptr<otel_sdk_trace::Recordable> MakeRecordable() noexcept override;
+	otel_sdk_common::ExportResult Export(const otel_nostd::span<std::unique_ptr<otel_sdk_trace::Recordable>> &spans) noexcept override;
+	bool ForceFlush(std::chrono::microseconds timeout = (std::chrono::microseconds::max)()) noexcept override;
+	bool Shutdown(std::chrono::microseconds timeout = (std::chrono::microseconds::max)()) noexcept override;
+
+private:
+	otel_exporter_trace::OStreamSpanExporter inner_;
+};
+
+class otel_file_metric_exporter : public otel_sdk_metrics::PushMetricExporter, public otel_file_exporter
+{
+public:
+	otel_file_metric_exporter(const char *filename);
+
+	otel_sdk_common::ExportResult Export(const otel_sdk_metrics::ResourceMetrics &data) noexcept override;
+	otel_sdk_metrics::AggregationTemporality GetAggregationTemporality(otel_sdk_metrics::InstrumentType instrument_type) const noexcept override;
+	bool ForceFlush(std::chrono::microseconds timeout = (std::chrono::microseconds::max)()) noexcept override;
+	bool Shutdown(std::chrono::microseconds timeout = (std::chrono::microseconds::max)()) noexcept override;
+
+private:
+	otel_exporter_metrics::OStreamMetricExporter inner_;
+};
+
+class otel_file_log_exporter : public otel_sdk_logs::LogRecordExporter, public otel_file_exporter
+{
+public:
+	otel_file_log_exporter(const char *filename);
+
+	std::unique_ptr<otel_sdk_logs::Recordable> MakeRecordable() noexcept override;
+	otel_sdk_common::ExportResult Export(const otel_nostd::span<std::unique_ptr<otel_sdk_logs::Recordable>> &records) noexcept override;
+	bool ForceFlush(std::chrono::microseconds timeout = (std::chrono::microseconds::max)()) noexcept override;
+	bool Shutdown(std::chrono::microseconds timeout = (std::chrono::microseconds::max)()) noexcept override;
+#if OTELCPP_VERSION_GE(1, 28)
+	bool RecordableEnforcesLogRecordLimits() const noexcept override { return inner_.RecordableEnforcesLogRecordLimits(); }
+#endif /* OTELCPP_VERSION_GE(1, 28) */
+
+private:
+	otel_exporter_logs::OStreamLogRecordExporter inner_;
+};
+#endif /* HAVE_OTEL_EXPORTER_OSTREAM */
+
+
+/***
+ * NAME
+ *   otel_exporter_files_open - opens the files of the file-backed exporters
+ *
+ * SYNOPSIS
+ *   template <typename T>
+ *   static int otel_exporter_files_open(const std::vector<T *> &exporters, char **err)
+ *
+ * ARGUMENTS
+ *   exporters - SDK exporters of the pipeline being built
+ *   err       - address of a pointer to store an error message on failure
+ *
+ * DESCRIPTION
+ *   Opens the output file of every exporter derived from otel_file_exporter in
+ *   append mode, so no file is truncated yet; the start operations call it once
+ *   the whole pipeline is built.  The first file that cannot be opened stops
+ *   the loop, and its name and the system error are stored in <err>.
+ *
+ * RETURN VALUE
+ *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR on failure.
+ */
+template <typename T>
+static int otel_exporter_files_open(const std::vector<T *> &exporters, char **err)
+{
+	OTELC_FUNC("%p, %p:%p", &exporters, OTELC_DPTR_ARGS(err));
+
+	for (auto *exporter : exporters) {
+		auto *file_exporter = dynamic_cast<otel_file_exporter *>(exporter);
+
+		if (!OTEL_NULL(file_exporter) && !file_exporter->open())
+			OTEL_ERR_RETURN_INT("'%s': %s", file_exporter->filename(), otel_strerror(errno));
+	}
+
+	OTELC_RETURN_INT(OTELC_RET_OK);
+}
+
+
+/***
+ * NAME
+ *   otel_exporter_files_truncate - empties the files of the file-backed exporters
+ *
+ * SYNOPSIS
+ *   template <typename T>
+ *   static void otel_exporter_files_truncate(const std::vector<T *> &exporters)
+ *
+ * ARGUMENTS
+ *   exporters - SDK exporters of the pipeline being built
+ *
+ * DESCRIPTION
+ *   Truncates the output file of every exporter derived from
+ *   otel_file_exporter; the start operations call it once the exporters of the
+ *   previous pipeline are shut down, so their final drain cannot write into an
+ *   emptied file.
+ *
+ * RETURN VALUE
+ *   This function does not return a value.
+ */
+template <typename T>
+static void otel_exporter_files_truncate(const std::vector<T *> &exporters)
+{
+	OTELC_FUNC("%p", &exporters);
+
+	for (auto *exporter : exporters) {
+		auto *file_exporter = dynamic_cast<otel_file_exporter *>(exporter);
+
+		if (!OTEL_NULL(file_exporter))
+			file_exporter->truncate();
+	}
+
+	OTELC_RETURN();
+}
+
+/***
  * Exporter dispatch macros for shared backends.  Each macro expands to an
  * else-if branch that creates the corresponding exporter.  The ifdef-guarded
  * pair selects the supported or unsupported variant at compile time so that
@@ -63,15 +218,15 @@
  *   type, exporter_maybe, name
  */
 #ifdef HAVE_OTEL_EXPORTER_OSTREAM
-  #define OTEL_EXPORTER_CASE_OSTREAM(arg_sig, arg_type, arg_ptr, arg_path)                                                   \
+  #define OTEL_EXPORTER_CASE_OSTREAM(arg_sig, arg_type, arg_file, arg_ptr, arg_path)                                         \
 	else if (strcasecmp(type, OTEL_EXPORTER_OSTREAM) == 0) {                                                             \
-		if (otel_exporter_set_ostream_options<arg_type>((arg_ptr)->ctx, OTEL_##arg_sig##_EXPORTER_DESC,              \
-		                                                (arg_path), OTEL_##arg_sig##_LOGFILE(arg_ptr),               \
-		                                                exporter_maybe, &((arg_ptr)->err), name) == OTELC_RET_ERROR) \
+		if (otel_exporter_set_ostream_options<arg_type, arg_file>((arg_ptr)->ctx, OTEL_##arg_sig##_EXPORTER_DESC,    \
+		                                                          (arg_path), exporter_maybe, &((arg_ptr)->err),     \
+		                                                          name) == OTELC_RET_ERROR)                          \
 			OTELC_RETURN_INT(OTELC_RET_ERROR);                                                                   \
 	}
 #else
-  #define OTEL_EXPORTER_CASE_OSTREAM(arg_sig, arg_type, arg_ptr, arg_path)                  \
+  #define OTEL_EXPORTER_CASE_OSTREAM(arg_sig, arg_type, arg_file, arg_ptr, arg_path)        \
 	else if (strcasecmp(type, OTEL_EXPORTER_OSTREAM) == 0) {                            \
 		OTEL_##arg_sig##_ERROR(OTEL_##arg_sig##_EXPORTER_NOT_SUPPORTED("ostream")); \
 	}

@@ -1025,6 +1025,15 @@ Provider/exporter/processor stack:
   worker threads (batch processors, periodic metric readers) after the bounded
   force-flush of the second step.
 
+  A repeated start builds the new stack while the old one is still installed
+  and replaces it only once the new one is complete.  A file-backed ostream
+  exporter opens its file, without truncation, only when the whole stack is
+  built, so a failed start leaves the files alone.  Before the new exporters
+  are created, the start force-flushes the previous provider within a positive
+  flush budget; right before the replacement it shuts the previous exporters
+  down and only then empties the files, so the final drain of the released
+  provider cannot write into a reopened file.
+
   For the tracer, otel_tracer_destroy additionally (when the last tracer in
   scope is destroyed):
     - Destroys all remaining span context handles.
@@ -1107,7 +1116,6 @@ Tracer per-instance state:
 
   Each tracer owns an otel_tracer_impl structure (include/tracer.h) holding:
 
-    std::ofstream                  logfile;
     shared_ptr<TracerProvider>     provider;
     shared_ptr<Tracer>             tracer;
     shared_ptr<TextMapPropagator>  propagator;
@@ -1115,8 +1123,11 @@ Tracer per-instance state:
   Operations snapshot the tracer member and bail out when it is empty.
   During shutdown the member is dropped first, stopping the callers that arrive
   after the drop; calls already in flight must be drained before destroy runs.
-  The logfile is declared first so that it is destroyed last, after the provider
-  members that may still flush into it.
+  A file-backed ostream exporter owns its stream (see the otel_file_*_exporter
+  wrappers in src/exporter.cpp) and pushes every export batch to the file at
+  once, so an instance holds no logfile of its own, may carry several of them,
+  and may reopen a file on a repeated start once the previous pipeline has been
+  flushed and its exporters shut down.
 
 Tracer startup (otel_tracer_start):
 
@@ -1364,10 +1375,9 @@ Meter per-instance state:
 
   Each meter owns an otel_meter_impl structure (include/meter.h) holding the
   SDK MeterProvider and Meter, the per-instance instrument and view handle
-  maps, the case-folded instrument_index, the create_mutex serializing
-  instrument and view creation, and the ostream exporter logfile.  Operations
-  snapshot the meter member and bail out when it is empty; shutdown drops it
-  first, like the tracer.
+  maps, the case-folded instrument_index, plus the create_mutex serializing
+  instrument and view creation.  Operations snapshot the meter member and bail
+  out when it is empty; shutdown drops it first, like the tracer.
 
 Meter startup (otel_meter_start):
 
@@ -1616,9 +1626,8 @@ single call) and requires no explicit locking (all vtable operations are marked
 Logger per-instance state:
 
   Each logger owns an otel_logger_impl structure (include/logger.h) holding
-  the SDK LoggerProvider and Logger and the ostream exporter logfile.
-  Operations snapshot the logger member and bail out when it is empty;
-  shutdown drops it first, like the tracer and meter.
+  the SDK LoggerProvider and Logger.  Operations snapshot the logger member and
+  bail out when it is empty; shutdown drops it first, like the tracer and meter.
 
 Logger instance structure:
 

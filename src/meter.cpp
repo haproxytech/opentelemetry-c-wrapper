@@ -1120,6 +1120,26 @@ static int otel_meter_start(struct otelc_meter *meter)
 	if (retval < 1)
 		OTELC_RETURN_INT(retval);
 
+	auto *impl = OTEL_IMPL(meter, meter);
+	if (OTEL_NULL(impl))
+		OTEL_METER_RETURN_INT("Meter implementation state not allocated");
+
+	/***
+	 * A repeated start reopens the files of the ostream exporters, which
+	 * truncates them, so the previous pipeline is flushed first within the
+	 * flush budget: the queued telemetry reaches every exporter before the
+	 * files are emptied, and the final drain has nothing left to write.
+	 * The flush runs before the creation mutex is taken, because the
+	 * collection it triggers invokes the observable callbacks.
+	 */
+	const auto provider_prev = OTEL_METER_PROVIDER(impl->provider);
+	if (!OTEL_NULL(provider_prev)) {
+		const int budget = OTEL_ATOMIC_LOAD(meter->flush_timeout);
+
+		if (budget > 0)
+			(void)provider_prev->ForceFlush(std::chrono::milliseconds{budget});
+	}
+
 	/***
 	 * Serialize the scope_name replacement against add_view(), which
 	 * reads it under the same mutex, and against a concurrent second
@@ -1211,15 +1231,31 @@ static int otel_meter_start(struct otelc_meter *meter)
 
 	/* Create the provider and meter, then install them on the instance. */
 	if ((retval = otel_meter_provider_create(meter, readers, provider)) != OTELC_RET_ERROR) {
-		auto *impl = OTEL_IMPL(meter, meter);
-		if (OTEL_NULL(impl))
-			OTEL_METER_RETURN_INT("Meter implementation state not allocated");
-
 		otel_nostd::shared_ptr<otel_metrics::Meter> meter_maybe{};
 
 		meter_maybe = provider->GetMeter(meter->scope_name, OTELC_SCOPE_VERSION, OTELC_SCOPE_SCHEMA_URL);
 		if (OTEL_NULL(meter_maybe))
 			OTEL_METER_RETURN_INT("Unable to get meter from provider");
+
+		/***
+		 * The files of the new exporters are opened only now,
+		 * without truncation, so a start that failed above has
+		 * not touched them, and a file that cannot be opened
+		 * fails the start with the previous pipeline in place.
+		 */
+		if (otel_exporter_files_open(exporters, &(meter->err)) != OTELC_RET_OK)
+			OTELC_RETURN_INT(OTELC_RET_ERROR);
+
+		/***
+		 * The previous exporters are shut down before the replacement
+		 * releases their pipeline, and the files are emptied only
+		 * after that, so the final drain of that pipeline cannot
+		 * write into a file the new exporters have reopened.
+		 */
+		for (auto *exporter : impl->exporters)
+			(void)exporter->Shutdown(std::chrono::microseconds{1});
+
+		otel_exporter_files_truncate(exporters);
 
 		impl->meter    = std::move(meter_maybe);
 		impl->provider = provider;
@@ -1318,8 +1354,10 @@ static int otel_meter_set_enabled(struct otelc_meter *meter, bool enabled)
  *   Sets the budget of the provider flush that the destroy operation performs.
  *   A value of zero makes destroy shut the exporters down instead, dropping
  *   the telemetry still queued; a flush that does not complete within a
- *   positive budget ends the same way.  A value outside the range 0 to
- *   OTELC_FLUSH_TIMEOUT_MS_MAX is rejected.
+ *   positive budget ends the same way.  A repeated start flushes the previous
+ *   provider within the same budget before the new exporters open their
+ *   files.  A value outside the range 0 to OTELC_FLUSH_TIMEOUT_MS_MAX is
+ *   rejected.
  *
  * RETURN VALUE
  *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR in case of an error.

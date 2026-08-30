@@ -985,8 +985,10 @@ static int otel_tracer_set_enabled(struct otelc_tracer *tracer, bool enabled)
  *   Sets the budget of the provider flush that the destroy operation performs.
  *   A value of zero makes destroy shut the exporters down instead, dropping
  *   the telemetry still queued; a flush that does not complete within a
- *   positive budget ends the same way.  A value outside the range 0 to
- *   OTELC_FLUSH_TIMEOUT_MS_MAX is rejected.
+ *   positive budget ends the same way.  A repeated start flushes the previous
+ *   provider within the same budget before the new exporters open their
+ *   files.  A value outside the range 0 to OTELC_FLUSH_TIMEOUT_MS_MAX is
+ *   rejected.
  *
  * RETURN VALUE
  *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR in case of an error.
@@ -1117,6 +1119,24 @@ static int otel_tracer_start(struct otelc_tracer *tracer)
 	if ((retval = otel_sampler_create(tracer, sampler)) == OTELC_RET_ERROR)
 		OTELC_RETURN_INT(retval);
 
+	auto *impl = OTEL_IMPL(tracer, tracer);
+	if (OTEL_NULL(impl))
+		OTEL_TRACER_RETURN_INT("Tracer implementation state not allocated");
+
+	/***
+	 * A repeated start reopens the files of the ostream exporters, which
+	 * truncates them, so the previous pipeline is flushed first within the
+	 * flush budget: the queued telemetry reaches every exporter before the
+	 * files are emptied, and the final drain has nothing left to write.
+	 */
+	const auto provider_prev = OTEL_TRACER_PROVIDER(impl->provider);
+	if (!OTEL_NULL(provider_prev)) {
+		const int budget = OTEL_ATOMIC_LOAD(tracer->flush_timeout);
+
+		if (budget > 0)
+			(void)provider_prev->ForceFlush(std::chrono::milliseconds{budget});
+	}
+
 	OTEL_YAML_PATH(path_p, tracer, OTEL_YAML_PROCESSORS);
 	OTEL_YAML_PATH(path_e, tracer, OTEL_YAML_EXPORTERS);
 
@@ -1192,10 +1212,6 @@ static int otel_tracer_start(struct otelc_tracer *tracer)
 
 	/* Create the provider, tracer, and propagator, then store on the instance. */
 	if ((retval = otel_tracer_provider_create(tracer, processors, sampler, provider)) != OTELC_RET_ERROR) {
-		auto *impl = OTEL_IMPL(tracer, tracer);
-		if (OTEL_NULL(impl))
-			OTEL_TRACER_RETURN_INT("Tracer implementation state not allocated");
-
 		otel_nostd::shared_ptr<otel_trace::Tracer> tracer_maybe{};
 
 #ifndef OTELC_USE_MULTIPLE_PROCESSORS
@@ -1253,6 +1269,26 @@ static int otel_tracer_start(struct otelc_tracer *tracer)
 		 * partial failure does not leak it.
 		 */
 		std::unique_ptr<otel_context::propagation::TextMapPropagator> propagator_owner(propagator);
+
+		/***
+		 * The files of the new exporters are opened only now,
+		 * without truncation, so a start that failed above has
+		 * not touched them, and a file that cannot be opened
+		 * fails the start with the previous pipeline in place.
+		 */
+		if (otel_exporter_files_open(exporters, &(tracer->err)) != OTELC_RET_OK)
+			OTELC_RETURN_INT(OTELC_RET_ERROR);
+
+		/***
+		 * The previous exporters are shut down before the replacement
+		 * releases their pipeline, and the files are emptied only
+		 * after that, so the final drain of that pipeline cannot
+		 * write into a file the new exporters have reopened.
+		 */
+		for (auto *exporter : impl->exporters)
+			(void)exporter->Shutdown(std::chrono::microseconds{1});
+
+		otel_exporter_files_truncate(exporters);
 
 		/***
 		 * On throw, reset the tracer and provider that may have already
