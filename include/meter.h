@@ -33,8 +33,6 @@
 #define OTEL_METER_RETURN_INT(f, ...)       OTEL_RETURN_INT(meter, f, ##__VA_ARGS__)
 #define OTEL_METER_RETURN_PTR(f, ...)       OTEL_RETURN_PTR(meter, f, ##__VA_ARGS__)
 
-#define OTEL_METER_LOGFILE(m)               (OTEL_CAST_STATIC(struct otel_meter_impl *, (m)->impl)->logfile)
-
 #define OTEL_METER_IMPL(m)                  (OTEL_CAST_STATIC(struct otel_meter_impl *, (m)->impl))
 #define OTEL_INSTRUMENT_HANDLE(a)           otel_map_find(OTEL_METER_IMPL(meter)->instrument.shards[0].map, (a))
 #define OTEL_DBG_INSTRUMENT()                                                                              \
@@ -282,9 +280,9 @@ struct T {
 
 /***
  * Per-instance implementation state for a meter.  Holds the SDK MeterProvider,
- * the SDK Meter obtained from it, the instrument and view handle maps used by
- * this meter, and the ostream exporter logfile.  All members are owned by the
- * instance, so multiple meters can coexist without sharing process-wide state.
+ * the SDK Meter obtained from it, and the instrument and view handle maps used
+ * by this meter.  All members are owned by the instance, so multiple meters can
+ * coexist without sharing process-wide state.
  * The handle maps use otel_shared_mutex so lookups and instrument updates
  * (OTEL_LOCK_METER_SHARED) can run concurrently, while registration and
  * teardown (OTEL_LOCK_METER) remain exclusive.  The instrument_index maps the
@@ -296,14 +294,13 @@ struct T {
  * the shared lock, so of a whole startup herd racing for the same name only
  * the winner ever acquires the exclusive map lock; every other thread leaves
  * through the shared re-probe.  Lock order: create_mutex first, then the
- * handle map mutex; never the other way around.  The logfile comes first so
- * that it is destroyed last, after the provider members that may still flush
- * into it.  The exporters vector holds non-owning views of the SDK exporters
- * living inside the provider's readers; destroy uses it to shut delivery down
- * when the flush budget is zero.
+ * handle map mutex; never the other way around.  The exporters vector holds
+ * non-owning views of the SDK exporters living inside the provider's readers;
+ * destroy uses it to shut delivery down when the flush budget is zero or runs
+ * out.  A file-backed ostream exporter owns its own stream, so the instance
+ * keeps no logfile of its own.
  */
 struct otel_meter_impl {
-	std::ofstream                                                                logfile;
 	otel_nostd::shared_ptr<otel_metrics::MeterProvider>                          provider;
 	otel_nostd::shared_ptr<otel_metrics::Meter>                                  meter;
 	struct otel_handle<struct otel_instrument_handle *, true, otel_shared_mutex> instrument{1};

@@ -257,8 +257,10 @@ static int otel_logger_set_min_severity(struct otelc_logger *logger, otelc_log_s
  *   Sets the budget of the provider flush that the destroy operation performs.
  *   A value of zero makes destroy shut the exporters down instead, dropping
  *   the telemetry still queued; a flush that does not complete within a
- *   positive budget ends the same way.  A value outside the range 0 to
- *   OTELC_FLUSH_TIMEOUT_MS_MAX is rejected.
+ *   positive budget ends the same way.  A repeated start flushes the previous
+ *   provider within the same budget before the new exporters open their
+ *   files.  A value outside the range 0 to OTELC_FLUSH_TIMEOUT_MS_MAX is
+ *   rejected.
  *
  * RETURN VALUE
  *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR in case of an error.
@@ -838,6 +840,24 @@ static int otel_logger_start(struct otelc_logger *logger)
 		if (!otelc_strtoi(flush_timeout, nullptr, true, 0, &(logger->flush_timeout), 0, OTELC_FLUSH_TIMEOUT_MS_MAX, nullptr))
 			OTEL_LOGGER_RETURN_INT("'%s': invalid flush timeout", flush_timeout);
 
+	auto *impl = OTEL_IMPL(logger, logger);
+	if (OTEL_NULL(impl))
+		OTEL_LOGGER_RETURN_INT("Logger implementation state not allocated");
+
+	/***
+	 * A repeated start reopens the files of the ostream exporters, which
+	 * truncates them, so the previous pipeline is flushed first within the
+	 * flush budget: the queued telemetry reaches every exporter before the
+	 * files are emptied, and the final drain has nothing left to write.
+	 */
+	const auto provider_prev = OTEL_LOGGER_PROVIDER(impl->provider);
+	if (!OTEL_NULL(provider_prev)) {
+		const int budget = OTEL_ATOMIC_LOAD(logger->flush_timeout);
+
+		if (budget > 0)
+			(void)provider_prev->ForceFlush(std::chrono::milliseconds{budget});
+	}
+
 	OTEL_YAML_PATH(path_p, logger, OTEL_YAML_PROCESSORS);
 	OTEL_YAML_PATH(path_e, logger, OTEL_YAML_EXPORTERS);
 
@@ -912,10 +932,6 @@ static int otel_logger_start(struct otelc_logger *logger)
 
 	/* Create the provider and logger, then install them on the instance. */
 	if ((retval = otel_logger_provider_create(logger, processors, provider)) != OTELC_RET_ERROR) {
-		auto *impl = OTEL_IMPL(logger, logger);
-		if (OTEL_NULL(impl))
-			OTEL_LOGGER_RETURN_INT("Logger implementation state not allocated");
-
 		otel_nostd::shared_ptr<otel_logs::Logger> logger_maybe{};
 
 #ifndef OTELC_USE_MULTIPLE_PROCESSORS
@@ -937,6 +953,26 @@ static int otel_logger_start(struct otelc_logger *logger)
 
 		const auto severity = otel_logger_severity(logger, OTEL_ATOMIC_LOAD(logger->min_severity));
 		otel_logger_severity_set(logger_maybe.get(), severity);
+
+		/***
+		 * The files of the new exporters are opened only now,
+		 * without truncation, so a start that failed above has
+		 * not touched them, and a file that cannot be opened
+		 * fails the start with the previous pipeline in place.
+		 */
+		if (otel_exporter_files_open(exporters, &(logger->err)) != OTELC_RET_OK)
+			OTELC_RETURN_INT(OTELC_RET_ERROR);
+
+		/***
+		 * The previous exporters are shut down before the replacement
+		 * releases their pipeline, and the files are emptied only
+		 * after that, so the final drain of that pipeline cannot
+		 * write into a file the new exporters have reopened.
+		 */
+		for (auto *exporter : impl->exporters)
+			(void)exporter->Shutdown(std::chrono::microseconds{1});
+
+		otel_exporter_files_truncate(exporters);
 
 		impl->logger   = std::move(logger_maybe);
 		impl->provider = provider;

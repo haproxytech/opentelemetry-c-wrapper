@@ -27,20 +27,16 @@
 #define OTEL_LOGGER_RETURN_INT(f, ...)       OTEL_RETURN_INT(logger, f, ##__VA_ARGS__)
 #define OTEL_LOGGER_RETURN_PTR(f, ...)       OTEL_RETURN_PTR(logger, f, ##__VA_ARGS__)
 
-#define OTEL_LOGGER_LOGFILE(l)               (OTEL_CAST_STATIC(struct otel_logger_impl *, (l)->impl)->logfile)
-
 /***
  * Per-instance implementation state for a logger.  Holds the SDK LoggerProvider
- * with the SDK Logger obtained from it, and the ostream exporter logfile owned
- * by this logger.  All members are owned by the instance, so multiple loggers
- * can coexist without sharing process-wide state.  The logfile comes first
- * so that it is destroyed last, after the provider members that may still
- * flush into it.  The exporters vector holds non-owning views of the SDK
- * exporters living inside the provider's processors; destroy uses it to shut
- * delivery down when the flush budget is zero.
+ * with the SDK Logger obtained from it.  All members are owned by the instance,
+ * so multiple loggers can coexist without sharing process-wide state.  The
+ * exporters vector holds non-owning views of the SDK exporters living inside
+ * the provider's processors; destroy uses it to shut delivery down when the
+ * flush budget is zero or runs out.  A file-backed ostream exporter owns its
+ * own stream, so the instance keeps no logfile of its own.
  */
 struct otel_logger_impl {
-	std::ofstream                                     logfile;
 	otel_nostd::shared_ptr<otel_logs::LoggerProvider> provider;
 	otel_nostd::shared_ptr<otel_logs::Logger>         logger;
 	std::vector<otel_sdk_logs::LogRecordExporter *>   exporters;

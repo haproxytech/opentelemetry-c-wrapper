@@ -164,7 +164,9 @@ private:
  * creates a lock_guard in the shared-handle build and expands to while (0) in
  * the thread-local build, and OTEL_LOCK_TRACER_COUNT does the same for the
  * mutex that keeps a tracer count transition together with the map allocation
- * or teardown it triggers.  Use them at function scope or inside a
+ * or teardown it triggers.  OTEL_LOCK_EXPORTER_FILE takes the mutex of the
+ * file stream an ostream exporter owns, which the start operation and an SDK
+ * worker thread both reach.  Use them at function scope or inside a
  * brace-enclosed block; placing them as the body of a single-statement
  * if/while/for changes the lifetime of the lock guard so the lock is released
  * before the next statement runs.
@@ -187,6 +189,7 @@ private:
 #define OTEL_LOCK_METER_SHARED_1(a)    const std::shared_lock<otel_shared_mutex> guard_##a(OTEL_METER_IMPL(meter)->a.get_shard(0).mutex)
 #define OTEL_LOCK_METER_SHARED_2(a,n)  std::shared_lock<otel_shared_mutex> n(OTEL_METER_IMPL(meter)->a.get_shard(0).mutex)
 #define OTEL_LOCK_METER_SHARED(...)    OTEL_12(__VA_ARGS__, OTEL_LOCK_METER_SHARED_2, OTEL_LOCK_METER_SHARED_1)(__VA_ARGS__)
+#define OTEL_LOCK_EXPORTER_FILE()      const std::lock_guard<std::mutex> guard_file(mutex_)
 #ifdef OTELC_USE_THREAD_SHARED_HANDLE
 #  define OTEL_LOCK_TRACER(a,n)      const std::lock_guard<std::mutex> guard_##a(OTEL_HANDLE(otel_##a, get_shard(n).mutex))
 #  define OTEL_LOCK_TRACER_COUNT()   const std::lock_guard<std::mutex> guard_count(otel_tracer_count_mutex)

@@ -380,7 +380,9 @@ struct otelc_meter_ops {
 	 *   Sets the budget of the provider flush that the destroy operation
 	 *   performs.  A value of zero makes destroy shut the exporters down
 	 *   instead, dropping the telemetry still queued; a flush that does
-	 *   not complete within a positive budget ends the same way.  A value
+	 *   not complete within a positive budget ends the same way.  A
+	 *   repeated start flushes the previous provider within the same
+	 *   budget before the new exporters open their files.  A value
 	 *   outside the range 0 to OTELC_FLUSH_TIMEOUT_MS_MAX is rejected.
 	 *
 	 * RETURN VALUE
