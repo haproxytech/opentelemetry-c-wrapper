@@ -47,7 +47,7 @@ struct otelc_tracer_ops {
 	 *
 	 * RETURN VALUE
 	 *   Returns a pointer to the otelc_span structure used to manage the
-	 *   span, or nullptr in case of an error.
+	 *   span, or nullptr on an error or when the tracer is disabled.
 	 */
 	struct otelc_span *(*start_span)(struct otelc_tracer *tracer, const char *operation_name)
 		OTELC_NONNULL_ALL;
@@ -94,7 +94,7 @@ struct otelc_tracer_ops {
 	 *
 	 * RETURN VALUE
 	 *   Returns a pointer to the otelc_span structure used to manage the
-	 *   span, or nullptr in case of an error.
+	 *   span, or nullptr on an error or when the tracer is disabled.
 	 */
 	struct otelc_span *(*start_span_with_options)(struct otelc_tracer *tracer, const char *operation_name, const struct otelc_span *parent_span, const struct otelc_span_context *parent_context, const struct timespec *ts_steady, const struct timespec *ts_system, otelc_span_kind_t kind, const struct otelc_span_link *links, size_t links_len)
 		OTELC_NONNULL(1, 2);
@@ -119,7 +119,7 @@ struct otelc_tracer_ops {
 	 *
 	 * RETURN VALUE
 	 *   Returns a pointer to the extracted span context on success,
-	 *   or nullptr on failure.
+	 *   or nullptr on failure or when the tracer is disabled.
 	 */
 	struct otelc_span_context *(*extract_text_map)(struct otelc_tracer *tracer, const struct otelc_text_map_reader *carrier)
 		OTELC_NONNULL_ALL;
@@ -143,7 +143,7 @@ struct otelc_tracer_ops {
 	 *
 	 * RETURN VALUE
 	 *   Returns a pointer to the extracted span context on success,
-	 *   or nullptr on failure.
+	 *   or nullptr on failure or when the tracer is disabled.
 	 */
 	struct otelc_span_context *(*extract_http_headers)(struct otelc_tracer *tracer, const struct otelc_http_headers_reader *carrier)
 		OTELC_NONNULL_ALL;
@@ -163,7 +163,9 @@ struct otelc_tracer_ops {
 	 *   Callers can use this check to skip expensive span setup when the
 	 *   tracer would discard the data anyway.  Returns false when the
 	 *   wrapper-level gate is cleared via set_enabled(), even if the
-	 *   underlying SDK tracer would otherwise be enabled.
+	 *   underlying SDK tracer would otherwise be enabled.  A tracer that
+	 *   has not been started yet is reported as an error whatever the
+	 *   gate holds.
 	 *
 	 * RETURN VALUE
 	 *   Returns true if the tracer is enabled, false if it is not,
@@ -289,7 +291,9 @@ struct otelc_tracer_ops {
 	 *   more exporter-processor pairs, provider, and finally the text-map
 	 *   propagator.  When the YAML configuration specifies a sequence of
 	 *   processors (and optionally a matching sequence of exporters), each
-	 *   pair is created and passed to the provider.
+	 *   pair is created and passed to the provider.  The optional
+	 *   flush_timeout key of the subtree sets the destroy-time provider
+	 *   flush budget; without it the current budget is kept.
 	 *
 	 *   The caller must drain every concurrent operation on this tracer
 	 *   instance before invoking start, including a repeated start: the
@@ -349,7 +353,7 @@ struct otelc_tracer {
 	int                            flush_timeout; /* Destroy-time provider flush budget in milliseconds; zero drops pending telemetry. */
 	const struct otelc_tracer_ops *ops;         /* Pointer to the operations vtable. */
 	const struct otelc_ctx        *ctx;         /* Owning library context; provides the YAML configuration. */
-	void                          *impl;        /* Opaque pointer to the C++ implementation state (provider, tracer, propagator). */
+	void                          *impl;        /* Opaque pointer to the C++ implementation state (struct otel_tracer_impl). */
 #ifdef OTELC_DBG_MEM
 	uint64_t                       magic;       /* Debug liveness marker; cleared when the tracer is destroyed. */
 #endif
@@ -371,10 +375,13 @@ struct otelc_tracer {
  *   Allocates and initializes a new tracer instance via otel_tracer_new().
  *   On failure, an error message may be written to *err if it is provided.
  *   The supplied context must be non-NULL and is retained by the tracer for
- *   later configuration lookups.  An error message stored in *err is allocated
- *   by the library and must be released with OTELC_SFREE(); on entry, *err must
- *   be a null pointer or a pointer from a previous call, since any previous
- *   message is released before being replaced.
+ *   later configuration lookups.  The destroy-time provider flush budget
+ *   defaults to OTELC_FLUSH_TIMEOUT_MS and can be overridden via the YAML
+ *   configuration or changed at runtime through the set_flush_timeout
+ *   operation.  An error message stored in *err is allocated by the library
+ *   and must be released with OTELC_SFREE(); on entry, *err must be a null
+ *   pointer or a pointer from a previous call, since any previous message is
+ *   released before being replaced.
  *
  * RETURN VALUE
  *   Returns a pointer to a newly created tracer instance on success, or nullptr

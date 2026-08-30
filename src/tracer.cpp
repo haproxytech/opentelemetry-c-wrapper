@@ -371,7 +371,7 @@ static void otel_tracer_unregister(void)
  *
  * RETURN VALUE
  *   Returns a pointer to the otelc_span structure used to manage the span,
- *   or nullptr in case of an error.
+ *   or nullptr in case of an error or when the tracer is disabled.
  */
 static struct otelc_span *otel_tracer_start_span_with_options(struct otelc_tracer *tracer, const char *operation_name, const struct otelc_span *parent_span, const struct otelc_span_context *parent_context, const struct timespec *ts_steady, const struct timespec *ts_system, otelc_span_kind_t kind, const struct otelc_span_link *links, size_t links_len)
 {
@@ -615,7 +615,7 @@ static struct otelc_span *otel_tracer_start_span_with_options(struct otelc_trace
  *
  * RETURN VALUE
  *   Returns a pointer to the otelc_span structure used to manage the span,
- *   or nullptr in case of an error.
+ *   or nullptr in case of an error or when the tracer is disabled.
  */
 static struct otelc_span *otel_tracer_start_span(struct otelc_tracer *tracer, const char *operation_name)
 {
@@ -742,7 +742,7 @@ static int otel_tracer_extract_carrier_cb(void *arg, const char *key, const char
  *
  * RETURN VALUE
  *   Returns a pointer to the extracted span context on success, or nullptr
- *   on failure.
+ *   on failure or when the tracer is disabled.
  */
 template <template <typename> class CarrierClass, typename ReaderT>
 static struct otelc_span_context *otel_tracer_extract_carrier(struct otelc_tracer *tracer, const ReaderT *carrier, const char *carrier_name, const char *dump_label __maybe_unused)
@@ -772,12 +772,16 @@ static struct otelc_span_context *otel_tracer_extract_carrier(struct otelc_trace
 
 	/* Populate carrier data from the text map or via the callback. */
 	if (OTEL_NULL(carrier->foreach_key)) {
-		for (size_t i = 0; i < carrier->text_map.count; i++)
+		for (size_t i = 0; i < carrier->text_map.count; i++) {
+			if (OTEL_NULL(carrier->text_map.key[i]) || OTEL_NULL(carrier->text_map.value[i]))
+				OTEL_TRACER_RETURN_PTR("Invalid text map carrier entry %zu", i);
+
 			try {
 				OTEL_DBG_THROW();
 				(void)carrier_data.emplace(carrier->text_map.key[i], carrier->text_map.value[i]);
 			}
 			OTEL_CATCH_SIGNAL_RETURN( , OTEL_TRACER_RETURN_PTR, OTEL_ERROR_MSG_ADD_CARRIER_ENTRY)
+		}
 	} else {
 		const int rc = carrier->foreach_key(OTEL_CAST_TYPEOF(carrier, carrier), otel_tracer_extract_carrier_cb, &carrier_data);
 		if (rc == OTELC_RET_ERROR)
@@ -821,10 +825,9 @@ static struct otelc_span_context *otel_tracer_extract_carrier(struct otelc_trace
 
 	/***
 	 * The return value is discarded intentionally: on failure
-	 * otel_span_context_add() resets retptr to nullptr through
-	 * otel_nolock_span_context_destroy() and writes the error message via
-	 * OTEL_TRACER_RETURN_INT, so returning retptr here propagates both the
-	 * null result and the diagnostic to the caller.
+	 * otel_span_context_add() leaves retptr at nullptr and writes the error
+	 * message via OTEL_TRACER_RETURN_INT, so returning retptr here
+	 * propagates both the null result and the diagnostic to the caller.
 	 */
 	(void)otel_span_context_add(tracer, &retptr, context);
 
@@ -851,7 +854,7 @@ static struct otelc_span_context *otel_tracer_extract_carrier(struct otelc_trace
  *
  * RETURN VALUE
  *   Returns a pointer to the extracted span context on success, or nullptr
- *   on failure.
+ *   on failure or when the tracer is disabled.
  */
 static struct otelc_span_context *otel_tracer_extract_text_map(struct otelc_tracer *tracer, const struct otelc_text_map_reader *carrier)
 {
@@ -878,7 +881,7 @@ static struct otelc_span_context *otel_tracer_extract_text_map(struct otelc_trac
  *
  * RETURN VALUE
  *   Returns a pointer to the extracted span context on success, or nullptr
- *   on failure.
+ *   on failure or when the tracer is disabled.
  */
 static struct otelc_span_context *otel_tracer_extract_http_headers(struct otelc_tracer *tracer, const struct otelc_http_headers_reader *carrier)
 {
@@ -901,7 +904,8 @@ static struct otelc_span_context *otel_tracer_extract_http_headers(struct otelc_
  *   can use this check to skip expensive span setup when the tracer would
  *   discard the data anyway.  Returns false when the wrapper-level gate is
  *   cleared via otel_tracer_set_enabled(), even if the underlying SDK tracer
- *   would otherwise be enabled.
+ *   would otherwise be enabled.  A tracer that has not been started yet is
+ *   reported as an error whatever the gate holds.
  *
  * RETURN VALUE
  *   Returns true if the tracer is enabled, false if it is not,
@@ -1082,6 +1086,11 @@ static int otel_tracer_shutdown(struct otelc_tracer *tracer, const struct timesp
  *   passed to the provider.  The optional flush_timeout key of the subtree
  *   sets the destroy-time provider flush budget; without it the current
  *   budget is kept.
+ *
+ *   The caller must drain every concurrent operation on this tracer instance
+ *   before invoking start, including a repeated start: the concurrent calls
+ *   snapshot the provider, tracer, and propagator handles that start replaces,
+ *   and such a snapshot racing with the replacement is a data race.
  *
  * RETURN VALUE
  *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR in case of an error.
@@ -1426,7 +1435,7 @@ const static struct otelc_tracer_ops otel_tracer_ops = {
 	.force_flush             = otel_tracer_force_flush,             /* Locking not required. */
 	.shutdown                = otel_tracer_shutdown,                /* Locking not required. */
 	.start                   = otel_tracer_start,                   /* Locking not required. */
-	.destroy                 = otel_tracer_destroy,                 /* Locking not required. */
+	.destroy                 = otel_tracer_destroy,                 /* lock span and span_context on the last tracer */
 };
 
 
@@ -1499,7 +1508,9 @@ static struct otelc_tracer *otel_tracer_new(void)
  *   OTELC_FLUSH_TIMEOUT_MS and can be overridden via the YAML configuration
  *   or changed at runtime through the set_flush_timeout operation.
  *   An error message stored in *err is allocated by the library and must be
- *   released with OTELC_SFREE().
+ *   released with OTELC_SFREE(); on entry, *err must be a null pointer or a
+ *   pointer from a previous call, since any previous message is released
+ *   before being replaced.
  *
  * RETURN VALUE
  *   Returns a pointer to a newly created tracer instance on success, or nullptr

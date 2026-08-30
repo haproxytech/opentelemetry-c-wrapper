@@ -382,6 +382,12 @@ instance and is released with it; the strings returned through an `err` argument
 belong to the caller and go to `OTELC_SFREE()`.  The library context itself is
 opaque.
 
+Every signal instance also offers the same housekeeping operations: `enabled`
+reads the `enabled` flag and `set_enabled` switches it, so the instance can be
+silenced at runtime without touching the SDK; `set_flush_timeout` changes the
+destroy-time flush budget; `force_flush` pushes the buffered telemetry out and
+`shutdown` closes the provider, both within an optional timeout.
+
 Operations are invoked through the `ops` pointer:
 
 ```c
@@ -469,7 +475,8 @@ The YAML file passed to `otelc_init()` contains these top-level sections:
 Besides these, the document accepts the optional top-level scalar key
 `handle_map_shards`, which sets the shard count of the span handle maps; its
 value must be a power of two in the range 1..65536 and takes effect on the
-first `otelc_init()` call after library load or after `otelc_lib_shutdown()`.
+first `otelc_init()` call that carries it, either after library load or after
+`otelc_lib_shutdown()`.
 
 The `signals` section groups its `traces`, `metrics`, and `logs` subtrees by
 name, so a single configuration can hold several independent definitions per
