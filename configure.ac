@@ -173,6 +173,7 @@ dnl otel_cpp.h
 dnl
 AX_OTEL_CPP_HDR_SEMANTIC_CONVENTIONS
 AX_OTEL_CPP_HDR_SPAN_KIND
+AX_OTEL_CPP_HDR_EXPORTERS
 
 AC_CONFIG_FILES([Makefile src/Makefile test/Makefile])
 AC_CONFIG_FILES([include/opentelemetry-c-wrapper/version.h include/opentelemetry-c-wrapper/otel_cpp.h])

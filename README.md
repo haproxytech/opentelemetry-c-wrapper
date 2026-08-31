@@ -596,6 +596,12 @@ neither setting; its thread runs with the process defaults.
 | Zipkin        | yes    | --      | --   |
 | Elasticsearch | --     | --      | yes  |
 
+Which of these a build provides depends on the exporter libraries found when
+the library was configured.  The generated header `otel_cpp.h` records that
+outcome as one `OTELC_HAVE_EXPORTER_<NAME>` macro per exporter type, set to 1
+or 0, so a program or a test can adapt at compile time instead of failing at
+`start()`.
+
 ## Thread Safety
 
 All data-plane operations (creating spans, recording metrics, emitting logs) are

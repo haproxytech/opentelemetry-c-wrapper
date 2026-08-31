@@ -38,3 +38,21 @@ AC_DEFUN([AX_OTEL_CPP_HDR_SPAN_KIND], [
 	AC_SUBST_FILE([OTEL_CPP_HDR_SPAN_KIND])
 	OTEL_CPP_HDR_SPAN_KIND="${_ax_var_sk_file}"
 ])
+
+AC_DEFUN([AX_OTEL_CPP_HDR_EXPORTERS], [
+	_ax_var_ex_file="${ac_aux_dir%/}/ax_otel_cpp_hdr_exporters.out"
+
+	dnl One macro per exporter type: 1 when the exporter was found, 0 otherwise.
+	{
+		echo "[#]define OTELC_HAVE_EXPORTER_ELASTICSEARCH ${_ax_have_exporter_elasticsearch:-0}"
+		echo "[#]define OTELC_HAVE_EXPORTER_IN_MEMORY     ${_ax_have_exporter_in_memory:-0}"
+		echo "[#]define OTELC_HAVE_EXPORTER_OSTREAM       ${_ax_have_exporter_ostream:-0}"
+		echo "[#]define OTELC_HAVE_EXPORTER_OTLP_FILE     ${_ax_have_exporter_otlp_file:-0}"
+		echo "[#]define OTELC_HAVE_EXPORTER_OTLP_GRPC     ${_ax_have_exporter_otlp_grpc:-0}"
+		echo "[#]define OTELC_HAVE_EXPORTER_OTLP_HTTP     ${_ax_have_exporter_otlp_http:-0}"
+		echo "[#]define OTELC_HAVE_EXPORTER_ZIPKIN        ${_ax_have_exporter_zipkin:-0}"
+	} > "${_ax_var_ex_file}"
+
+	AC_SUBST_FILE([OTEL_CPP_HDR_EXPORTERS])
+	OTEL_CPP_HDR_EXPORTERS="${_ax_var_ex_file}"
+])

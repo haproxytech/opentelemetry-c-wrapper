@@ -22,6 +22,12 @@ __CPLUSPLUS_DECL_BEGIN
 @OTEL_CPP_HDR_SPAN_KIND@
 
 /*
+ * Exporters the library was built with: one macro per exporter type, with the
+ * value 1 when the SDK provided the exporter and 0 otherwise.
+ */
+@OTEL_CPP_HDR_EXPORTERS@
+
+/*
  * All these definitions are obtained by processing the include files from the
  * <opentelemetry/semconv/incubating> directory.
  */
