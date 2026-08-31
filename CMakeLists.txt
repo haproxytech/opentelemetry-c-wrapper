@@ -829,6 +829,33 @@ execute_process(
     COMMAND_ERROR_IS_FATAL ANY
 )
 
+## Exporter availability -- one public macro per exporter type, set to 1 or 0.
+## The values are aligned in a column, so the generated header matches the one
+## AX_OTEL_CPP_HDR_EXPORTERS writes.
+set(_exporter_names ELASTICSEARCH IN_MEMORY OSTREAM OTLP_FILE OTLP_GRPC OTLP_HTTP ZIPKIN)
+set(_exporter_width 0)
+foreach(_name IN LISTS _exporter_names)
+    string(LENGTH "${_name}" _name_len)
+    if(_name_len GREATER _exporter_width)
+        set(_exporter_width ${_name_len})
+    endif()
+endforeach()
+
+set(OTEL_CPP_HDR_EXPORTERS "")
+foreach(_name IN LISTS _exporter_names)
+    if(HAVE_OTEL_EXPORTER_${_name})
+        set(_exporter_value 1)
+    else()
+        set(_exporter_value 0)
+    endif()
+    string(LENGTH "${_name}" _name_len)
+    math(EXPR _name_pad "${_exporter_width} - ${_name_len}")
+    string(REPEAT " " ${_name_pad} _name_fill)
+    string(APPEND OTEL_CPP_HDR_EXPORTERS
+        "#define OTELC_HAVE_EXPORTER_${_name}${_name_fill} ${_exporter_value}\n")
+endforeach()
+string(STRIP "${OTEL_CPP_HDR_EXPORTERS}" OTEL_CPP_HDR_EXPORTERS)
+
 configure_file(
     "${CMAKE_CURRENT_SOURCE_DIR}/include/opentelemetry-c-wrapper/otel_cpp.h.in"
     "${CMAKE_CURRENT_BINARY_DIR}/include/opentelemetry-c-wrapper/otel_cpp.h"

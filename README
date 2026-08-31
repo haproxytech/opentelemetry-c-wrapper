@@ -1039,6 +1039,12 @@ Exporter availability depends on the build configuration; unsupported types
 produce an error at startup, as does a type used with a signal that the table
 above marks as unsupported.
 
+What the build found is published in the generated header otel_cpp.h as one
+OTELC_HAVE_EXPORTER_<NAME> macro per exporter type, set to 1 when the exporter
+is present and to 0 when it is not, so a program or a test can pick its exporter
+at compile time instead of failing at start().  The <NAME> part is the type of
+the table above in upper case, except for 'memory', which is spelled IN_MEMORY.
+
 The configuration keys for each exporter type are listed below.  All keys are
 optional unless noted otherwise.  The thread_name and cpu_id keys described in
 section 6.3 are omitted from the lists.
