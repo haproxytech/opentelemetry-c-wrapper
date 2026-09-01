@@ -2190,6 +2190,13 @@ int main(int argc, char **argv)
 	if (retval >= 0)
 		return retval;
 
+#if !OTELC_HAVE_EXPORTER_OSTREAM || !OTELC_HAVE_EXPORTER_OTLP_FILE
+	/* The suite's configuration entries write through both exporters. */
+	test_skip("tracer tests", "the build lacks the ostream or the OTLP file exporter");
+
+	return test_summary(EX_OK);
+#endif
+
 	retval = EX_OK;
 	OTELC_LOG(stdout, "");
 
