@@ -22,7 +22,7 @@ static struct otelc_meter  **registered_meter  = NULL;
 static struct otelc_logger **registered_logger = NULL;
 static const char           *ctx_name          = DEFAULT_CTX_NAME;
 
-int tests_run = 0, tests_passed = 0, tests_failed = 0;
+int tests_run = 0, tests_passed = 0, tests_failed = 0, tests_skipped = 0;
 
 
 /***
@@ -53,6 +53,34 @@ void test_report(const char *name, int result)
 		tests_failed++;
 		OTELC_LOG(stderr, "  FAIL: %s", name);
 	}
+}
+
+
+/***
+ * NAME
+ *   test_skip - reports a test that cannot run in this build
+ *
+ * SYNOPSIS
+ *   void test_skip(const char *name, const char *reason)
+ *
+ * ARGUMENTS
+ *   name   - name of the test
+ *   reason - why the test cannot run
+ *
+ * DESCRIPTION
+ *   Reports a test that is left out because the build lacks something it
+ *   needs, such as an exporter, and counts it as skipped rather than as
+ *   passed or failed.
+ *
+ * RETURN VALUE
+ *   This function does not return a value.
+ */
+void test_skip(const char *name, const char *reason)
+{
+	tests_run++;
+	tests_skipped++;
+
+	OTELC_LOG(stdout, "  SKIP: %s (%s)", name, reason);
 }
 
 
@@ -370,8 +398,8 @@ int test_done(int retval, char *otel_err)
  *   retval - current exit status from the caller
  *
  * DESCRIPTION
- *   Prints the final counts of passed, failed, and total tests.  If
- *   any tests have failed, the return value is overridden to
+ *   Prints the final counts of passed, failed, skipped, and total tests.
+ *   If any tests have failed, the return value is overridden to
  *   EX_SOFTWARE.
  *
  * RETURN VALUE
@@ -381,7 +409,7 @@ int test_done(int retval, char *otel_err)
 int test_summary(int retval)
 {
 	OTELC_LOG(stdout, "");
-	OTELC_LOG(stdout, "--- Results: %d passed, %d failed, %d total ---", tests_passed, tests_failed, tests_run);
+	OTELC_LOG(stdout, "--- Results: %d passed, %d failed, %d skipped, %d total ---", tests_passed, tests_failed, tests_skipped, tests_run);
 
 	if (tests_failed > 0)
 		retval = EX_SOFTWARE;
