@@ -161,19 +161,32 @@ struct T {
 
 #define T   otel_view_handle
 struct T {
-	std::string name;  /* Name of the metric view. */
-	bool        valid; /* False when the constructor failed to store the name. */
+	std::string                     name;             /* Name of the metric view. */
+	std::string                     desc;             /* Description of the metric view. */
+	std::string                     instrument_name;  /* Name of the instrument the view applies to. */
+	std::string                     instrument_unit;  /* Unit of the instrument the view applies to. */
+	otelc_metric_instrument_t       instrument_type;  /* Type of the instrument the view applies to. */
+	otelc_metric_aggregation_type_t aggregation_type; /* Aggregation strategy used by the view. */
+	std::vector<double>             bounds;           /* Histogram bucket boundaries, empty when none were given. */
+	bool                            valid;            /* False when the constructor failed to store the specification. */
 
-	T(const char *name_) noexcept
+	T(const char *name_, const char *desc_, const char *instrument_name_, const char *instrument_unit_, otelc_metric_instrument_t instrument_type_, otelc_metric_aggregation_type_t aggregation_type_, const double *bounds_, size_t bounds_num_) noexcept
 	{
-		OTELCPP_FUNC("\"%s\"", OTELC_STRINGIFY(T), OTELC_STR_ARG(name_));
+		OTELCPP_FUNC("\"%s\", \"%s\", \"%s\", \"%s\", %d, %d, %p, %zu", OTELC_STRINGIFY(T), OTELC_STR_ARG(name_), OTELC_STR_ARG(desc_), OTELC_STR_ARG(instrument_name_), OTELC_STR_ARG(instrument_unit_), instrument_type_, aggregation_type_, bounds_, bounds_num_);
 
-		valid = true;
+		instrument_type  = instrument_type_;
+		aggregation_type = aggregation_type_;
+		valid            = true;
 
-		/* The string assignment may throw; a cleared flag marks the failure. */
+		/* The assignments may throw; a cleared flag marks a failure. */
 		try {
 			OTEL_DBG_THROW();
-			name = name_;
+			name            = name_;
+			desc            = desc_;
+			instrument_name = instrument_name_;
+			instrument_unit = instrument_unit_;
+			if (!OTEL_NULL(bounds_))
+				bounds.assign(bounds_, bounds_ + bounds_num_);
 		}
 		catch (...) {
 			valid = false;

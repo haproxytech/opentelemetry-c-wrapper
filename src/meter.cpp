@@ -25,6 +25,11 @@ static const otel_sdk_metrics::InstrumentMetaDataValidator  otel_instrument_vali
 otel_meter_impl::otel_meter_impl() = default;
 otel_meter_impl::~otel_meter_impl() = default;
 
+/* SDK instrument type for each C instrument type value, in enum order. */
+#define OTELC_METRIC_INSTRUMENT_DEF(a,b)   otel_sdk_metrics::InstrumentType::b,
+static constexpr otel_sdk_metrics::InstrumentType otel_meter_instrument_type_map[] = { OTELC_METRIC_INSTRUMENT_DEFINES };
+#undef OTELC_METRIC_INSTRUMENT_DEF
+
 
 /***
  * NAME
@@ -203,6 +208,100 @@ static int64_t otel_nolock_meter_find_instrument(struct otelc_meter *meter, cons
 
 /***
  * NAME
+ *   otel_meter_view_register - registers a view with an SDK meter provider
+ *
+ * SYNOPSIS
+ *   static int otel_meter_view_register(struct otelc_meter *meter, otel_sdk_metrics::MeterProvider *provider_sdk, const struct otel_view_handle *view)
+ *
+ * ARGUMENTS
+ *   meter        - meter instance
+ *   provider_sdk - SDK meter provider that receives the view
+ *   view         - view handle holding the specification to register
+ *
+ * DESCRIPTION
+ *   Builds the SDK instrument selector, meter selector and view from the
+ *   specification kept in the view handle, including the histogram aggregation
+ *   configuration when the handle carries bucket boundaries, and hands them to
+ *   the provider.  The meter selector uses the current scope name of the meter.
+ *   The function serves the first registration of a view in
+ *   otel_meter_add_view() and the registration with a new provider that
+ *   otel_meter_start() performs for every recorded view on a restart; the
+ *   caller holds the creation mutex and the view map lock in both cases, and
+ *   the ranges of the recorded types were checked when the view was added.
+ *
+ * RETURN VALUE
+ *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR in case of an error.
+ */
+static int otel_meter_view_register(struct otelc_meter *meter, otel_sdk_metrics::MeterProvider *provider_sdk, const struct otel_view_handle *view)
+{
+	std::shared_ptr<otel_sdk_metrics::HistogramAggregationConfig> config{};
+
+	OTELC_FUNC("%p, %p, %p", meter, provider_sdk, view);
+
+	if (OTEL_NULL(meter))
+		OTELC_RETURN_INT(OTELC_RET_ERROR);
+	else if (OTEL_NULL(provider_sdk))
+		OTEL_METER_RETURN_INT(OTEL_ERROR_MSG_METER_PROVIDER);
+	else if (OTEL_NULL(view))
+		OTEL_METER_RETURN_INT("Invalid view handle");
+	else if (OTEL_NULL(meter->scope_name))
+		OTEL_METER_RETURN_INT("Meter instrumentation scope name not set");
+
+	if (!view->bounds.empty()) {
+#if 1
+		/***
+		 * The allocation of HistogramAggregationConfig lacked exception
+		 * safety, as the std::shared_ptr constructor may throw
+		 * std::bad_alloc during memory allocation.
+		 */
+		try {
+			OTEL_DBG_THROW();
+			config = std::shared_ptr<otel_sdk_metrics::HistogramAggregationConfig>(new(std::nothrow) otel_sdk_metrics::HistogramAggregationConfig());
+		}
+		OTEL_CATCH_SIGNAL_RETURN( , OTEL_METER_RETURN_INT, "Unable to create histogram aggregation config")
+#else
+		/***
+		 * NOTE: This would be more logical, but due to the following
+		 * warning it is not used:
+		 *
+		 * ../include/std.h:49:74: warning: noexcept-expression evaluates to 'false' because of a call to 'opentelemetry::v2::sdk::metrics::HistogramAggregationConfig::HistogramAggregationConfig(size_t)' [-Wnoexcept]
+		 */
+		config = otel::make_shared_nothrow<otel_sdk_metrics::HistogramAggregationConfig>();
+#endif
+		if (OTEL_NULL(config))
+			OTEL_METER_RETURN_INT(OTEL_ERROR_MSG_ENOMEM("histogram aggregation config"));
+
+		try {
+			OTEL_DBG_THROW();
+			config->boundaries_ = view->bounds;
+		}
+		OTEL_CATCH_SIGNAL_RETURN( , OTEL_METER_RETURN_INT, "Unable to add histogram view boundaries")
+	}
+
+	/* Create a selector to filter instruments by type, name, and unit. */
+	auto instrument_selector = otel::make_unique_nothrow<otel_sdk_metrics::InstrumentSelector>(otel_meter_instrument_type_map[view->instrument_type], view->instrument_name, view->instrument_unit);
+	if (OTEL_NULL(instrument_selector))
+		OTEL_METER_RETURN_INT(OTEL_ERROR_MSG_ENOMEM("instrument selector"));
+
+	/* Create a selector to filter meters by scope name, version, and schema. */
+	auto meter_selector = otel::make_unique_nothrow<otel_sdk_metrics::MeterSelector>(meter->scope_name, OTELC_SCOPE_VERSION, OTELC_SCOPE_SCHEMA_URL);
+	if (OTEL_NULL(meter_selector))
+		OTEL_METER_RETURN_INT(OTEL_ERROR_MSG_ENOMEM("meter selector"));
+
+	/* Create the view with the given name, description, and aggregation. */
+	auto sdk_view = otel::make_unique_nothrow<otel_sdk_metrics::View>(view->name, view->desc, OTEL_CAST_STATIC(otel_sdk_metrics::AggregationType, view->aggregation_type), std::move(config));
+	if (OTEL_NULL(sdk_view))
+		OTEL_METER_RETURN_INT(OTEL_ERROR_MSG_ENOMEM("view"));
+
+	/* Selectors and view are consumed by AddView. */
+	provider_sdk->AddView(std::move(instrument_selector), std::move(meter_selector), std::move(sdk_view));
+
+	OTELC_RETURN_INT(OTELC_RET_OK);
+}
+
+
+/***
+ * NAME
  *   otel_meter_add_view - adds a metrics view to a meter
  *
  * SYNOPSIS
@@ -231,18 +330,19 @@ static int64_t otel_nolock_meter_find_instrument(struct otelc_meter *meter, cons
  *   Note: the view must be registered before the instrument is created,
  *   because in the OpenTelemetry C++ SDK views are not dynamically applied
  *   to existing instruments.  The meter itself must already be started.
- *   If a view with the same name already exists, its ID is returned and no
- *   new view is created.
+ *   Bucket boundaries are accepted only for a histogram instrument type with
+ *   the default or the histogram aggregation, as a non-empty array with a
+ *   matching count.  If a view with the same name already exists, its ID is
+ *   returned and no new view is created.  The specification of every view is
+ *   recorded, so a restart of the meter registers the views with its new
+ *   provider again.
  *
  * RETURN VALUE
  *   Returns the ID of the added view on success, or OTELC_RET_ERROR on failure.
  */
 static int64_t otel_meter_add_view(struct otelc_meter *meter, const char *view_name, const char *view_desc, const char *instrument_name, const char *instrument_unit, otelc_metric_instrument_t instrument_type, otelc_metric_aggregation_type_t aggregation_type, const double *bounds, size_t bounds_num)
 {
-	std::shared_ptr<otel_sdk_metrics::HistogramAggregationConfig> config{};
-	otel_sdk_metrics::InstrumentType                              instr_type;
-	otel_sdk_metrics::AggregationType                             aggr_type;
-	int64_t                                                       view_id;
+	int64_t view_id;
 
 	OTELC_FUNC("%p, \"%s\", \"%s\", \"%s\", \"%s\", %d, %d, %p, %zu", meter, OTELC_STR_ARG(view_name), OTELC_STR_ARG(view_desc), OTELC_STR_ARG(instrument_name), OTELC_STR_ARG(instrument_unit), instrument_type, aggregation_type, bounds, bounds_num);
 
@@ -257,6 +357,40 @@ static int64_t otel_meter_add_view(struct otelc_meter *meter, const char *view_n
 
 	OTEL_ARG_DEFAULT(view_desc, "");
 	OTEL_ARG_DEFAULT(instrument_unit, "");
+
+	/***
+	 * Range check is valid because otel_meter_instrument_type_map is
+	 * generated in the same order as the C enum, making the mapping
+	 * one-to-one; the aggregation enums are one-to-one as well (verified
+	 * by static_assert).
+	 */
+	if (!OTELC_IN_RANGE(instrument_type, 0, OTELC_TABLESIZE_1(otel_meter_instrument_type_map)))
+		OTEL_METER_RETURN_INT(OTEL_ERROR_MSG_INSTRUMENT_TYPE, instrument_type);
+	else if (!OTELC_IN_RANGE(aggregation_type, OTELC_METRIC_AGGREGATION_DROP, OTELC_METRIC_AGGREGATION_BASE2_EXPONENTIAL_HISTOGRAM))
+		OTEL_METER_RETURN_INT("Invalid OpenTelemetry meter aggregation type: %d", aggregation_type);
+	else if (OTEL_NULL(bounds) && (bounds_num > 0))
+		OTEL_METER_RETURN_INT("Invalid histogram view boundaries: no array for %zu entries", bounds_num);
+	else if (!OTEL_NULL(bounds) && (bounds_num == 0))
+		OTEL_METER_RETURN_INT("Invalid number of histogram view boundaries: 0");
+	else if (!OTEL_NULL(bounds) && (otel_meter_instrument_type_map[instrument_type] != otel_sdk_metrics::InstrumentType::kHistogram))
+		OTEL_METER_RETURN_INT("Histogram view boundaries given for a non-histogram instrument type: %d", instrument_type);
+	else if (!OTEL_NULL(bounds) && (aggregation_type != OTELC_METRIC_AGGREGATION_DEFAULT) && (aggregation_type != OTELC_METRIC_AGGREGATION_HISTOGRAM))
+		OTEL_METER_RETURN_INT("Histogram view boundaries given for a non-histogram aggregation type: %d", aggregation_type);
+
+#ifdef DEBUG
+	if (!OTEL_NULL(bounds)) {
+		char    buffer[BUFSIZ] = "";
+		size_t  len = 0;
+		ssize_t n = 0;
+
+		for (size_t i = 0; (i < bounds_num) && (len < sizeof(buffer)); i++, len += n) {
+			n = snprintf(buffer + len, sizeof(buffer) - len, "%s%.2f", (len == 0) ? "" : " ", bounds[i]);
+			if (!OTELC_IN_RANGE(n, 0, OTEL_CAST_STATIC(ssize_t, sizeof(buffer) - len - 1)))
+				break;
+		}
+		OTELC_DBG(DEBUG, "adding bounds: %p:{ %s }", bounds, buffer);
+	}
+#endif /* DEBUG */
 
 	OTEL_LOCK_METER_SHARED(view, rdguard_view);
 
@@ -289,90 +423,6 @@ static int64_t otel_meter_add_view(struct otelc_meter *meter, const char *view_n
 	if (OTEL_NULL(meter->scope_name))
 		OTEL_METER_RETURN_INT("Meter instrumentation scope name not set");
 
-#define OTELC_METRIC_INSTRUMENT_DEF(a,b)   otel_sdk_metrics::InstrumentType::b,
-	static constexpr otel_sdk_metrics::InstrumentType instrument_type_map[] = { OTELC_METRIC_INSTRUMENT_DEFINES };
-#undef OTELC_METRIC_INSTRUMENT_DEF
-
-	/***
-	 * Range check is valid because instrument_type_map is generated in the
-	 * same order as the C enum, making the mapping one-to-one.
-	 */
-	if (!OTELC_IN_RANGE(instrument_type, 0, OTELC_TABLESIZE_1(instrument_type_map)))
-		OTEL_METER_RETURN_INT(OTEL_ERROR_MSG_INSTRUMENT_TYPE, instrument_type);
-	instr_type = instrument_type_map[instrument_type];
-
-	/***
-	 * Direct cast is safe because the enums are one-to-one (verified by
-	 * static_assert).
-	 */
-	if (!OTELC_IN_RANGE(aggregation_type, OTELC_METRIC_AGGREGATION_DROP, OTELC_METRIC_AGGREGATION_BASE2_EXPONENTIAL_HISTOGRAM))
-		OTEL_METER_RETURN_INT("Invalid OpenTelemetry meter aggregation type: %d", aggregation_type);
-	aggr_type = OTEL_CAST_STATIC(otel_sdk_metrics::AggregationType, aggregation_type);
-
-	if ((instr_type == otel_sdk_metrics::InstrumentType::kHistogram) && !OTEL_NULL(bounds)) {
-#ifdef DEBUG
-		char    buffer[BUFSIZ] = "";
-		size_t  len = 0;
-		ssize_t n = 0;
-
-		for (size_t i = 0; (i < bounds_num) && (len < sizeof(buffer)); i++, len += n) {
-			n = snprintf(buffer + len, sizeof(buffer) - len, "%s%.2f", (len == 0) ? "" : " ", bounds[i]);
-			if (!OTELC_IN_RANGE(n, 0, OTEL_CAST_STATIC(ssize_t, sizeof(buffer) - len - 1)))
-				break;
-		}
-		OTELC_DBG(DEBUG, "adding bounds: %p:{ %s }", bounds, buffer);
-#endif /* DEBUG */
-
-		if (bounds_num == 0)
-			OTEL_METER_RETURN_INT("Invalid number of histogram view boundaries: 0");
-
-#if 1
-		/***
-		 * The allocation of HistogramAggregationConfig lacked exception
-		 * safety, as the std::shared_ptr constructor may throw
-		 * std::bad_alloc during memory allocation.
-		 */
-		try {
-			OTEL_DBG_THROW();
-			config = std::shared_ptr<otel_sdk_metrics::HistogramAggregationConfig>(new(std::nothrow) otel_sdk_metrics::HistogramAggregationConfig());
-		}
-		OTEL_CATCH_SIGNAL_RETURN( , OTEL_METER_RETURN_INT, "Unable to create histogram aggregation config")
-#else
-		/***
-		 * NOTE: This would be more logical, but due to the following
-		 * warning it is not used:
-		 *
-		 * ../include/std.h:49:74: warning: noexcept-expression evaluates to 'false' because of a call to 'opentelemetry::v2::sdk::metrics::HistogramAggregationConfig::HistogramAggregationConfig(size_t)' [-Wnoexcept]
-		 */
-		config = otel::make_shared_nothrow<otel_sdk_metrics::HistogramAggregationConfig>();
-#endif
-		if (OTEL_NULL(config))
-			OTEL_METER_RETURN_INT(OTEL_ERROR_MSG_ENOMEM("histogram aggregation config"));
-
-		for (size_t i = 0; i < bounds_num; i++)
-			try {
-				OTEL_DBG_THROW();
-				config->boundaries_.push_back(bounds[i]);
-			}
-			OTEL_CATCH_SIGNAL_RETURN( , OTEL_METER_RETURN_INT, "Unable to add histogram view boundaries")
-	}
-
-	/* Create a selector to filter instruments by type, name, and unit. */
-	auto instrument_selector = otel::make_unique_nothrow<otel_sdk_metrics::InstrumentSelector>(instr_type, instrument_name, instrument_unit);
-	if (OTEL_NULL(instrument_selector))
-		OTEL_METER_RETURN_INT(OTEL_ERROR_MSG_ENOMEM("instrument selector"));
-
-	/* Create a selector to filter meters by scope name, version, and schema. */
-	auto meter_selector = otel::make_unique_nothrow<otel_sdk_metrics::MeterSelector>(meter->scope_name, OTELC_SCOPE_VERSION, OTELC_SCOPE_SCHEMA_URL);
-	if (OTEL_NULL(meter_selector))
-		OTEL_METER_RETURN_INT(OTEL_ERROR_MSG_ENOMEM("meter selector"));
-
-	/* Create the view with the given name, description, and aggregation. */
-	auto view = otel::make_unique_nothrow<otel_sdk_metrics::View>(view_name, view_desc, aggr_type, std::move(config));
-	if (OTEL_NULL(view))
-		OTEL_METER_RETURN_INT(OTEL_ERROR_MSG_ENOMEM("view"));
-
-	/* Register the view with the per-instance provider and track in the map. */
 	auto *impl = OTEL_IMPL(meter, meter);
 	if (OTEL_NULL(impl))
 		OTEL_METER_RETURN_INT(OTEL_ERROR_MSG_METER_PROVIDER);
@@ -380,49 +430,51 @@ static int64_t otel_meter_add_view(struct otelc_meter *meter, const char *view_n
 	/* Snapshot the provider reference for the duration of the call. */
 	auto       provider_shared = impl->provider;
 	const auto provider_sdk    = OTEL_METER_PROVIDER(provider_shared);
+	if (OTEL_NULL(provider_sdk))
+		OTEL_METER_RETURN_INT(OTEL_ERROR_MSG_METER_PROVIDER);
 
 	OTEL_LOCK_METER(view);
 
-	if (!OTEL_NULL(provider_sdk)) {
-		std::pair<std::unordered_map<int64_t, struct otel_view_handle *>::iterator, bool> emplace_status{};
+	/***
+	 * Record the specification and reserve the map slot before the SDK
+	 * registration, so a partial failure leaves the SDK provider
+	 * unchanged; AddView is append-only on the SDK side, so a stale
+	 * registration could not be undone.  The recorded specification also
+	 * lets a restart register the view with the new provider.
+	 */
+	const auto view_handle = new(std::nothrow) otel_view_handle{view_name, view_desc, instrument_name, instrument_unit, instrument_type, aggregation_type, bounds, bounds_num};
+	if (OTEL_NULL(view_handle))
+		OTEL_METER_RETURN_INT(OTEL_ERROR_MSG_ENOMEM("view handle"));
 
-		/***
-		 * Allocate the local handle and reserve its map slot before
-		 * calling AddView, so a partial failure leaves the SDK provider
-		 * unchanged.  AddView is append-only on the SDK side, so a
-		 * stale registration cannot be undone.
-		 */
-		const auto view_handle = new(std::nothrow) otel_view_handle{view_name};
-		if (OTEL_NULL(view_handle))
-			OTEL_METER_RETURN_INT(OTEL_ERROR_MSG_ENOMEM("view handle"));
+	if (!view_handle->valid) {
+		delete view_handle;
 
-		if (!view_handle->valid) {
-			delete view_handle;
-
-			OTEL_METER_RETURN_INT(OTEL_ERROR_MSG_ENOMEM("view handle name"));
-		}
-
-		try {
-			OTEL_DBG_THROW();
-			emplace_status = OTEL_METER_IMPL(meter)->view.shards[0].map.emplace(OTEL_METER_IMPL(meter)->view.id, view_handle);
-		}
-		OTEL_CATCH_SIGNAL_RETURN(delete view_handle, OTEL_METER_RETURN_INT, "Unable to add meter instrument view")
-
-		if (!emplace_status.second) {
-			delete view_handle;
-
-			OTEL_METER_RETURN_INT("Unable to add meter instrument view: duplicate id %" PRId64, OTEL_METER_IMPL(meter)->view.id.load());
-		}
-
-		/* Selectors and view are consumed by AddView. */
-		provider_sdk->AddView(std::move(instrument_selector), std::move(meter_selector), std::move(view));
-
-		OTELC_DBG(OTEL, "View added");
-
-		OTEL_METER_IMPL(meter)->view.update_peak_size(0);
-	} else {
-		OTEL_METER_RETURN_INT(OTEL_ERROR_MSG_METER_PROVIDER);
+		OTEL_METER_RETURN_INT(OTEL_ERROR_MSG_ENOMEM("view handle specification"));
 	}
+
+	std::pair<std::unordered_map<int64_t, struct otel_view_handle *>::iterator, bool> emplace_status{};
+	try {
+		OTEL_DBG_THROW();
+		emplace_status = OTEL_METER_IMPL(meter)->view.shards[0].map.emplace(OTEL_METER_IMPL(meter)->view.id, view_handle);
+	}
+	OTEL_CATCH_SIGNAL_RETURN(delete view_handle, OTEL_METER_RETURN_INT, "Unable to add meter instrument view")
+
+	if (!emplace_status.second) {
+		delete view_handle;
+
+		OTEL_METER_RETURN_INT("Unable to add meter instrument view: duplicate id %" PRId64, OTEL_METER_IMPL(meter)->view.id.load());
+	}
+
+	if (otel_meter_view_register(meter, provider_sdk, view_handle) == OTELC_RET_ERROR) {
+		(void)OTEL_METER_IMPL(meter)->view.shards[0].map.erase(OTEL_METER_IMPL(meter)->view.id);
+		delete view_handle;
+
+		OTELC_RETURN_INT(OTELC_RET_ERROR);
+	}
+
+	OTELC_DBG(OTEL, "View added");
+
+	OTEL_METER_IMPL(meter)->view.update_peak_size(0);
 
 	OTELC_RETURN_EX(OTEL_METER_IMPL(meter)->view.id++, int64_t, "%" PRId64);
 }
@@ -1096,7 +1148,10 @@ static int otel_meter_shutdown(struct otelc_meter *meter, const struct timespec 
  *   A restart of an already started meter must not run concurrently with the
  *   instrument or flush operations of that meter, because those operations
  *   snapshot the installed SDK meter and provider handles without taking the
- *   create_mutex.
+ *   create_mutex.  The instruments created before a restart stay bound to
+ *   the replaced pipeline, while every recorded view is registered with the
+ *   new provider again, so the views keep applying to the instruments created
+ *   after the restart.
  *
  * RETURN VALUE
  *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR in case of an error.
@@ -1240,6 +1295,18 @@ static int otel_meter_start(struct otelc_meter *meter)
 		meter_maybe = provider->GetMeter(meter->scope_name, OTELC_SCOPE_VERSION, OTELC_SCOPE_SCHEMA_URL);
 		if (OTEL_NULL(meter_maybe))
 			OTEL_METER_RETURN_INT("Unable to get meter from provider");
+
+		/***
+		 * A new provider knows no view, so each recorded view is
+		 * registered again before the provider replaces the installed
+		 * one; a failed registration leaves the previous pipeline in
+		 * place.
+		 */
+		OTEL_LOCK_METER_SHARED(view);
+
+		for (const auto &it : OTEL_METER_IMPL(meter)->view.shards[0].map)
+			if (otel_meter_view_register(meter, OTEL_METER_PROVIDER(provider), it.second) == OTELC_RET_ERROR)
+				OTELC_RETURN_INT(OTELC_RET_ERROR);
 
 		/***
 		 * The files of the new exporters are opened only now,
