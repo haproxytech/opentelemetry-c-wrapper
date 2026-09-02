@@ -160,12 +160,12 @@ private:
  * form names the guard explicitly and leaves it non-const, so the lock can be
  * released early with unlock() and several guards of the same map can coexist
  * within one function.  OTEL_LOCK_METER_CREATE takes the per-meter creation
- * mutex that serializes create_instrument and add_view.  OTEL_LOCK_TRACER
- * creates a lock_guard in the shared-handle build and expands to while (0) in
- * the thread-local build, and OTEL_LOCK_TRACER_COUNT does the same for the
- * mutex that keeps a tracer count transition together with the map allocation
- * or teardown it triggers.  Use them at function scope or inside a
- * brace-enclosed block; placing them as the body of a single-statement
+ * mutex that serializes create_instrument, add_view and start.
+ * OTEL_LOCK_TRACER creates a lock_guard in the shared-handle build and expands
+ * to while (0) in the thread-local build, and OTEL_LOCK_TRACER_COUNT does the
+ * same for the mutex that keeps a tracer count transition together with the
+ * map allocation or teardown it triggers.  Use them at function scope or
+ * inside a brace-enclosed block; placing them as the body of a single-statement
  * if/while/for changes the lifetime of the lock guard so the lock is released
  * before the next statement runs.
  *

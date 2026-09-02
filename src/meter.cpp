@@ -44,8 +44,9 @@ static constexpr otel_sdk_metrics::InstrumentType otel_meter_instrument_type_map
  *
  * DESCRIPTION
  *   Invokes the user-defined observable callback associated with an int64
- *   metric.  The callback is called with the provided observer result and
- *   is expected to record one or more int64 values using the observer.
+ *   metric.  The callback receives its descriptor with the value slot reset
+ *   to zero and writes the observed int64 value into that slot; the adapter
+ *   then records the slot content once through the observer result.
  *
  *   This function acts as an adapter between the OpenTelemetry observer
  *   interface and the internally stored callback representation.
@@ -72,8 +73,9 @@ static void otel_meter_observable_int64_cb(otel_metrics::ObserverResult observer
  *
  * DESCRIPTION
  *   Invokes the user-defined observable callback associated with a double
- *   metric.  The callback is called with the provided observer result and
- *   is expected to record one or more double values using the observer.
+ *   metric.  The callback receives its descriptor with the value slot reset
+ *   to zero and writes the observed double value into that slot; the adapter
+ *   then records the slot content once through the observer result.
  *
  *   This function acts as an adapter between the OpenTelemetry observer
  *   interface and the internally stored callback representation.
@@ -89,7 +91,7 @@ static void otel_meter_observable_double_cb(otel_metrics::ObserverResult observe
 
 /***
  * NAME
- *   otel_meter_get_view_id - checks whether a view exists for a meter
+ *   otel_meter_get_view_id - returns the ID of a named view of a meter
  *
  * SYNOPSIS
  *   static int64_t otel_meter_get_view_id(struct otelc_meter *meter, const char *name)
@@ -593,9 +595,9 @@ static int otel_meter_add_instrument_callback(struct otelc_meter *meter, int idx
 	else if (OTEL_NULL(data))
 		OTEL_METER_RETURN_INT(OTEL_ERROR_MSG_INVALID_CALLBACK);
 
-	OTEL_LOCK_METER_SHARED(instrument);
+	OTEL_LOCK_INSTRUMENT_HANDLE(_INT, idx);
 
-	OTELC_RETURN_INT(otel_nolock_meter_add_instrument_callback(meter, OTEL_INSTRUMENT_HANDLE(idx), data));
+	OTELC_RETURN_INT(otel_nolock_meter_add_instrument_callback(meter, instrument, data));
 }
 
 
@@ -690,12 +692,6 @@ static int64_t otel_meter_create_instrument(struct otelc_meter *meter, const cha
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
 	else if (OTEL_NULL(name))
 		OTEL_METER_RETURN_INT(OTEL_ERROR_MSG_INVALID_INSTRUMENT);
-	else if (OTEL_NULL(data)) {
-		if (OTEL_METRIC_INSTRUMENT_IS_OBSERVABLE(type))
-			OTEL_METER_RETURN_INT("Missing observable callback for observable instrument");
-	}
-	else if (!OTEL_METRIC_INSTRUMENT_IS_OBSERVABLE(type))
-		OTEL_METER_RETURN_INT("Unexpected callback function for synchronous instrument");
 
 	OTEL_ARG_DEFAULT(desc, "");
 	OTEL_ARG_DEFAULT(unit, "");
@@ -722,6 +718,12 @@ static int64_t otel_meter_create_instrument(struct otelc_meter *meter, const cha
 		OTELC_RETURN_EX(instrument_id, int64_t, "%" PRId64);
 
 	rdguard_instrument.unlock();
+
+	/* Only a new instrument needs the descriptor; an old one ignores it. */
+	if (OTEL_NULL(data) && OTEL_METRIC_INSTRUMENT_IS_OBSERVABLE(type))
+		OTEL_METER_RETURN_INT("Missing observable callback for observable instrument");
+	else if (!OTEL_NULL(data) && !OTEL_METRIC_INSTRUMENT_IS_OBSERVABLE(type))
+		OTEL_METER_RETURN_INT("Unexpected callback function for synchronous instrument");
 
 	/***
 	 * Only a new instrument is validated, so an existing one is returned
@@ -1355,7 +1357,8 @@ static int otel_meter_start(struct otelc_meter *meter)
  *   discard the data anyway.  The OpenTelemetry C++ SDK does not yet provide
  *   a Meter::Enabled() method, so this function returns true whenever the
  *   meter is valid and the wrapper-level gate set via
- *   otel_meter_set_enabled() is not cleared.
+ *   otel_meter_set_enabled() is not cleared.  A meter that has not been
+ *   started yet is reported as an error whatever the gate holds.
  *
  * RETURN VALUE
  *   Returns true if the meter is enabled, false if it is not,
@@ -1532,8 +1535,8 @@ const static struct otelc_meter_ops otel_meter_ops = {
 	.set_flush_timeout          = otel_meter_set_flush_timeout,          /* Locking not required. */
 	.force_flush                = otel_meter_force_flush,                /* Locking not required. */
 	.shutdown                   = otel_meter_shutdown,                   /* Locking not required. */
-	.start                      = otel_meter_start,                      /* Locking not required. */
-	.destroy                    = otel_meter_destroy,                    /* Locking not required. */
+	.start                      = otel_meter_start,                      /* lock create_mutex, otel_view (shared) */
+	.destroy                    = otel_meter_destroy,                    /* lock otel_instrument and otel_view (exclusive) */
 };
 
 
@@ -1600,7 +1603,9 @@ static struct otelc_meter *otel_meter_new(void)
  *   OTELC_FLUSH_TIMEOUT_MS and can be overridden via the YAML configuration
  *   or changed at runtime through the set_flush_timeout operation.
  *   An error message stored in *err is allocated by the library and must be
- *   released with OTELC_SFREE().
+ *   released with OTELC_SFREE(); on entry, *err must be a null pointer or a
+ *   pointer from a previous call, since any previous message is released
+ *   before being replaced.
  *
  * RETURN VALUE
  *   Returns a pointer to a newly created meter instance on success, or nullptr
