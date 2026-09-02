@@ -64,6 +64,14 @@ exporters:
     type:     ostream
     filename: /dev/null
 
+  exporter_traces_restart_a:
+    type:     ostream
+    filename: __traces_restart_a
+
+  exporter_traces_restart_b:
+    type:     ostream
+    filename: __traces_restart_b
+
   exporter_traces_ostream:
     type:     ostream
     filename: __traces
@@ -333,6 +341,20 @@ signals:
       exporters:  exporter_traces_dev_null
       samplers:   sampler_traces
       processors: processor_traces_single
+      providers:  provider_traces
+
+    # The tests that start a tracer of their own, or start one twice, use this
+    # entry: its file exporters keep their output out of the files of the main
+    # tracer and show that every exporter owns its stream.
+    restart:
+      scope_name: "OTEL C wrapper - traces restart"
+      exporters:
+        - exporter_traces_restart_a
+        - exporter_traces_restart_b
+      samplers:   sampler_traces
+      processors:
+        - processor_traces_single
+        - processor_traces_single
       providers:  provider_traces
 
     multi_a:
