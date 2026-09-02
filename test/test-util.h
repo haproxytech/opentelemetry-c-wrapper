@@ -40,6 +40,9 @@ void        test_set_meter(struct otelc_meter **meter);
 void        test_set_logger(struct otelc_logger **logger);
 int         test_done(int retval, char *otel_err);
 int         test_summary(int retval);
+char       *test_file_read(const char *path);
+int         test_file_contains(const char *path, const char *needle);
+int64_t     test_metric_value(const char *path, const char *instrument);
 
 __CPLUSPLUS_DECL_END
 #endif /* TEST_UTIL_H */
