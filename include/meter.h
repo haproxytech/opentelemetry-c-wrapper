@@ -208,8 +208,9 @@ struct T {
  * Takes the instrument map mutex shared, which is sufficient because the
  * looked-up handle is immutable after creation and the SDK instruments it
  * carries are thread-safe.  Handles are only erased under the exclusive
- * lock during meter teardown, and the documented destroy contract requires
- * all concurrent meter operations to be drained before destroy is invoked.
+ * lock, during meter teardown or when a creation fails after its insert, and
+ * the documented destroy contract requires all concurrent meter operations
+ * to be drained before destroy is invoked.
  */
 #define OTEL_LOCK_INSTRUMENT_HANDLE(arg_type, arg_idx)           \
 	OTEL_LOCK_METER_SHARED(instrument);                      \

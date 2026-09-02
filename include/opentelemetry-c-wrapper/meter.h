@@ -305,8 +305,8 @@ struct otelc_meter_ops {
 	 *
 	 * ARGUMENTS
 	 *   meter - meter instance
-	 *   name  - name of the instrument to look up (case-insensitive)
-	 *   type  - instrument type to match
+	 *   name  - name of the instrument
+	 *   type  - instrument type
 	 *
 	 * DESCRIPTION
 	 *   Searches the internal instrument registry for an instrument with
@@ -335,7 +335,8 @@ struct otelc_meter_ops {
 	 *   meter would discard the data anyway.  The OpenTelemetry C++ SDK
 	 *   does not yet provide a Meter::Enabled() method, so this function
 	 *   returns true whenever the meter is valid and the wrapper-level
-	 *   gate set via set_enabled() is not cleared.
+	 *   gate set via set_enabled() is not cleared.  A meter that has not
+	 *   been started yet is reported as an error whatever the gate holds.
 	 *
 	 * RETURN VALUE
 	 *   Returns true if the meter is enabled, false if it is not,
@@ -526,7 +527,7 @@ struct otelc_meter {
 	int                           flush_timeout; /* Destroy-time provider flush budget in milliseconds; zero drops pending telemetry. */
 	const struct otelc_meter_ops *ops;         /* Pointer to the operations vtable. */
 	const struct otelc_ctx       *ctx;         /* Owning library context; provides the YAML configuration. */
-	void                         *impl;        /* Opaque pointer to the C++ implementation state (provider, meter). */
+	void                         *impl;        /* Opaque pointer to the C++ implementation state (struct otel_meter_impl). */
 };
 
 
