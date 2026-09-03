@@ -672,7 +672,9 @@ int otel_tracer_processor_create(struct otelc_tracer *tracer, std::unique_ptr<ot
 	 * <opentelemetry/sdk/trace/batch_span_processor_options.h>
 	 *
 	 * NOTE: The export_timeout member of the BatchSpanProcessorOptions
-	 * structure is defined but not yet utilized.
+	 * structure is defined by the SDK but never read by its batch span
+	 * processor; the wrapper sets it anyway, so an SDK that starts to
+	 * honour it picks up the configured value.
 	 */
 	OTEL_YAML_PATH(path, tracer, OTEL_YAML_PROCESSORS);
 	rc = yaml_get_node(tracer->ctx->fyd, &(tracer->err), 0, "OpenTelemetry traces processor", path, name,
@@ -786,8 +788,10 @@ int otel_logger_processor_create(struct otelc_logger *logger, std::unique_ptr<ot
 	 * <opentelemetry/sdk/logs/batch_log_record_processor_options.h>
 	 *
 	 * NOTE: The export_timeout_millis member of the
-	 * BatchLogRecordProcessorOptions structure is defined but not yet
-	 * utilized.
+	 * BatchLogRecordProcessorOptions structure is defined by the SDK but
+	 * never read by its batch log record processor; the wrapper sets it
+	 * anyway, so an SDK that starts to honour it picks up the configured
+	 * value.
 	 */
 	OTEL_YAML_PATH(path, logger, OTEL_YAML_PROCESSORS);
 	rc = yaml_get_node(logger->ctx->fyd, &(logger->err), 0, "OpenTelemetry logs processor", path, name,
