@@ -381,7 +381,7 @@ static struct otelc_span *otel_tracer_start_span_with_options(struct otelc_trace
 
 	if (OTEL_NULL(tracer))
 		OTELC_RETURN_PTR(nullptr);
-	else if (!tracer->enabled)
+	else if (!OTEL_ATOMIC_LOAD(tracer->enabled))
 		OTELC_RETURN_PTR(nullptr);
 	else if (!OTELC_STR_IS_VALID(operation_name))
 		OTEL_TRACER_RETURN_PTR(OTEL_ERROR_MSG_INVALID_OP_NAME);
@@ -758,7 +758,7 @@ static struct otelc_span_context *otel_tracer_extract_carrier(struct otelc_trace
 
 	if (OTEL_NULL(tracer))
 		OTELC_RETURN_PTR(nullptr);
-	else if (!tracer->enabled)
+	else if (!OTEL_ATOMIC_LOAD(tracer->enabled))
 		OTELC_RETURN_PTR(nullptr);
 	else if (OTEL_NULL(carrier))
 		OTEL_TRACER_RETURN_PTR(OTEL_ERROR_MSG_INVALID_CARRIER);
@@ -927,7 +927,7 @@ static int otel_tracer_enabled(struct otelc_tracer *tracer)
 	if (OTEL_NULL(tracer_shared))
 		OTEL_TRACER_RETURN_INT(OTEL_ERROR_MSG_INVALID_TRACER);
 
-	if (!tracer->enabled)
+	if (!OTEL_ATOMIC_LOAD(tracer->enabled))
 		OTELC_RETURN_INT(false);
 
 	auto *tracer_ptr = tracer_shared.get();
@@ -968,7 +968,7 @@ static int otel_tracer_set_enabled(struct otelc_tracer *tracer, bool enabled)
 	if (OTEL_NULL(tracer))
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
 
-	tracer->enabled = enabled;
+	OTEL_ATOMIC_STORE(tracer->enabled, enabled);
 
 	OTELC_RETURN_INT(OTELC_RET_OK);
 }
@@ -1004,7 +1004,7 @@ static int otel_tracer_set_flush_timeout(struct otelc_tracer *tracer, int flush_
 	if (!OTELC_IN_RANGE(flush_timeout, 0, OTELC_FLUSH_TIMEOUT_MS_MAX))
 		OTEL_TRACER_RETURN_INT(OTEL_ERROR_MSG_INVALID_FLUSH_TIMEOUT, flush_timeout);
 
-	tracer->flush_timeout = flush_timeout;
+	OTEL_ATOMIC_STORE(tracer->flush_timeout, flush_timeout);
 
 	OTELC_RETURN_INT(OTELC_RET_OK);
 }
