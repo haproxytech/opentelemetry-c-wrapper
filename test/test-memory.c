@@ -34,7 +34,9 @@ int main(void)
  *
  * A double free of a block above the mmap threshold of the C library cannot
  * be covered: the first free unmaps the memory and the header probe of the
- * allocator faults before any diagnostic can run.  Blocks of the C library
+ * allocator faults before any diagnostic can run.  Nor is a double free of a
+ * block whose record a full table has reused since: no record holds its base
+ * any more, so the block reaches the C library.  Blocks of the C library
  * may be released and reallocated through the wrapper, and that mixing is
  * covered; the other direction is not, because a block of the wrapper is not
  * an address the C library handed out, so free() or realloc() of the C
