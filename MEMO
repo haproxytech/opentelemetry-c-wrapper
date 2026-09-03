@@ -856,7 +856,9 @@ Global entry points:
 
   otelc_init (src/util.cpp):
     Allocates a library context (struct otelc_ctx) owning the parsed YAML
-    configuration document and a duplicated copy of the caller-supplied name.
+    configuration document and a duplicated copy of the caller-supplied name;
+    a NULL or empty name is replaced by 'default', and a name containing the
+    '%' character is rejected up front, as otelc_cfg_validate() rejects it.
     Reads the optional top-level handle_map_shards key (the first call whose
     configuration carries a valid key applies it) and records the resolution
     state of the context name against each signal section, readable through
@@ -875,10 +877,11 @@ Global entry points:
     still torn down with otelc_deinit().
 
   otelc_lib_shutdown (src/util.cpp):
-    Reinstates the default SDK internal log handler and resets the external
-    malloc, free, and thread-ID callbacks to the library defaults.  Called
-    once after the final context has been destroyed; optional for a process
-    that exits immediately afterwards.
+    Reinstates the default SDK internal log handler, resets the external memory
+    and thread-ID callbacks to the library defaults, and restores the default
+    handle_map_shards value so that the next otelc_init() call carrying a valid
+    key applies it again.  Called once after the final context has been torn
+    down; optional for a process that exits immediately afterwards.
 
   otelc_ext_init (src/util.cpp):
     Registers external malloc, free, and thread-ID callbacks.  Called from

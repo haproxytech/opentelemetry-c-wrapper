@@ -411,14 +411,18 @@ or Clang; the plain call through the `ops` pointer works with any compiler.
 3. `instance->ops->start(instance)` -- start the pipeline.
 4. *(use the signal)* -- create spans, record metrics, emit logs.
 5. `otelc_deinit(&ctx, &tracer, &meter, &logger)` -- shut down and free
-   the context together with any registered signal instances.  Only per-context
-   state is touched; the SDK internal log handler and the callbacks installed
-   via `otelc_ext_init()` remain valid for any other live context.
+   the context together with any registered signal instances.  An instance that
+   was created against the context but not passed in keeps a pointer to the
+   freed context, and only `start()` reads that pointer, so such an instance
+   must already be started or be destroyed no later than the context.  Only
+   per-context state is touched; the SDK internal log handler and the callbacks
+   installed via `otelc_ext_init()` remain valid for any other live context.
 6. `otelc_lib_shutdown()` -- optional, call once after the final context has
-   been destroyed to reset the process-wide hooks installed via
-   `otelc_log_set_handler()` and `otelc_ext_init()` to their defaults.
-   Required before unloading caller code that owns any of those callbacks;
-   otherwise optional.
+   been destroyed to reset the process-wide hooks installed through the calls
+   `otelc_log_set_handler()` and `otelc_ext_init()` to their defaults, and to
+   restore the default `handle_map_shards` value so that a later `otelc_init()`
+   can apply a new one.  Required before unloading caller code that owns any of
+   those callbacks; otherwise optional.
 
 All configuration and provider state is per-context, so multiple contexts may
 coexist in the same process, each with its own configuration and named signal
@@ -465,19 +469,21 @@ The YAML file passed to `otelc_init()` contains these top-level sections:
 Besides these, the document accepts the optional top-level scalar key
 `handle_map_shards`, which sets the shard count of the span handle maps; its
 value must be a power of two in the range 1..65536 and takes effect on the
-first `otelc_init()` call.
+first `otelc_init()` call after library load or after `otelc_lib_shutdown()`.
 
 The `signals` section groups its `traces`, `metrics`, and `logs` subtrees by
 name, so a single configuration can hold several independent definitions per
 signal type.  When the library context is created, the `name` argument given
-to `otelc_init()` selects the entry to load.  If no matching entry exists, the
-entry called `default` is used as a fallback.  When that is also absent but the
-subtree keeps its settings directly under `signals/<signal>` (the legacy layout
-without the naming level, recognized by the `scope_name` key), that subtree
-itself is used.  If no variant is present, creating the corresponding signal
-fails.  The outcome of the lookup is recorded per signal section and can be
-read back with `otelc_ctx_nstate_get()`; a section that is missing from the
-document altogether is recorded as absent.
+to `otelc_init()` selects the entry to load; a NULL or empty name selects the
+entry called `default` directly, and a name containing the `%` character is
+rejected by `otelc_init()` and `otelc_cfg_validate()`.  If no matching entry
+exists, the entry called `default` is used as a fallback.  When that is also
+absent but the subtree keeps its settings directly under `signals/<signal>`
+(the legacy layout without the naming level, recognized by the `scope_name`
+key), that subtree itself is loaded.  If no variant is present, creating the
+corresponding signal fails.  The outcome of the lookup is recorded per signal
+section and can be read back with `otelc_ctx_nstate_get()`; a section that is
+missing from the document altogether is recorded as absent.
 
 Minimal configuration exporting traces to stdout:
 

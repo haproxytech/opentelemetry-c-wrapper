@@ -579,9 +579,9 @@ int yaml_resolve_prefix(OTEL_YAML_DOC *fyd, char **err, const char *base, const 
 	else if (OTEL_NULL(prefix))
 		OTEL_ERR_RETURN_INT("Prefix pointer not specified");
 	else if (!OTEL_NULL(name) && (strchr(name, '%') != nullptr))
-		OTEL_ERR_RETURN_INT("'%s': invalid character in YAML context name", name);
+		OTEL_ERR_RETURN_INT(OTEL_ERROR_MSG_CTX_NAME, name);
 	else if (!OTEL_NULL(fallback) && (strchr(fallback, '%') != nullptr))
-		OTEL_ERR_RETURN_INT("'%s': invalid character in YAML context name", fallback);
+		OTEL_ERR_RETURN_INT(OTEL_ERROR_MSG_CTX_NAME, fallback);
 
 	/* Avoid probing the same path twice when name == fallback. */
 	if (!OTEL_NULL(name) && !OTEL_NULL(fallback) && (strcmp(name, fallback) == 0))

@@ -29,7 +29,8 @@ constexpr size_t OTEL_HANDLE_MAP_SHARDS    = 256;
 /***
  * Active per-process shard count for the span and span context handle maps.
  * The first otelc_init() call whose configuration carries a valid top-level
- * handle_map_shards key overrides the initial OTEL_HANDLE_MAP_SHARDS value.
+ * handle_map_shards key overrides the initial OTEL_HANDLE_MAP_SHARDS value,
+ * and otelc_lib_shutdown() restores that value and re-arms the override.
  * Read at the moment each handle map is constructed (per-thread in the static
  * thread-local build, once per process in the dynamic build), so otelc_init()
  * must always run before any tracer create on threads that should observe a

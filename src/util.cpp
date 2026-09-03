@@ -23,6 +23,7 @@ otelc_ext_malloc_t      otelc_ext_malloc = OTELC_DBG_IFDEF(otelc_dbg_malloc, mal
 otelc_ext_free_t        otelc_ext_free   = OTELC_DBG_IFDEF(otelc_dbg_free,   free);
 
 std::atomic<size_t>     otel_handle_map_shards{OTEL_HANDLE_MAP_SHARDS};
+static std::atomic_flag otel_handle_map_shards_applied = ATOMIC_FLAG_INIT; /* Set once a valid YAML key has been applied. */
 
 
 #ifdef DEBUG
@@ -1934,14 +1935,15 @@ static const char *otel_signal_bases[OTELC_SIGNAL_MAX] = {
  * DESCRIPTION
  *   Reads the optional top-level handle_map_shards key from the YAML document
  *   and validates it as a power of two within the supported range.  The first
- *   call across the process that carries a valid key stores the value into the
- *   otel_handle_map_shards global, which is consulted when span and span
- *   context maps are constructed.  Later calls still validate the value but
- *   do not change the live setting, because the maps may already exist with a
- *   different shard count.  With flag_apply false the value is only validated
- *   and never applied, so a configuration check does not consume the
- *   first-application slot.  Absence of the key leaves the current value
- *   untouched and is not an error.
+ *   call that carries a valid key stores the value into the global
+ *   otel_handle_map_shards, which is consulted when the span and span context
+ *   maps are constructed.  Later calls still validate the value but do not
+ *   change the live setting, because the maps may already exist with a
+ *   different shard count; otelc_lib_shutdown() restores the default and arms
+ *   the next call with a valid key to apply it again.  With flag_apply false
+ *   the value is only validated and never applied, so a configuration check
+ *   does not consume the first-application slot.  Absence of the key leaves
+ *   the current value untouched and is not an error.
  *
  * RETURN VALUE
  *   Returns OTELC_RET_OK on success or when the key is absent, or
@@ -1949,10 +1951,9 @@ static const char *otel_signal_bases[OTELC_SIGNAL_MAX] = {
  */
 static int otelc_load_handle_map_shards(OTEL_YAML_DOC *fyd, bool flag_apply, char **err)
 {
-	static std::atomic_flag applied = ATOMIC_FLAG_INIT;
-	char                    buf[OTEL_YAML_BUFSIZ] = "", *endptr = nullptr;
-	int64_t                 value;
-	int                     rc;
+	char    buf[OTEL_YAML_BUFSIZ] = "", *endptr = nullptr;
+	int64_t value;
+	int     rc;
 
 	OTELC_FUNC("%p, %hhu, %p:%p", fyd, flag_apply, OTELC_DPTR_ARGS(err));
 
@@ -1967,7 +1968,7 @@ static int otelc_load_handle_map_shards(OTEL_YAML_DOC *fyd, bool flag_apply, cha
 	if ((*endptr != '\0') || (errno != 0) || !OTELC_IN_RANGE(value, INT64_C(1), INT64_C(65536)) || ((value & (value - 1)) != 0))
 		OTEL_ERR_RETURN_INT("'%s': invalid handle_map_shards (must be a power of two in 1..65536)", buf);
 
-	if (flag_apply && !applied.test_and_set())
+	if (flag_apply && !otel_handle_map_shards_applied.test_and_set())
 		otel_handle_map_shards.store(OTEL_CAST_STATIC(size_t, value));
 
 	OTELC_RETURN_INT(OTELC_RET_OK);
@@ -1995,9 +1996,10 @@ static int otelc_load_handle_map_shards(OTEL_YAML_DOC *fyd, bool flag_apply, cha
  *   A name that matches nothing in a present section is reported as an error,
  *   because a signal instance created against it would fail; a section that
  *   is absent, or one served by the 'default' entry or the flat legacy
- *   layout, passes.  The document is closed again before returning, which
- *   makes the function suitable for configuration checks in which the library
- *   is never initialized.
+ *   layout, passes.  A name containing the '%' character is rejected before
+ *   the document is opened, exactly as otelc_init() rejects it.  The document
+ *   is closed again before returning, which makes the function suitable for
+ *   configuration checks in which the library is never initialized.
  *   An error message stored in *err is allocated by the library and must be
  *   released with OTELC_SFREE().
  *
@@ -2022,6 +2024,8 @@ int otelc_cfg_validate(const char *cfgfile, const char *name, char **err)
 
 	if (OTEL_NULL(cfgfile))
 		OTEL_ERR_RETURN_INT("Invalid configuration file path");
+	else if (!OTEL_NULL(name) && (strchr(name, '%') != nullptr))
+		OTEL_ERR_RETURN_INT(OTEL_ERROR_MSG_CTX_NAME, name);
 
 	fyd = yaml_open(cfgfile, err);
 	if (OTEL_NULL(fyd))
@@ -2063,15 +2067,16 @@ int otelc_cfg_validate(const char *cfgfile, const char *name, char **err)
  *   Initializes the OpenTelemetry C wrapper library using the specified YAML
  *   configuration file.  Each call allocates a new library context that owns
  *   the parsed YAML document and a duplicated copy of the supplied name; a
- *   context must be created before any signal instance can be created against
- *   it.  The optional top-level handle_map_shards key is read here; the first
+ *   NULL or empty name is replaced by the 'default' name, and a name that
+ *   contains the '%' character is rejected, since no signal instance could
+ *   ever resolve its configuration prefix against it.  A context must be
+ *   created before any signal instance can be created against it.  The
+ *   optional top-level handle_map_shards key is read here; the first
  *   otelc_init() call whose configuration carries a valid key applies it to
  *   the span and span context handle maps, later calls validate the key but
- *   do not change the live setting.  The resolution state of the context name
- *   against each signal section is recorded in the context and can be read
- *   back with otelc_ctx_nstate_get().  A name containing the '%' character is
- *   rejected when a signal instance resolves its configuration prefix against
- *   the context.
+ *   do not change the live setting until otelc_lib_shutdown() resets it.  The
+ *   resolution state of the context name against each signal section is
+ *   recorded in the context and can be read back with otelc_ctx_nstate_get().
  *   An error message stored in *err is allocated by the library and must be
  *   released with OTELC_SFREE().
  *
@@ -2088,15 +2093,17 @@ struct otelc_ctx *otelc_init(const char *cfgfile, const char *name, char **err)
 
 	if (OTEL_NULL(cfgfile))
 		OTEL_ERR_RETURN_PTR("Invalid configuration file path");
+	else if (!OTEL_NULL(name) && (strchr(name, '%') != nullptr))
+		OTEL_ERR_RETURN_PTR(OTEL_ERROR_MSG_CTX_NAME, name);
 
 	retptr = OTEL_CAST_STATIC(struct otelc_ctx *, OTELC_CALLOC(__func__, __LINE__, 1, sizeof(*retptr)));
 	if (OTEL_NULL(retptr))
 		OTEL_ERR_RETURN_PTR(OTEL_ERROR_MSG_ENOMEM("context"));
 
-	if (OTEL_NULL(name))
+	if (!OTELC_STR_IS_VALID(name))
 		OTELC_DBG(DEBUG, "context name not set, using '%s'", OTEL_YAML_NAME_DEFAULT);
 
-	retptr->name = OTELC_STRDUP(__func__, __LINE__, OTEL_NULL(name) ? OTEL_YAML_NAME_DEFAULT : name);
+	retptr->name = OTELC_STRDUP(__func__, __LINE__, OTELC_STR_IS_VALID(name) ? name : OTEL_YAML_NAME_DEFAULT);
 	if (OTEL_NULL(retptr->name)) {
 		OTELC_SFREE(retptr);
 
@@ -2158,7 +2165,7 @@ int otelc_ctx_nstate_get(const struct otelc_ctx *ctx, otelc_signal_t signal, cha
 
 	OTELC_FUNC("%p, %d, %p, %zu", ctx, signal, errbuf, errsize);
 
-	if (OTEL_NULL(ctx) || !OTELC_IN_RANGE(signal, OTELC_SIGNAL_TRACES, OTELC_SIGNAL_LOGS)) {
+	if (OTEL_NULL(ctx) || !OTELC_IN_RANGE(signal, OTELC_SIGNAL_TRACES, OTEL_CAST_STATIC(otelc_signal_t, OTELC_SIGNAL_MAX - 1))) {
 		(void)otelc_strlcpy(errbuf, errsize, OTEL_NULL(ctx) ? OTEL_ERROR_MSG_INVALID_CTX : OTEL_ERROR_MSG_INVALID_SIG, 0);
 
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
@@ -2191,11 +2198,15 @@ int otelc_ctx_nstate_get(const struct otelc_ctx *ctx, otelc_signal_t signal, cha
  *   meter, and logger when they are non-NULL, closes the YAML configuration
  *   document attached to the context, frees the context itself, and clears
  *   each pointer.  Each destroy applies the flush_timeout budget of its
- *   instance, as the destroy operations document.  Only per-context state is
- *   touched: the SDK internal log handler and the external callbacks
- *   registered via otelc_ext_init() are process-wide and remain valid for any
- *   other live context.  Once the final context has been destroyed, a single
- *   otelc_lib_shutdown() call resets those process-wide hooks.
+ *   instance, as the destroy operations document.  A signal instance created
+ *   against the context but not passed in keeps its pointer to the freed
+ *   context; only the start operation reads that pointer, so such an instance
+ *   must already have been started, or be destroyed no later than the context.
+ *   Only per-context state is touched: the SDK internal log handler and the
+ *   external callbacks registered via otelc_ext_init() are process-wide and
+ *   remain valid for any other live context.  Once the final context has been
+ *   destroyed, a single otelc_lib_shutdown() call resets those process-wide
+ *   settings.
  *
  * RETURN VALUE
  *   This function does not return a value.
@@ -2227,7 +2238,7 @@ void otelc_deinit(struct otelc_ctx **ctx, struct otelc_tracer **tracer, struct o
 
 /***
  * NAME
- *   otelc_lib_shutdown - resets process-wide library hooks to defaults
+ *   otelc_lib_shutdown - resets process-wide library settings to defaults
  *
  * SYNOPSIS
  *   void otelc_lib_shutdown(void)
@@ -2237,14 +2248,17 @@ void otelc_deinit(struct otelc_ctx **ctx, struct otelc_tracer **tracer, struct o
  *
  * DESCRIPTION
  *   Reinstates the default SDK internal log handler (or an empty handler when
- *   its allocation fails) and clears the external malloc, free, and thread-id
- *   callbacks registered via otelc_ext_init().  These hooks are process-wide
- *   and shared across all library contexts, so this function must be called
- *   only after every otelc_ctx and every signal instance has been destroyed;
- *   calling it earlier would remove hooks on which live contexts still depend.
- *   No references to caller-supplied callbacks remain inside the library after
- *   this call, allowing the caller to safely unload the code that owns them.
- *   Calling it is optional; a process that exits immediately after the final
+ *   its allocation fails), clears the external malloc, free, and thread-id
+ *   callbacks registered via otelc_ext_init(), and restores the default shard
+ *   count of the span and span context handle maps, so that the next
+ *   otelc_init() call whose configuration carries a valid handle_map_shards
+ *   key applies it again.  These settings are process-wide and shared across
+ *   all library contexts, so this function must be called only after every
+ *   otelc_ctx and every signal instance has been destroyed; calling it earlier
+ *   would remove hooks on which live contexts still depend.  No references to
+ *   caller-supplied callbacks remain inside the library after this call,
+ *   allowing the caller to safely unload the code that owns them.  Calling it
+ *   is optional; a process that exits immediately after the final
  *   otelc_deinit() may skip it.
  *
  * RETURN VALUE
@@ -2256,6 +2270,10 @@ void otelc_lib_shutdown(void)
 
 	otelc_log_set_handler(nullptr, nullptr, false);
 	otelc_ext_init(nullptr, nullptr, nullptr);
+
+	/* The maps are gone with the last tracer, so a live map cannot be affected. */
+	otel_handle_map_shards.store(OTEL_HANDLE_MAP_SHARDS);
+	otel_handle_map_shards_applied.clear();
 
 	OTELC_RETURN();
 }
