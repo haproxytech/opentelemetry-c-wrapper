@@ -90,6 +90,105 @@ static void test_tracer_create_err_null(struct otelc_ctx *ctx)
 
 /***
  * NAME
+ *   test_tracer_create_null_ctx - tests tracer creation without a context
+ *
+ * SYNOPSIS
+ *   static void test_tracer_create_null_ctx(void)
+ *
+ * ARGUMENTS
+ *   This function takes no arguments.
+ *
+ * DESCRIPTION
+ *   Verifies that otelc_tracer_create() refuses a NULL context and reports the
+ *   refusal through the err argument.
+ *
+ * RETURN VALUE
+ *   This function does not return a value.
+ */
+static void test_tracer_create_null_ctx(void)
+{
+	struct otelc_tracer *tracer;
+	char                *err = NULL;
+	int                  retval = TEST_FAIL;
+
+	tracer = otelc_tracer_create(NULL, &err);
+	if (_NULL(tracer) && _nNULL(err))
+		retval = TEST_PASS;
+
+	if (_nNULL(tracer))
+		OTELC_OPSR(tracer, destroy);
+	OTELC_SFREE(err);
+
+	test_report("tracer create with NULL context", retval);
+}
+
+
+/***
+ * NAME
+ *   test_tracer_unstarted - tests the operations of a tracer never started
+ *
+ * SYNOPSIS
+ *   static void test_tracer_unstarted(struct otelc_ctx *ctx)
+ *
+ * ARGUMENTS
+ *   ctx - library context providing the YAML configuration
+ *
+ * DESCRIPTION
+ *   Verifies that a tracer that was created but never started refuses to hand
+ *   out spans or extracted contexts and reports enabled(), force_flush() and
+ *   shutdown() as errors, leaving a message behind, and that it can still be
+ *   destroyed.
+ *
+ * RETURN VALUE
+ *   This function does not return a value.
+ */
+static void test_tracer_unstarted(struct otelc_ctx *ctx)
+{
+	struct otelc_text_map_reader  tm_rd;
+	struct otelc_tracer          *tracer;
+	struct otelc_span_context    *context;
+	struct otelc_span            *span;
+	char                         *err = NULL;
+	int                           retval = TEST_PASS;
+
+	tracer = otelc_tracer_create(ctx, &err);
+	if (_NULL(tracer)) {
+		retval = TEST_FAIL;
+	} else {
+		span = OTELC_OPS(tracer, start_span, "unstarted span");
+		if (_nNULL(span)) {
+			OTELC_OPSR(span, end);
+
+			retval = TEST_FAIL;
+		}
+
+		context = otelc_tracer_extract_text_map(tracer, &tm_rd, NULL);
+		if (_nNULL(context)) {
+			OTELC_OPSR(context, destroy);
+
+			retval = TEST_FAIL;
+		}
+
+		if (OTELC_OPS(tracer, enabled) != OTELC_RET_ERROR)
+			retval = TEST_FAIL;
+		if (OTELC_OPS(tracer, force_flush, NULL) != OTELC_RET_ERROR)
+			retval = TEST_FAIL;
+		if (OTELC_OPS(tracer, shutdown, NULL) != OTELC_RET_ERROR)
+			retval = TEST_FAIL;
+		if (_NULL(tracer->err))
+			retval = TEST_FAIL;
+
+		OTELC_OPSR(tracer, destroy);
+	}
+
+	OTELC_SFREE(err);
+
+	test_report("tracer operations before start", retval);
+}
+
+
+/***
+ * NAME
  *   test_tracer_start - tests tracer initialization and startup
  *
  * SYNOPSIS
@@ -255,7 +354,9 @@ static void test_span_kinds(struct otelc_tracer *tracer)
  *
  * DESCRIPTION
  *   Verifies that a child span can be created with a parent span specified via
- *   start_span_with_options().  Both spans are ended in reverse order.
+ *   start_span_with_options().  The child must report the trace identifier of
+ *   its parent together with a span identifier of its own.  Both spans are
+ *   ended in reverse order.
  *
  * RETURN VALUE
  *   This function does not return a value.
@@ -264,6 +365,9 @@ static void test_span_parent_child(struct otelc_tracer *tracer)
 {
 	struct otelc_span *parent, *child;
 	struct timespec    ts_steady, ts_system;
+	uint8_t            span_id_p[OTELC_SPAN_ID_SIZE] = { 0 }, span_id_c[OTELC_SPAN_ID_SIZE] = { 0 };
+	uint8_t            trace_id_p[OTELC_TRACE_ID_SIZE] = { 0 }, trace_id_c[OTELC_TRACE_ID_SIZE] = { 0 };
+	uint8_t            flags_p = 0, flags_c = 0;
 	int                retval = TEST_FAIL;
 
 	(void)clock_gettime(CLOCK_MONOTONIC, &ts_steady);
@@ -273,15 +377,131 @@ static void test_span_parent_child(struct otelc_tracer *tracer)
 	if (_nNULL(parent)) {
 		child = OTELC_OPS(tracer, start_span_with_options, "child span", parent, NULL, &ts_steady, &ts_system, OTELC_SPAN_KIND_INTERNAL, NULL, 0);
 		if (_nNULL(child)) {
-			OTELC_OPSR(child, end);
+			if ((OTELC_OPS(parent, get_id, span_id_p, sizeof(span_id_p), trace_id_p, sizeof(trace_id_p), &flags_p) == OTELC_RET_OK) &&
+			    (OTELC_OPS(child, get_id, span_id_c, sizeof(span_id_c), trace_id_c, sizeof(trace_id_c), &flags_c) == OTELC_RET_OK) &&
+			    (memcmp(trace_id_p, trace_id_c, OTELC_TRACE_ID_SIZE) == 0) &&
+			    (memcmp(span_id_p, span_id_c, OTELC_SPAN_ID_SIZE) != 0))
+				retval = TEST_PASS;
 
-			retval = TEST_PASS;
+			OTELC_OPSR(child, end);
 		}
 
 		OTELC_OPSR(parent, end);
 	}
 
 	test_report("span parent-child", retval);
+}
+
+
+/***
+ * NAME
+ *   test_span_rejected - checks that a span start was refused with a message
+ *
+ * SYNOPSIS
+ *   static int test_span_rejected(struct otelc_tracer *tracer, struct otelc_span *span)
+ *
+ * ARGUMENTS
+ *   tracer - tracer instance the start was attempted on
+ *   span   - result of the start attempt
+ *
+ * DESCRIPTION
+ *   Verifies that a start attempt with invalid arguments produced no span and
+ *   left an error message in the tracer.  A span that was produced anyway is
+ *   ended so that it does not leak.
+ *
+ * RETURN VALUE
+ *   Returns TEST_PASS when the start was refused with a message, TEST_FAIL
+ *   otherwise.
+ */
+static int test_span_rejected(struct otelc_tracer *tracer, struct otelc_span *span)
+{
+	if (_nNULL(span)) {
+		OTELC_OPSR(span, end);
+
+		return TEST_FAIL;
+	}
+
+	return _NULL(tracer->err) ? TEST_FAIL : TEST_PASS;
+}
+
+
+/***
+ * NAME
+ *   test_span_start_invalid_args - tests the argument checks of a span start
+ *
+ * SYNOPSIS
+ *   static void test_span_start_invalid_args(struct otelc_tracer *tracer)
+ *
+ * ARGUMENTS
+ *   tracer - tracer instance
+ *
+ * DESCRIPTION
+ *   Verifies that start_span_with_options() refuses an empty operation name, a
+ *   parent given both as a span and as a span context, a span kind outside the
+ *   known range, a link that names both a span and a span context, and a link
+ *   that names neither.  Every refusal must leave an error message in the
+ *   tracer, so the message is cleared before each attempt.
+ *
+ * RETURN VALUE
+ *   This function does not return a value.
+ */
+static void test_span_start_invalid_args(struct otelc_tracer *tracer)
+{
+	static const uint8_t       trace_id[OTELC_TRACE_ID_SIZE] = {
+		0x4b, 0xf9, 0x2f, 0x35, 0x77, 0xb3, 0x4d, 0xa6, 0xa3, 0xce, 0x92, 0x9d, 0x0e, 0x0e, 0x47, 0x36
+	};
+	static const uint8_t       span_id[OTELC_SPAN_ID_SIZE] = { 0x00, 0xf0, 0x67, 0xaa, 0x0b, 0xa9, 0x02, 0xb7 };
+	struct otelc_span_context *context;
+	struct otelc_span         *parent, *span;
+	struct otelc_span_link     link;
+	char                      *err = NULL;
+	int                        retval = TEST_PASS;
+
+	parent  = OTELC_OPS(tracer, start_span, "invalid args parent");
+	context = otelc_span_context_create(trace_id, sizeof(trace_id), span_id, sizeof(span_id), 0x01, true, NULL, &err);
+	if (_NULL(parent) || _NULL(context)) {
+		retval = TEST_FAIL;
+	} else {
+		OTELC_SFREE_CLEAR(tracer->err);
+		span = OTELC_OPS(tracer, start_span, "");
+		if (test_span_rejected(tracer, span) != TEST_PASS)
+			retval = TEST_FAIL;
+
+		OTELC_SFREE_CLEAR(tracer->err);
+		span = OTELC_OPS(tracer, start_span_with_options, "two parents", parent, context, NULL, NULL, OTELC_SPAN_KIND_INTERNAL, NULL, 0);
+		if (test_span_rejected(tracer, span) != TEST_PASS)
+			retval = TEST_FAIL;
+
+		OTELC_SFREE_CLEAR(tracer->err);
+		span = OTELC_OPS(tracer, start_span_with_options, "bad kind", NULL, NULL, NULL, NULL, (otelc_span_kind_t)99, NULL, 0);
+		if (test_span_rejected(tracer, span) != TEST_PASS)
+			retval = TEST_FAIL;
+
+		(void)memset(&link, 0, sizeof(link));
+		link.span    = parent;
+		link.context = context;
+
+		OTELC_SFREE_CLEAR(tracer->err);
+		span = OTELC_OPS(tracer, start_span_with_options, "double link", NULL, NULL, NULL, NULL, OTELC_SPAN_KIND_INTERNAL, &link, 1);
+		if (test_span_rejected(tracer, span) != TEST_PASS)
+			retval = TEST_FAIL;
+
+		link.span    = NULL;
+		link.context = NULL;
+
+		OTELC_SFREE_CLEAR(tracer->err);
+		span = OTELC_OPS(tracer, start_span_with_options, "empty link", NULL, NULL, NULL, NULL, OTELC_SPAN_KIND_INTERNAL, &link, 1);
+		if (test_span_rejected(tracer, span) != TEST_PASS)
+			retval = TEST_FAIL;
+	}
+
+	if (_nNULL(context))
+		OTELC_OPSR(context, destroy);
+	if (_nNULL(parent))
+		OTELC_OPSR(parent, end);
+	OTELC_SFREE(err);
+
+	test_report("span start with invalid arguments", retval);
 }
 
 
@@ -881,6 +1101,48 @@ static void test_span_baggage_kv(struct otelc_tracer *tracer)
 
 /***
  * NAME
+ *   test_propagation_matches - checks that a propagated span continues a trace
+ *
+ * SYNOPSIS
+ *   static int test_propagation_matches(struct otelc_span *span, struct otelc_span_context *context, struct otelc_span *prop_span)
+ *
+ * ARGUMENTS
+ *   span      - the span whose context was injected into the carrier
+ *   context   - the span context extracted from the carrier
+ *   prop_span - the span started from the extracted context
+ *
+ * DESCRIPTION
+ *   Verifies that the extracted context is valid and that the span started from
+ *   it carries the trace identifier of the injected span together with a span
+ *   identifier of its own, which is what a working inject and extract cycle
+ *   must produce.
+ *
+ * RETURN VALUE
+ *   Returns TEST_PASS when the propagation cycle preserved the trace, TEST_FAIL
+ *   otherwise.
+ */
+static int test_propagation_matches(struct otelc_span *span, struct otelc_span_context *context, struct otelc_span *prop_span)
+{
+	uint8_t span_id_a[OTELC_SPAN_ID_SIZE] = { 0 }, span_id_b[OTELC_SPAN_ID_SIZE] = { 0 };
+	uint8_t trace_id_a[OTELC_TRACE_ID_SIZE] = { 0 }, trace_id_b[OTELC_TRACE_ID_SIZE] = { 0 };
+	uint8_t flags_a = 0, flags_b = 0;
+
+	if (OTELC_OPS(context, is_valid) != true)
+		return TEST_FAIL;
+	if (OTELC_OPS(span, get_id, span_id_a, sizeof(span_id_a), trace_id_a, sizeof(trace_id_a), &flags_a) != OTELC_RET_OK)
+		return TEST_FAIL;
+	if (OTELC_OPS(prop_span, get_id, span_id_b, sizeof(span_id_b), trace_id_b, sizeof(trace_id_b), &flags_b) != OTELC_RET_OK)
+		return TEST_FAIL;
+
+	if ((memcmp(trace_id_a, trace_id_b, OTELC_TRACE_ID_SIZE) != 0) || (memcmp(span_id_a, span_id_b, OTELC_SPAN_ID_SIZE) == 0))
+		return TEST_FAIL;
+
+	return TEST_PASS;
+}
+
+
+/***
+ * NAME
  *   test_context_propagation_text_map - tests context propagation via text map
  *
  * SYNOPSIS
@@ -892,7 +1154,8 @@ static void test_span_baggage_kv(struct otelc_tracer *tracer)
  * DESCRIPTION
  *   Verifies the full context propagation cycle using text map carriers.
  *   A span is created, its context is injected into a text map writer, and
- *   then extracted using a text map reader to create a new child span.
+ *   then extracted using a text map reader to create a new child span, which
+ *   must continue the trace of the injected span.
  *
  * RETURN VALUE
  *   This function does not return a value.
@@ -905,27 +1168,28 @@ static void test_context_propagation_text_map(struct otelc_tracer *tracer)
 	struct otelc_span            *span, *prop_span;
 	struct otelc_text_map        *text_map;
 	struct timespec               ts_steady, ts_system;
-	int                           retval = TEST_FAIL;
+	int                           rc, retval = TEST_FAIL;
 
 	(void)clock_gettime(CLOCK_MONOTONIC, &ts_steady);
 	(void)clock_gettime(CLOCK_REALTIME, &ts_system);
 
 	span = OTELC_OPS(tracer, start_span_with_options, "tm inject span", NULL, NULL, &ts_steady, &ts_system, OTELC_SPAN_KIND_CLIENT, NULL, 0);
 	if (_nNULL(span)) {
-		otelc_span_inject_text_map(span, &tm_wr);
+		rc = otelc_span_inject_text_map(span, &tm_wr);
 		text_map = &(tm_wr.text_map);
 
 		context = otelc_tracer_extract_text_map(tracer, &tm_rd, text_map);
-		if (_nNULL(context)) {
+		if ((rc != OTELC_RET_ERROR) && _nNULL(context)) {
 			prop_span = OTELC_OPS(tracer, start_span_with_options, "tm propagated span", NULL, context, &ts_steady, &ts_system, OTELC_SPAN_KIND_SERVER, NULL, 0);
 			if (_nNULL(prop_span)) {
+				retval = test_propagation_matches(span, context, prop_span);
+
 				OTELC_OPSR(prop_span, end);
-
-				retval = TEST_PASS;
 			}
-
-			OTELC_OPSR(context, destroy);
 		}
+
+		if (_nNULL(context))
+			OTELC_OPSR(context, destroy);
 
 		otelc_text_map_destroy(&text_map);
 		OTELC_OPSR(span, end);
@@ -948,7 +1212,8 @@ static void test_context_propagation_text_map(struct otelc_tracer *tracer)
  * DESCRIPTION
  *   Verifies the full context propagation cycle using HTTP headers carriers.
  *   A span is created, its context is injected into an HTTP headers writer,
- *   and then extracted using an HTTP headers reader to create a new child span.
+ *   and then extracted using an HTTP headers reader to create a new child
+ *   span, which must continue the trace of the injected span.
  *
  * RETURN VALUE
  *   This function does not return a value.
@@ -961,33 +1226,110 @@ static void test_context_propagation_http_headers(struct otelc_tracer *tracer)
 	struct otelc_span                *span, *prop_span;
 	struct otelc_text_map            *text_map;
 	struct timespec                   ts_steady, ts_system;
-	int                               retval = TEST_FAIL;
+	int                               rc, retval = TEST_FAIL;
 
 	(void)clock_gettime(CLOCK_MONOTONIC, &ts_steady);
 	(void)clock_gettime(CLOCK_REALTIME, &ts_system);
 
 	span = OTELC_OPS(tracer, start_span_with_options, "hh inject span", NULL, NULL, &ts_steady, &ts_system, OTELC_SPAN_KIND_CLIENT, NULL, 0);
 	if (_nNULL(span)) {
-		otelc_span_inject_http_headers(span, &hh_wr);
+		rc = otelc_span_inject_http_headers(span, &hh_wr);
 		text_map = &(hh_wr.text_map);
 
 		context = otelc_tracer_extract_http_headers(tracer, &hh_rd, text_map);
-		if (_nNULL(context)) {
+		if ((rc != OTELC_RET_ERROR) && _nNULL(context)) {
 			prop_span = OTELC_OPS(tracer, start_span_with_options, "hh propagated span", NULL, context, &ts_steady, &ts_system, OTELC_SPAN_KIND_SERVER, NULL, 0);
 			if (_nNULL(prop_span)) {
+				retval = test_propagation_matches(span, context, prop_span);
+
 				OTELC_OPSR(prop_span, end);
-
-				retval = TEST_PASS;
 			}
-
-			OTELC_OPSR(context, destroy);
 		}
+
+		if (_nNULL(context))
+			OTELC_OPSR(context, destroy);
 
 		otelc_text_map_destroy(&text_map);
 		OTELC_OPSR(span, end);
 	}
 
 	test_report("context propagation http headers", retval);
+}
+
+
+/***
+ * NAME
+ *   test_extract_direct_text_map - tests extraction from a plain text map
+ *
+ * SYNOPSIS
+ *   static void test_extract_direct_text_map(struct otelc_tracer *tracer)
+ *
+ * ARGUMENTS
+ *   tracer - tracer instance
+ *
+ * DESCRIPTION
+ *   Verifies the extraction path taken when the reader carrier supplies no key
+ *   iterator, so the library walks the key and value arrays of the text map on
+ *   its own.  A map filled by inject must yield a valid context, while a map
+ *   whose entry lacks a key, and a map whose arrays are missing although the
+ *   count says otherwise, must be rejected instead of dereferenced.
+ *
+ * RETURN VALUE
+ *   This function does not return a value.
+ */
+static void test_extract_direct_text_map(struct otelc_tracer *tracer)
+{
+	static char                   value_str[] = "value";
+	struct otelc_text_map_writer  tm_wr;
+	struct otelc_text_map_reader  tm_rd;
+	struct otelc_span_context    *context;
+	struct otelc_span            *span;
+	struct otelc_text_map        *text_map;
+	char                         *keys[1] = { NULL }, *values[1] = { value_str };
+	int                           retval = TEST_FAIL;
+
+	span = OTELC_OPS(tracer, start_span, "direct text map span");
+	if (_nNULL(span)) {
+		if (otelc_span_inject_text_map(span, &tm_wr) != OTELC_RET_ERROR) {
+			(void)memset(&tm_rd, 0, sizeof(tm_rd));
+			(void)memcpy(&(tm_rd.text_map), &(tm_wr.text_map), sizeof(tm_rd.text_map));
+
+			context = OTELC_OPS(tracer, extract_text_map, &tm_rd);
+			if (_nNULL(context)) {
+				if (OTELC_OPS(context, is_valid) == true)
+					retval = TEST_PASS;
+
+				OTELC_OPSR(context, destroy);
+			}
+		}
+
+		text_map = &(tm_wr.text_map);
+		otelc_text_map_destroy(&text_map);
+		OTELC_OPSR(span, end);
+	}
+
+	(void)memset(&tm_rd, 0, sizeof(tm_rd));
+	tm_rd.text_map.key   = keys;
+	tm_rd.text_map.value = values;
+	tm_rd.text_map.count = 1;
+
+	context = OTELC_OPS(tracer, extract_text_map, &tm_rd);
+	if (_nNULL(context)) {
+		OTELC_OPSR(context, destroy);
+
+		retval = TEST_FAIL;
+	}
+
+	tm_rd.text_map.key = NULL;
+
+	context = OTELC_OPS(tracer, extract_text_map, &tm_rd);
+	if (_nNULL(context)) {
+		OTELC_OPSR(context, destroy);
+
+		retval = TEST_FAIL;
+	}
+
+	test_report("extract from a plain text map", retval);
 }
 
 
@@ -1773,8 +2115,9 @@ static void test_span_invalid_handle(struct otelc_tracer *tracer)
  *   tracer - tracer instance
  *
  * DESCRIPTION
- *   Verifies that the enabled() function returns true or false
- *   (not OTELC_RET_ERROR) for a started tracer.
+ *   Verifies that the enabled() function reports a started tracer whose
+ *   wrapper flag has never been cleared as enabled, rather than as disabled
+ *   or as an error.
  *
  * RETURN VALUE
  *   This function does not return a value.
@@ -1784,10 +2127,175 @@ static void test_tracer_enabled(struct otelc_tracer *tracer)
 	int rc, retval = TEST_PASS;
 
 	rc = OTELC_OPS(tracer, enabled);
-	if (rc == OTELC_RET_ERROR)
+	if (rc != true)
 		retval = TEST_FAIL;
 
 	test_report("tracer enabled", retval);
+}
+
+
+/***
+ * NAME
+ *   test_tracer_set_enabled - tests the runtime switch of the tracer
+ *
+ * SYNOPSIS
+ *   static void test_tracer_set_enabled(struct otelc_tracer *tracer)
+ *
+ * ARGUMENTS
+ *   tracer - tracer instance
+ *
+ * DESCRIPTION
+ *   Verifies that clearing the wrapper flag with set_enabled() makes enabled()
+ *   report false and makes both a span start and a carrier extraction return
+ *   NULL, and that setting the flag again restores span creation.
+ *
+ * RETURN VALUE
+ *   This function does not return a value.
+ */
+static void test_tracer_set_enabled(struct otelc_tracer *tracer)
+{
+	struct otelc_text_map_reader  tm_rd;
+	struct otelc_span_context    *context;
+	struct otelc_span            *span;
+	int                           retval = TEST_PASS;
+
+	if (OTELC_OPS(tracer, set_enabled, false) != OTELC_RET_OK)
+		retval = TEST_FAIL;
+	if (OTELC_OPS(tracer, enabled) != false)
+		retval = TEST_FAIL;
+
+	span = OTELC_OPS(tracer, start_span, "disabled span");
+	if (_nNULL(span)) {
+		OTELC_OPSR(span, end);
+
+		retval = TEST_FAIL;
+	}
+
+	context = otelc_tracer_extract_text_map(tracer, &tm_rd, NULL);
+	if (_nNULL(context)) {
+		OTELC_OPSR(context, destroy);
+
+		retval = TEST_FAIL;
+	}
+
+	if (OTELC_OPS(tracer, set_enabled, true) != OTELC_RET_OK)
+		retval = TEST_FAIL;
+	if (OTELC_OPS(tracer, enabled) != true)
+		retval = TEST_FAIL;
+
+	span = OTELC_OPS(tracer, start_span, "enabled again span");
+	if (_NULL(span))
+		retval = TEST_FAIL;
+	else
+		OTELC_OPSR(span, end);
+
+	test_report("tracer set_enabled", retval);
+}
+
+
+/***
+ * NAME
+ *   test_tracer_set_flush_timeout - tests the destroy-time flush budget
+ *
+ * SYNOPSIS
+ *   static void test_tracer_set_flush_timeout(struct otelc_ctx *ctx)
+ *
+ * ARGUMENTS
+ *   ctx - library context whose configuration allows a second tracer
+ *
+ * DESCRIPTION
+ *   Starts a tracer of its own and verifies that the budget starts at the
+ *   library default, that set_flush_timeout() rejects a negative value and a
+ *   value above OTELC_FLUSH_TIMEOUT_MS_MAX with a message, and that it stores
+ *   the maximum and zero.  The tracer is destroyed with a zero budget after a
+ *   span was recorded, which takes the exporter shutdown path of destroy.
+ *
+ * RETURN VALUE
+ *   This function does not return a value.
+ */
+static void test_tracer_set_flush_timeout(struct otelc_ctx *ctx)
+{
+	struct otelc_tracer *tracer;
+	struct otelc_span   *span;
+	char                *err = NULL;
+	int                  retval = TEST_PASS;
+
+	tracer = otelc_tracer_create(ctx, &err);
+	if (_NULL(tracer) || (OTELC_OPS(tracer, start) != OTELC_RET_OK)) {
+		retval = TEST_FAIL;
+	} else {
+		if (tracer->flush_timeout != OTELC_FLUSH_TIMEOUT_MS)
+			retval = TEST_FAIL;
+		if ((OTELC_OPS(tracer, set_flush_timeout, -1) != OTELC_RET_ERROR) || _NULL(tracer->err))
+			retval = TEST_FAIL;
+		if (OTELC_OPS(tracer, set_flush_timeout, OTELC_FLUSH_TIMEOUT_MS_MAX + 1) != OTELC_RET_ERROR)
+			retval = TEST_FAIL;
+		if (OTELC_OPS(tracer, set_flush_timeout, OTELC_FLUSH_TIMEOUT_MS_MAX) != OTELC_RET_OK)
+			retval = TEST_FAIL;
+		if (tracer->flush_timeout != OTELC_FLUSH_TIMEOUT_MS_MAX)
+			retval = TEST_FAIL;
+		if ((OTELC_OPS(tracer, set_flush_timeout, 0) != OTELC_RET_OK) || (tracer->flush_timeout != 0))
+			retval = TEST_FAIL;
+
+		span = OTELC_OPS(tracer, start_span, "zero budget span");
+		if (_NULL(span))
+			retval = TEST_FAIL;
+		else
+			OTELC_OPSR(span, end);
+	}
+
+	if (_nNULL(tracer))
+		OTELC_OPSR(tracer, destroy);
+	OTELC_SFREE(err);
+
+	test_report("tracer set_flush_timeout", retval);
+}
+
+
+/***
+ * NAME
+ *   test_tracer_restart - tests a repeated start of the same tracer
+ *
+ * SYNOPSIS
+ *   static void test_tracer_restart(struct otelc_ctx *ctx)
+ *
+ * ARGUMENTS
+ *   ctx - library context whose configuration allows a repeated start
+ *
+ * DESCRIPTION
+ *   Verifies that start() may run again on a started tracer and that the
+ *   tracer still hands out spans afterwards.  The entry carries two file-backed
+ *   ostream exporters, so the repeated start also shows that every exporter
+ *   owns its stream: the files are reopened while the previous pipeline still
+ *   holds them.
+ *
+ * RETURN VALUE
+ *   This function does not return a value.
+ */
+static void test_tracer_restart(struct otelc_ctx *ctx)
+{
+	struct otelc_tracer *tracer;
+	struct otelc_span   *span;
+	char                *err = NULL;
+	int                  retval = TEST_FAIL;
+
+	tracer = otelc_tracer_create(ctx, &err);
+	if (_nNULL(tracer)) {
+		if ((OTELC_OPS(tracer, start) == OTELC_RET_OK) && (OTELC_OPS(tracer, start) == OTELC_RET_OK)) {
+			span = OTELC_OPS(tracer, start_span, "restarted span");
+			if (_nNULL(span)) {
+				OTELC_OPSR(span, end);
+
+				retval = TEST_PASS;
+			}
+		}
+
+		OTELC_OPSR(tracer, destroy);
+	}
+
+	OTELC_SFREE(err);
+
+	test_report("tracer restart", retval);
 }
 
 
@@ -2086,6 +2594,54 @@ static void test_multiple_spans(struct otelc_tracer *tracer)
 
 /***
  * NAME
+ *   test_handle_statistics - checks that every handle the tests made is gone
+ *
+ * SYNOPSIS
+ *   static int test_handle_statistics(void)
+ *
+ * ARGUMENTS
+ *   This function takes no arguments.
+ *
+ * DESCRIPTION
+ *   Parses the span and span context sections of the otelc_statistics() string
+ *   and verifies the invariant that holds after a clean run whatever the number
+ *   of tests: both maps are empty, no handle allocation failed, and every
+ *   handle identifier ever issued has been erased and destroyed exactly once.
+ *   The check therefore needs no adjustment when tests are added.
+ *
+ * RETURN VALUE
+ *   Returns TEST_PASS when the invariant holds, TEST_FAIL otherwise.
+ */
+static int test_handle_statistics(void)
+{
+	char    buffer[BUFSIZ] = "";
+	size_t  total[2], buckets[2], shards[2], peak[2];
+	int64_t id[2], alloc_fail[2], erase[2], destroy[2];
+	int     i, retval = TEST_PASS;
+
+	otelc_statistics(NULL, buffer, sizeof(buffer));
+
+	if (sscanf(buffer, "span:{ < %zu/%zu/%zu > %" SCNd64 " %zu %" SCNd64 " %" SCNd64 " %" SCNd64 " }, "
+	           "context:{ < %zu/%zu/%zu > %" SCNd64 " %zu %" SCNd64 " %" SCNd64 " %" SCNd64 " }",
+	           &(total[0]), &(buckets[0]), &(shards[0]), &(id[0]), &(peak[0]), &(alloc_fail[0]), &(erase[0]), &(destroy[0]),
+	           &(total[1]), &(buckets[1]), &(shards[1]), &(id[1]), &(peak[1]), &(alloc_fail[1]), &(erase[1]), &(destroy[1])) != 16) {
+		OTELC_LOG(stderr, "  unexpected statistics: %s", buffer);
+
+		return TEST_FAIL;
+	}
+
+	for (i = 0; i < 2; i++)
+		if ((total[i] != 0) || (alloc_fail[i] != 0) || (erase[i] != id[i]) || (destroy[i] != id[i]))
+			retval = TEST_FAIL;
+
+	OTELC_LOG(stdout, "  %s", buffer);
+
+	return retval;
+}
+
+
+/***
+ * NAME
  *   main - program entry point
  *
  * SYNOPSIS
@@ -2097,14 +2653,16 @@ static void test_multiple_spans(struct otelc_tracer *tracer)
  *
  * DESCRIPTION
  *   Initializes the OpenTelemetry library, creates a tracer, runs all tracer
- *   tests, and reports the results.
+ *   tests, and reports the results.  A second context loads the 'restart'
+ *   entry of the configuration, which writes to files of its own, for the
+ *   tests that start a tracer of their own.
  *
  * RETURN VALUE
  *   Returns EX_OK if all tests pass, or EX_SOFTWARE if any test fails.
  */
 int main(int argc, char **argv)
 {
-	struct otelc_ctx    *ctx    = NULL;
+	struct otelc_ctx    *ctx    = NULL, *ctx_aux = NULL;
 	struct otelc_tracer *tracer = NULL;
 	const char          *cfg_file;
 	char                *otel_err = NULL;
@@ -2133,6 +2691,13 @@ int main(int argc, char **argv)
 		return test_done(EX_SOFTWARE, otel_err);
 	}
 
+	ctx_aux = otelc_init(cfg_file, "restart", &otel_err);
+	if (_NULL(ctx_aux)) {
+		OTELC_LOG(stderr, "ERROR: %s", _NULL(otel_err) ? "Unable to init the auxiliary context" : otel_err);
+
+		return test_done(EX_SOFTWARE, otel_err);
+	}
+
 	/***
 	 * Tests that create and destroy tracers in isolation.  These must run
 	 * before the main tracer is created because tracer destruction tears
@@ -2141,6 +2706,8 @@ int main(int argc, char **argv)
 	OTELC_LOG(stdout, "[tracer lifecycle]");
 	test_tracer_create_destroy(ctx);
 	test_tracer_create_err_null(ctx);
+	test_tracer_create_null_ctx();
+	test_tracer_unstarted(ctx);
 
 	/***
 	 * Create and start the main tracer for the remaining tests.
@@ -2148,6 +2715,7 @@ int main(int argc, char **argv)
 	tracer = otelc_tracer_create(ctx, &otel_err);
 	if (_NULL(tracer)) {
 		OTELC_LOG(stderr, "ERROR: %s", _NULL(otel_err) ? "Unable to create tracer" : otel_err);
+		otelc_deinit(&ctx_aux, NULL, NULL, NULL);
 
 		return test_done(EX_SOFTWARE, otel_err);
 	}
@@ -2166,6 +2734,7 @@ int main(int argc, char **argv)
 	test_span_end_with_status_ignore(tracer);
 	test_span_kinds(tracer);
 	test_span_parent_child(tracer);
+	test_span_start_invalid_args(tracer);
 	test_multiple_spans(tracer);
 
 	/***
@@ -2204,6 +2773,7 @@ int main(int argc, char **argv)
 	OTELC_LOG(stdout, "[context propagation]");
 	test_context_propagation_text_map(tracer);
 	test_context_propagation_http_headers(tracer);
+	test_extract_direct_text_map(tracer);
 	test_span_context_queries(tracer);
 	test_span_context_get_id(tracer);
 	test_span_context_trace_state(tracer);
@@ -2225,6 +2795,9 @@ int main(int argc, char **argv)
 	OTELC_LOG(stdout, "");
 	OTELC_LOG(stdout, "[tracer operations]");
 	test_tracer_enabled(tracer);
+	test_tracer_set_enabled(tracer);
+	test_tracer_set_flush_timeout(ctx_aux);
+	test_tracer_restart(ctx_aux);
 	test_force_flush(tracer);
 	test_shutdown(tracer);
 
@@ -2235,14 +2808,15 @@ int main(int argc, char **argv)
 	OTELC_LOG(stdout, "");
 	OTELC_LOG(stdout, "[handle statistics]");
 
-	if (otelc_statistics_check(NULL, 0, 0, 76, 0, 76, 76) != 0)
-		retval = TEST_FAIL;
-	if (otelc_statistics_check(NULL, 1, 0, 16, 0, 16, 16) != 0)
+	if (test_handle_statistics() != TEST_PASS)
 		retval = TEST_FAIL;
 	test_report("handle statistics", retval);
 
+	otelc_deinit(&ctx_aux, NULL, NULL, NULL);
+
 	return test_done(retval, otel_err);
 }
+
 
 /*
  * Local variables:
