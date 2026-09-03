@@ -988,7 +988,8 @@ static int otel_tracer_set_enabled(struct otelc_tracer *tracer, bool enabled)
  * DESCRIPTION
  *   Sets the budget of the provider flush that the destroy operation performs.
  *   A value of zero makes destroy shut the exporters down instead, dropping
- *   the telemetry still queued.  A value outside the range 0 to
+ *   the telemetry still queued; a flush that does not complete within a
+ *   positive budget ends the same way.  A value outside the range 0 to
  *   OTELC_FLUSH_TIMEOUT_MS_MAX is rejected.
  *
  * RETURN VALUE
@@ -1286,13 +1287,18 @@ static int otel_tracer_start(struct otelc_tracer *tracer)
  *
  * DESCRIPTION
  *   Stops the tracer and releases all resources and memory associated with the
- *   tracer instance.  As the public destroy operation documents, the call must
- *   not overlap other operations on the same tracer: dropping the SDK handle
- *   stops only the callers that arrive after the drop, it does not synchronize
- *   with a snapshot already in flight.  The spans created by this tracer must
- *   already have been ended; a span left over while other tracers keep the
- *   handle maps alive stays usable at the SDK level, but its error reporting
- *   and its inject operation still reach into the freed tracer structure.
+ *   tracer instance.  The provider is force-flushed with a budget of
+ *   flush_timeout milliseconds; when the budget is zero, or the flush does not
+ *   complete within it, the exporters are shut down before the provider is
+ *   released, so the teardown drain drops the telemetry still queued instead
+ *   of blocking without a limit.  As the public destroy operation documents,
+ *   the call must not overlap other operations on the same tracer: dropping
+ *   the SDK handle stops only the callers that arrive after the drop, it does
+ *   not synchronize with a snapshot already in flight.  The spans created by
+ *   this tracer must already have been ended; a span left over while other
+ *   tracers keep the handle maps alive stays usable at the SDK level, but its
+ *   error reporting and its inject operation still reach into the freed tracer
+ *   structure.
  *
  * RETURN VALUE
  *   This function does not return a value.
@@ -1317,15 +1323,19 @@ static void otel_tracer_destroy(struct otelc_tracer **tracer)
 
 	/* No global SDK provider is touched. */
 	if (!OTEL_NULL(impl)) {
-		if ((*tracer)->flush_timeout > 0) {
+		const int flush_timeout = OTEL_ATOMIC_LOAD((*tracer)->flush_timeout);
+		bool      flag_flushed = false;
+
+		if (flush_timeout > 0) {
 			const auto provider_sdk = OTEL_TRACER_PROVIDER(impl->provider);
 			if (!OTEL_NULL(provider_sdk))
-				(void)provider_sdk->ForceFlush(std::chrono::milliseconds{(*tracer)->flush_timeout});
-		} else {
-			/* A shut-down exporter fails the teardown drain instantly, dropping the queued telemetry. */
+				flag_flushed = provider_sdk->ForceFlush(std::chrono::milliseconds{flush_timeout});
+		}
+
+		/* A shut-down exporter fails the teardown drain instantly, dropping the queued telemetry. */
+		if (!flag_flushed)
 			for (auto *exporter : impl->exporters)
 				(void)exporter->Shutdown(std::chrono::microseconds{1});
-		}
 
 		impl->propagator = {};
 		impl->provider   = {};

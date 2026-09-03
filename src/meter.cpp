@@ -1317,7 +1317,8 @@ static int otel_meter_set_enabled(struct otelc_meter *meter, bool enabled)
  * DESCRIPTION
  *   Sets the budget of the provider flush that the destroy operation performs.
  *   A value of zero makes destroy shut the exporters down instead, dropping
- *   the telemetry still queued.  A value outside the range 0 to
+ *   the telemetry still queued; a flush that does not complete within a
+ *   positive budget ends the same way.  A value outside the range 0 to
  *   OTELC_FLUSH_TIMEOUT_MS_MAX is rejected.
  *
  * RETURN VALUE
@@ -1351,7 +1352,11 @@ static int otel_meter_set_flush_timeout(struct otelc_meter *meter, int flush_tim
  *
  * DESCRIPTION
  *   Stops the meter and releases all resources and memory associated with the
- *   meter instance.
+ *   meter instance.  The provider is force-flushed with a budget of
+ *   flush_timeout milliseconds; when the budget is zero, or the flush does not
+ *   complete within it, the exporters are shut down before the provider is
+ *   released, so the teardown drops the telemetry still queued instead of
+ *   blocking without a limit.
  *
  * RETURN VALUE
  *   This function does not return a value.
@@ -1373,15 +1378,19 @@ static void otel_meter_destroy(struct otelc_meter **meter)
 
 	/* The maps live inside the impl; no global SDK provider is touched. */
 	if (!OTEL_NULL(impl)) {
-		if ((*meter)->flush_timeout > 0) {
+		const int flush_timeout = OTEL_ATOMIC_LOAD((*meter)->flush_timeout);
+		bool      flag_flushed = false;
+
+		if (flush_timeout > 0) {
 			const auto provider_sdk = OTEL_METER_PROVIDER(impl->provider);
 			if (!OTEL_NULL(provider_sdk))
-				(void)provider_sdk->ForceFlush(std::chrono::milliseconds{(*meter)->flush_timeout});
-		} else {
-			/* A shut-down exporter fails the teardown drain instantly, dropping the queued telemetry. */
+				flag_flushed = provider_sdk->ForceFlush(std::chrono::milliseconds{flush_timeout});
+		}
+
+		/* A shut-down exporter fails the teardown drain instantly, dropping the queued telemetry. */
+		if (!flag_flushed)
 			for (auto *exporter : impl->exporters)
 				(void)exporter->Shutdown(std::chrono::microseconds{1});
-		}
 
 		impl->view.clear_locked();
 		impl->instrument.clear_locked();

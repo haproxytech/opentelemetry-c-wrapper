@@ -1012,7 +1012,9 @@ Provider/exporter/processor stack:
 
     1. otel_*_destroy drops the SDK handle from the per-instance impl,
        preventing new operations.
-    2. Force-flushes the per-instance provider with a 5-second timeout.
+    2. Force-flushes the per-instance provider within the flush_timeout budget;
+       a zero budget, or a flush that runs out of it, shuts the exporters down
+       instead so the drain drops the queued telemetry.
     3. Releases the impl members; no global SDK provider is touched.
     4. Frees err, scope_name, and yaml_prefix strings.
 
@@ -1075,7 +1077,7 @@ Overall deinitialization flow:
     |     +-- destroy span context handles (last tracer only)
     |     +-- end remaining spans          (last tracer only)
     |     +-- destroy the span maps        (last tracer, dynamic build)
-    |     +-- force-flush provider
+    |     +-- force-flush provider         (flush_timeout budget)
     |     +-- release propagator           (tracer only)
     |     +-- release impl and provider    (runs the SDK provider Shutdown)
     |     +-- free err, scope_name, yaml_prefix
@@ -1121,7 +1123,9 @@ Tracer startup (otel_tracer_start):
     2. Create sampler (AlwaysOn, AlwaysOff, TraceIdRatioBased, ParentBased or
        Composite).
     3. Create exporter-processor pairs.  YAML sequences allow multiple pairs;
-       otherwise a single pair is created.
+       otherwise a single pair is created.  The raw exporter pointers are kept
+       for the exporter shutdown that destroy performs when the flush budget is
+       zero or runs out.
     4. Build TracerProvider, call provider->GetTracer(scope_name,
        OTELC_SCOPE_VERSION, OTELC_SCOPE_SCHEMA_URL).
     5. Set up propagator: either CompositePropagator (HttpTraceContext
@@ -1291,7 +1295,8 @@ Tracer shutdown (otel_tracer_destroy):
        handles, iterate all remaining spans in the handle map, calling
        handle->span->End(end_options) on each, and destroy the span maps
        (dynamic build), saving the id bases for the next map generation.
-    3. Force-flush the per-instance provider.
+    3. Force-flush the per-instance provider within the flush_timeout budget;
+       shut the exporters down when the budget is zero or runs out.
     4. Release the per-instance propagator and provider, delete the impl.
     5. Free err, scope_name, and yaml_prefix strings.
 
