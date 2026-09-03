@@ -1490,9 +1490,10 @@ View support (otel_meter_add_view):
     2. Create MeterSelector(scope_name, version, schema_url) to match meters.
     3. Create View(name, desc, aggregation_type, config) with optional
        HistogramAggregationConfig for custom bucket boundaries.
-    4. Register via provider_sdk->AddView(instrument_selector, meter_selector,
-       view).
-    5. Track in internal otel_view handle map.
+    4. Track the specification in the internal otel_view handle map first, so
+       a failed registration leaves the SDK provider unchanged.
+    5. Register via provider_sdk->AddView(instrument_selector, meter_selector,
+       view); a restart repeats this step for every tracked view.
     6. Duplicate views (by name, case-insensitive) return the existing ID
        without re-registration.
 

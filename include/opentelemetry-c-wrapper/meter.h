@@ -282,8 +282,11 @@ struct otelc_meter_ops {
 	 *   Note: the view must be registered before the instrument is created,
 	 *   because in the OpenTelemetry C++ SDK views are not dynamically applied
 	 *   to existing instruments.  The meter itself must already be started.
-	 *   If a view with the same name already exists, its ID is returned and no
-	 *   new view is created.
+	 *   Bucket boundaries are accepted only for a histogram instrument type,
+	 *   as a non-empty array with a matching count.  If a view with the same
+	 *   name already exists, its ID is returned and no new view is created.
+	 *   The specification of every view is recorded, so a restart of the
+	 *   meter registers the views with its new provider again.
 	 *
 	 * RETURN VALUE
 	 *   Returns the ID of the added view on success, or OTELC_RET_ERROR on
@@ -464,7 +467,9 @@ struct otelc_meter_ops {
 	 *   A repeated start does not clear the instrument and view registries:
 	 *   instruments created before the restart keep their IDs and are still
 	 *   returned by create_instrument, but they stay bound to the replaced
-	 *   pipeline and their updates are no longer exported.
+	 *   pipeline and their updates are no longer exported.  The views are
+	 *   registered again with the new provider, so they keep applying to
+	 *   the instruments created after the restart.
 	 *
 	 * RETURN VALUE
 	 *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR in case of an
