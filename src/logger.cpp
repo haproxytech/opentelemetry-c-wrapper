@@ -16,10 +16,6 @@
 #include "include.h"
 
 
-/* Serializes the scope_name replacement in otel_logger_start(). */
-static std::mutex otel_logger_start_mutex;
-
-
 /***
  * Helper subclass that exposes the protected SetMinimumSeverity method on the
  * OpenTelemetry C++ Logger base class.  The subclass carries no data members,
@@ -43,7 +39,7 @@ struct otel_logs_logger : public otel_logs::Logger {
  *   static OTEL_NO_SANITIZE_VPTR void otel_logger_severity_set(otel_logs::Logger *logger_ptr, otel_logs::Severity severity)
  *
  * ARGUMENTS
- *   logger_ptr - SDK logger the severity threshold is set on
+ *   logger_ptr - SDK logger instance
  *   severity   - new minimum severity level, as the SDK enumeration
  *
  * DESCRIPTION
@@ -67,23 +63,23 @@ static OTEL_NO_SANITIZE_VPTR void otel_logger_severity_set(otel_logs::Logger *lo
  *   otel_logger_severity - maps a C wrapper severity to the C++ SDK severity
  *
  * SYNOPSIS
- *   static otel_logs::Severity otel_logger_severity(struct otelc_logger *logger, otelc_log_severity_t severity)
+ *   static otel_logs::Severity otel_logger_severity(otelc_log_severity_t severity)
  *
  * ARGUMENTS
- *   logger   - logger instance
- *   severity - C wrapper log severity level to convert
+ *   severity - log severity level
  *
  * DESCRIPTION
  *   Converts an otelc_log_severity_t value to the corresponding
- *   otel_logs::Severity enum used by the OpenTelemetry C++ SDK.  On an
- *   unrecognised severity value, an error is recorded on the logger instance
- *   and otel_logs::Severity::kInvalid is returned.
+ *   otel_logs::Severity enum used by the OpenTelemetry C++ SDK.  A value that
+ *   is not in the enumeration, and OTELC_LOG_SEVERITY_INVALID itself, yield
+ *   otel_logs::Severity::kInvalid; the caller records the error, since it
+ *   knows the operation the value was given to.
  *
  * RETURN VALUE
  *   Returns the matching otel_logs::Severity value,
  *   or otel_logs::Severity::kInvalid if the severity is not recognised.
  */
-static otel_logs::Severity otel_logger_severity(struct otelc_logger *logger, otelc_log_severity_t severity)
+static otel_logs::Severity otel_logger_severity(otelc_log_severity_t severity)
 {
 #define OTELC_LOG_SEVERITY_DEF(a,b)   { OTELC_LOG_SEVERITY_##a, otel_logs::Severity::b },
 	static constexpr struct {
@@ -96,12 +92,6 @@ static otel_logs::Severity otel_logger_severity(struct otelc_logger *logger, ote
 	for (size_t i = 0; i < OTELC_TABLESIZE(severity_levels); i++)
 		if (severity_levels[i].severity == severity)
 			return severity_levels[i].level;
-
-	/***
-	 * The logger parameter is assumed to be valid; no checks are performed
-	 * because this function is for internal use only.
-	 */
-	OTEL_LOGGER_ERROR(OTEL_ERROR_MSG_INVALID_SEVERITY, severity);
 
 	return otel_logs::Severity::kInvalid;
 }
@@ -116,7 +106,7 @@ static otel_logs::Severity otel_logger_severity(struct otelc_logger *logger, ote
  *
  * ARGUMENTS
  *   logger   - logger instance
- *   severity - log severity level to check
+ *   severity - log severity level
  *
  * DESCRIPTION
  *   Queries the underlying logger to determine whether it is enabled for the
@@ -124,7 +114,8 @@ static otel_logs::Severity otel_logger_severity(struct otelc_logger *logger, ote
  *   message construction when the logger would discard the record anyway.
  *   Returns false when the wrapper-level gate is cleared via
  *   otel_logger_set_enabled(), even if the underlying SDK logger would
- *   otherwise accept the severity.
+ *   otherwise accept the severity.  A logger that has not been started yet
+ *   is reported as an error whatever the gate holds.
  *
  * RETURN VALUE
  *   Returns true if the logger is enabled for the given severity, false if it
@@ -151,7 +142,7 @@ static int otel_logger_enabled(struct otelc_logger *logger, otelc_log_severity_t
 
 	auto *logger_ptr = logger_shared.get();
 
-	const auto log_severity = otel_logger_severity(logger, severity);
+	const auto log_severity = otel_logger_severity(severity);
 	if (log_severity == otel_logs::Severity::kInvalid)
 		OTEL_LOGGER_RETURN_INT(OTEL_ERROR_MSG_INVALID_SEVERITY, severity);
 
@@ -173,8 +164,10 @@ static int otel_logger_enabled(struct otelc_logger *logger, otelc_log_severity_t
  * DESCRIPTION
  *   Sets the wrapper-level gate that controls whether new log records may be
  *   emitted.  When the gate is cleared, log, log_span, log_body and
- *   log_body_span become no-ops and return 0.  Records emitted before the
- *   gate was cleared continue to be exported by the SDK as normal.
+ *   log_body_span emit nothing and return 0; log_span and log_body_span still
+ *   read the span identifiers from the given span before the gate check.
+ *   Records emitted before the gate was cleared continue to be exported by
+ *   the SDK as normal.
  *
  * RETURN VALUE
  *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR in case of an error.
@@ -230,7 +223,7 @@ static int otel_logger_set_min_severity(struct otelc_logger *logger, otelc_log_s
 
 	auto *logger_ptr = logger_shared.get();
 
-	const auto log_severity = otel_logger_severity(logger, severity);
+	const auto log_severity = otel_logger_severity(severity);
 	if (log_severity == otel_logs::Severity::kInvalid)
 		OTEL_LOGGER_RETURN_INT(OTEL_ERROR_MSG_INVALID_SEVERITY, severity);
 
@@ -288,7 +281,7 @@ static int otel_logger_set_flush_timeout(struct otelc_logger *logger, int flush_
  *
  * ARGUMENTS
  *   logger        - logger instance
- *   logger_ptr    - pointer to the underlying OTel logger
+ *   logger_ptr    - SDK logger instance
  *   severity      - log severity level
  *   event_id      - numeric event identifier, or 0 to omit
  *   event_name    - event name string, or NULL when event_id is 0
@@ -304,15 +297,15 @@ static int otel_logger_set_flush_timeout(struct otelc_logger *logger, int flush_
  *   log_record    - output reference for the created log record
  *
  * DESCRIPTION
- *   Validates the logger pointer and severity, checks whether the severity
- *   level is enabled, and creates a new log record populated with trace
- *   context, timestamps, event data, and attributes.  The caller must set the
- *   body and emit the record.  The event timestamp is taken from ts and the
- *   observed timestamp from ts_obs; each is applied only when its argument is
- *   non-NULL, otherwise that field is left to the SDK default -- the event time
- *   unset and the observed time the instant of emission.  When event_id is
- *   greater than zero, the log record is tagged with the given event identifier
- *   and name.
+ *   Validates the SDK logger pointer and the severity, checks whether the
+ *   severity level is enabled, and creates a new log record populated with
+ *   trace context, timestamps, event data, and attributes.  The caller must
+ *   set the body and emit the record.  The event timestamp is taken from ts
+ *   and the observed timestamp from ts_obs; each is applied only when its
+ *   argument is non-NULL, otherwise that field is left to the SDK default --
+ *   the event time unset and the observed time the instant of emission.  When
+ *   event_id is greater than zero, the log record is tagged with the given
+ *   event identifier and name.
  *
  *   When span_id_size or trace_id_size is smaller than the identifier size
  *   the SDK requires, the corresponding buffer is left zero-initialised and
@@ -331,7 +324,7 @@ static int otel_logger_record_create(struct otelc_logger *logger, otel_logs::Log
 	if (OTEL_NULL(logger_ptr))
 		OTEL_LOGGER_RETURN_INT(OTEL_ERROR_MSG_INVALID_LOGGER);
 
-	const auto log_severity = otel_logger_severity(logger, severity);
+	const auto log_severity = otel_logger_severity(severity);
 	if (log_severity == otel_logs::Severity::kInvalid)
 		OTEL_LOGGER_RETURN_INT(OTEL_ERROR_MSG_INVALID_SEVERITY, severity);
 
@@ -557,7 +550,7 @@ static void otel_logger_span_extract(const struct otelc_span *span, uint8_t *spa
  *   severity   - log severity level
  *   event_id   - numeric event identifier, or 0 to omit
  *   event_name - event name string, or NULL when event_id is 0
- *   span       - span associated with this log entry
+ *   span       - span associated with this log entry, or NULL
  *   ts         - the timestamp of the log event, or NULL for SDK defaults
  *   ts_obs     - the observed timestamp, or NULL for SDK defaults
  *   attr       - a pointer to an array of key-value attributes to attach to the log record
@@ -629,10 +622,14 @@ static int otel_logger_log_span(struct otelc_logger *logger, otelc_log_severity_
  *   severity, trace context, body value, and attributes.  Unlike
  *   otel_logger_log_v(), which formats a printf-style string, this function
  *   passes the otelc_value body directly to SetBody(), preserving the native
- *   type.  A body of type OTELC_VALUE_NULL is emitted as an empty string.
+ *   type.  A body of type OTELC_VALUE_NULL is emitted as an empty string.  A
+ *   record that the severity threshold or the cleared wrapper-level gate
+ *   suppresses is reported like an emitted one; the enabled operation tells
+ *   the two cases apart beforehand.
  *
  * RETURN VALUE
- *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR on error.
+ *   Returns OTELC_RET_OK when the record was emitted or suppressed, or
+ *   OTELC_RET_ERROR on error.
  */
 static int otel_logger_log_body(struct otelc_logger *logger, otelc_log_severity_t severity, int64_t event_id, const char *event_name, const uint8_t *span_id, size_t span_id_size, const uint8_t *trace_id, size_t trace_id_size, uint8_t trace_flags, const struct timespec *ts, const struct timespec *ts_obs, const struct otelc_kv *attr, size_t attr_len, const struct otelc_value *body)
 {
@@ -686,7 +683,7 @@ static int otel_logger_log_body(struct otelc_logger *logger, otelc_log_severity_
  *   severity   - log severity level
  *   event_id   - numeric event identifier, or 0 to omit
  *   event_name - event name string, or NULL when event_id is 0
- *   span       - span associated with this log entry
+ *   span       - span associated with this log entry, or NULL
  *   ts         - the timestamp of the log event, or NULL for SDK defaults
  *   ts_obs     - the observed timestamp, or NULL for SDK defaults
  *   attr       - a pointer to an array of key-value attributes to attach to the log record
@@ -699,10 +696,13 @@ static int otel_logger_log_body(struct otelc_logger *logger, otelc_log_severity_
  *   emitted without trace correlation.  Unlike log_span(), which formats a
  *   printf-style string, this function passes the otelc_value directly to
  *   SetBody(), preserving the native type.  A body of type OTELC_VALUE_NULL
- *   is emitted as an empty string.
+ *   is emitted as an empty string.  A record that the severity threshold or
+ *   the cleared wrapper-level gate suppresses is reported like an emitted one;
+ *   the enabled operation tells the two cases apart beforehand.
  *
  * RETURN VALUE
- *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR on error.
+ *   Returns OTELC_RET_OK when the record was emitted or suppressed, or
+ *   OTELC_RET_ERROR on error.
  */
 static int otel_logger_log_body_span(struct otelc_logger *logger, otelc_log_severity_t severity, int64_t event_id, const char *event_name, const struct otelc_span *span, const struct timespec *ts, const struct timespec *ts_obs, const struct otelc_kv *attr, size_t attr_len, const struct otelc_value *body)
 {
@@ -816,9 +816,6 @@ static int otel_logger_start(struct otelc_logger *logger)
 	if (retval < 1)
 		OTELC_RETURN_INT(retval);
 
-	/* Serialize the scope_name replacement against a concurrent start(). */
-	const std::lock_guard<std::mutex> start_guard(otel_logger_start_mutex);
-
 	OTELC_SFREE(logger->scope_name);
 	logger->scope_name = OTELC_STRDUP(__func__, __LINE__, scope_name);
 	if (OTEL_NULL(logger->scope_name))
@@ -926,7 +923,7 @@ static int otel_logger_start(struct otelc_logger *logger)
 		if (OTEL_NULL(logger_maybe))
 			OTEL_LOGGER_RETURN_INT("Unable to get logger from provider");
 
-		const auto severity = otel_logger_severity(logger, OTEL_ATOMIC_LOAD(logger->min_severity));
+		const auto severity = otel_logger_severity(OTEL_ATOMIC_LOAD(logger->min_severity));
 		otel_logger_severity_set(logger_maybe.get(), severity);
 
 		impl->logger   = std::move(logger_maybe);
@@ -1090,7 +1087,9 @@ static struct otelc_logger *otel_logger_new(void)
  *   OTELC_FLUSH_TIMEOUT_MS and can be overridden via the YAML configuration
  *   or changed at runtime through the set_flush_timeout operation.
  *   An error message stored in *err is allocated by the library and must be
- *   released with OTELC_SFREE().
+ *   released with OTELC_SFREE(); on entry, *err must be a null pointer or a
+ *   pointer from a previous call, since any previous message is released
+ *   before being replaced.
  *
  * RETURN VALUE
  *   Returns a pointer to a newly created logger instance on success, or nullptr

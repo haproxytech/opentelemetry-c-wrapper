@@ -80,7 +80,8 @@ struct otelc_logger_ops {
 	 *   expensive log message construction when the logger would discard
 	 *   the record anyway.  Returns false when the wrapper-level gate is
 	 *   cleared via set_enabled(), even if the underlying SDK logger would
-	 *   otherwise accept the severity.
+	 *   otherwise accept the severity.  A logger that has not been started
+	 *   yet is reported as an error whatever the gate holds.
 	 *
 	 * RETURN VALUE
 	 *   Returns true if the logger is enabled for the given severity,
@@ -218,7 +219,7 @@ struct otelc_logger_ops {
 	 *   severity   - log severity level
 	 *   event_id   - numeric event identifier, or 0 to omit
 	 *   event_name - event name string, or NULL when event_id is 0
-	 *   span       - span associated with this log entry
+	 *   span       - span associated with this log entry, or NULL
 	 *   ts         - the timestamp of the log event, or NULL for SDK defaults
 	 *   ts_obs     - the observed timestamp, or NULL for SDK defaults
 	 *   attr       - a pointer to an array of key-value attributes to attach to the log record
@@ -275,10 +276,13 @@ struct otelc_logger_ops {
 	 *   log() operation, which formats a printf-style string, this function
 	 *   passes the otelc_value body directly to SetBody(), preserving the
 	 *   native type.  A body of type OTELC_VALUE_NULL is emitted as an
-	 *   empty string.
+	 *   empty string.  A record that the severity threshold or the cleared
+	 *   wrapper-level gate suppresses is reported like an emitted one; the
+	 *   enabled operation tells the two cases apart beforehand.
 	 *
 	 * RETURN VALUE
-	 *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR on error.
+	 *   Returns OTELC_RET_OK when the record was emitted or suppressed, or
+	 *   OTELC_RET_ERROR on error.
 	 */
 	int (*log_body)(struct otelc_logger *logger, otelc_log_severity_t severity, int64_t event_id, const char *event_name, const uint8_t *span_id, size_t span_id_size, const uint8_t *trace_id, size_t trace_id_size, uint8_t trace_flags, const struct timespec *ts, const struct timespec *ts_obs, const struct otelc_kv *attr, size_t attr_len, const struct otelc_value *body)
 		OTELC_NONNULL(1, 14);
@@ -295,7 +299,7 @@ struct otelc_logger_ops {
 	 *   severity   - log severity level
 	 *   event_id   - numeric event identifier, or 0 to omit
 	 *   event_name - event name string, or NULL when event_id is 0
-	 *   span       - span associated with this log entry
+	 *   span       - span associated with this log entry, or NULL
 	 *   ts         - the timestamp of the log event, or NULL for SDK defaults
 	 *   ts_obs     - the observed timestamp, or NULL for SDK defaults
 	 *   attr       - a pointer to an array of key-value attributes to attach to the log record
@@ -309,10 +313,13 @@ struct otelc_logger_ops {
 	 *   log_span(), which formats a printf-style string, this function
 	 *   passes the otelc_value directly to SetBody(), preserving the native
 	 *   type.  A body of type OTELC_VALUE_NULL is emitted as an empty
-	 *   string.
+	 *   string.  A record that the severity threshold or the cleared
+	 *   wrapper-level gate suppresses is reported like an emitted one; the
+	 *   enabled operation tells the two cases apart beforehand.
 	 *
 	 * RETURN VALUE
-	 *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR on error.
+	 *   Returns OTELC_RET_OK when the record was emitted or suppressed, or
+	 *   OTELC_RET_ERROR on error.
 	 */
 	int (*log_body_span)(struct otelc_logger *logger, otelc_log_severity_t severity, int64_t event_id, const char *event_name, const struct otelc_span *span, const struct timespec *ts, const struct timespec *ts_obs, const struct otelc_kv *attr, size_t attr_len, const struct otelc_value *body)
 		OTELC_NONNULL(1, 10);
@@ -383,8 +390,9 @@ struct otelc_logger_ops {
 	 *   configuration specifies a sequence of processors (and optionally a
 	 *   matching sequence of exporters), each pair is created and passed to
 	 *   the provider.  The optional min_severity key of the subtree sets
-	 *   the initial minimum severity threshold; without it the current
-	 *   threshold is kept.
+	 *   the initial minimum severity threshold and the optional
+	 *   flush_timeout key the destroy-time provider flush budget; without
+	 *   them the current values are kept.
 	 *
 	 *   The caller must drain every concurrent operation on this logger
 	 *   instance before invoking start, including a repeated start: the
@@ -444,7 +452,7 @@ struct otelc_logger {
 	int                            flush_timeout; /* Destroy-time provider flush budget in milliseconds; zero drops pending telemetry. */
 	const struct otelc_logger_ops *ops;          /* Pointer to the operations vtable. */
 	const struct otelc_ctx        *ctx;          /* Owning library context; provides the YAML configuration. */
-	void                          *impl;         /* Opaque pointer to the C++ implementation state (provider, logger). */
+	void                          *impl;         /* Opaque pointer to the C++ implementation state (struct otel_logger_impl). */
 };
 
 

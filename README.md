@@ -367,6 +367,14 @@ int main(void)
 }
 ```
 
+The logger offers more than the example shows: `log` takes the trace and span
+identifiers as raw bytes instead of a span, `log_body` and `log_body_span` emit
+a typed value as the record body instead of a formatted string, and the call
+`otelc_logger_severity_parse()` turns a severity name from a configuration into
+the matching enum value.  A formatted record reports the number of characters
+it emitted and zero when it was suppressed, while a body record reports success
+in both cases; the `enabled` operation tells them apart beforehand.
+
 ## Library API
 
 The API is organized around instance structs that each carry a pointer to an
@@ -391,7 +399,8 @@ belong to the caller and go to `OTELC_SFREE()`.  The library context itself is
 opaque.
 
 Every signal instance also offers the same housekeeping operations: `enabled`
-reports whether a started instance has its `enabled` flag set, and `set_enabled`
+reports whether a started instance has its `enabled` flag set, and the logger's
+variant also checks the given severity against its threshold; `set_enabled`
 switches the flag.  What a cleared flag holds back depends on the signal: the
 tracer stops handing out spans and extracted contexts, the meter stops creating
 instruments and views while existing instruments keep recording, and the logger
