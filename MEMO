@@ -1636,8 +1636,10 @@ single call) and requires no explicit locking (all vtable operations are marked
 Logger per-instance state:
 
   Each logger owns an otel_logger_impl structure (include/logger.h) holding
-  the SDK LoggerProvider and Logger.  Operations snapshot the logger member and
-  bail out when it is empty; destroy drops it first, like the tracer and meter.
+  the SDK LoggerProvider and Logger and the non-owning exporter list that the
+  destroy uses to shut delivery down.  Operations snapshot the logger member
+  and bail out when it is empty; destroy drops it first, like the tracer and
+  meter.
 
 Logger instance structure:
 
@@ -1650,6 +1652,7 @@ Logger instance structure:
         char                          *yaml_prefix;
         otelc_log_severity_t           min_severity;
         bool                           enabled;
+        int                            flush_timeout;
         const struct otelc_logger_ops *ops;
         const struct otelc_ctx        *ctx;
         void                          *impl;
@@ -1704,9 +1707,10 @@ Logger startup (otel_logger_start):
 
   The function builds the provider stack from YAML configuration:
 
-    1. Read scope name from YAML (/signals/logs/scope_name).
-    2. Read optional min_severity from YAML (/signals/logs/min_severity) and
-       parse via otelc_logger_severity_parse().
+    1. Read the scope name from the YAML entry resolved under /signals/logs.
+    2. Read the optional min_severity of the entry, parse it with the public
+       otelc_logger_severity_parse() call, and read the optional flush_timeout
+       budget.
     3. Create exporter-processor pairs.  YAML sequences allow multiple pairs;
        otherwise a single pair is created.
     4. Create LoggerProvider with processors via otel_logger_provider_create().
@@ -1749,7 +1753,7 @@ Log record creation and emission:
   Record construction is factored into otel_logger_record_create(), which
   creates and populates a log record without setting its body:
 
-    1. Validate the logger pointer.
+    1. Validate the SDK logger pointer.
     2. Convert severity to C++ enum via otel_logger_severity().
     3. Early exit if logger_ptr->Enabled(log_severity) is false.
     4. Copy span_id (8 bytes) and trace_id (16 bytes) to fixed-size stack
@@ -1835,7 +1839,8 @@ Logger shutdown (otel_logger_destroy):
 
     1. Drop the SDK Logger handle from the impl to stop the callers that
        arrive afterwards.
-    2. Force-flush the per-instance provider.
+    2. Force-flush the per-instance provider within the flush_timeout budget;
+       shut the exporters down when the budget is zero or runs out.
     3. Release the impl members and delete the impl.
     4. Free err, scope_name, and yaml_prefix strings.
 
