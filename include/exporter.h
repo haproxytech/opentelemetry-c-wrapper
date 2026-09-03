@@ -53,6 +53,67 @@
 #define OTEL_ERROR_MSG_INVALID_EXPORTER           "Invalid exporter type: '%s'"
 #define OTEL_ERROR_MSG_ADD_HTTP_HEADER            "Unable to add HTTP header"
 
+#ifdef HAVE_OTEL_EXPORTER_OSTREAM
+/***
+ * Ostream exporters that own the file they write to.  The SDK ostream exporters
+ * only keep a reference to their stream, so each wrapper carries the file
+ * stream as a member constructed before, and destroyed after, the wrapped
+ * exporter.  Every file-backed exporter thus has a stream of its own: an
+ * instance may hold several of them, and a repeated start may open the same
+ * file while the previous pipeline still drains into the old stream.
+ */
+class otel_file_span_exporter : public otel_sdk_trace::SpanExporter
+{
+public:
+	otel_file_span_exporter(const char *filename);
+
+	bool is_open() const noexcept { return file_.is_open(); }
+
+	std::unique_ptr<otel_sdk_trace::Recordable> MakeRecordable() noexcept override;
+	otel_sdk_common::ExportResult Export(const otel_nostd::span<std::unique_ptr<otel_sdk_trace::Recordable>> &spans) noexcept override;
+	bool ForceFlush(std::chrono::microseconds timeout = (std::chrono::microseconds::max)()) noexcept override;
+	bool Shutdown(std::chrono::microseconds timeout = (std::chrono::microseconds::max)()) noexcept override;
+
+private:
+	std::ofstream                            file_;
+	otel_exporter_trace::OStreamSpanExporter inner_;
+};
+
+class otel_file_metric_exporter : public otel_sdk_metrics::PushMetricExporter
+{
+public:
+	otel_file_metric_exporter(const char *filename);
+
+	bool is_open() const noexcept { return file_.is_open(); }
+
+	otel_sdk_common::ExportResult Export(const otel_sdk_metrics::ResourceMetrics &data) noexcept override;
+	otel_sdk_metrics::AggregationTemporality GetAggregationTemporality(otel_sdk_metrics::InstrumentType instrument_type) const noexcept override;
+	bool ForceFlush(std::chrono::microseconds timeout = (std::chrono::microseconds::max)()) noexcept override;
+	bool Shutdown(std::chrono::microseconds timeout = (std::chrono::microseconds::max)()) noexcept override;
+
+private:
+	std::ofstream                                file_;
+	otel_exporter_metrics::OStreamMetricExporter inner_;
+};
+
+class otel_file_log_exporter : public otel_sdk_logs::LogRecordExporter
+{
+public:
+	otel_file_log_exporter(const char *filename);
+
+	bool is_open() const noexcept { return file_.is_open(); }
+
+	std::unique_ptr<otel_sdk_logs::Recordable> MakeRecordable() noexcept override;
+	otel_sdk_common::ExportResult Export(const otel_nostd::span<std::unique_ptr<otel_sdk_logs::Recordable>> &records) noexcept override;
+	bool ForceFlush(std::chrono::microseconds timeout = (std::chrono::microseconds::max)()) noexcept override;
+	bool Shutdown(std::chrono::microseconds timeout = (std::chrono::microseconds::max)()) noexcept override;
+
+private:
+	std::ofstream                                 file_;
+	otel_exporter_logs::OStreamLogRecordExporter inner_;
+};
+#endif /* HAVE_OTEL_EXPORTER_OSTREAM */
+
 /***
  * Exporter dispatch macros for shared backends.  Each macro expands to an
  * else-if branch that creates the corresponding exporter.  The ifdef-guarded
@@ -63,15 +124,15 @@
  *   type, exporter_maybe, name
  */
 #ifdef HAVE_OTEL_EXPORTER_OSTREAM
-  #define OTEL_EXPORTER_CASE_OSTREAM(arg_sig, arg_type, arg_ptr, arg_path)                                                   \
+  #define OTEL_EXPORTER_CASE_OSTREAM(arg_sig, arg_type, arg_file, arg_ptr, arg_path)                                        \
 	else if (strcasecmp(type, OTEL_EXPORTER_OSTREAM) == 0) {                                                             \
-		if (otel_exporter_set_ostream_options<arg_type>((arg_ptr)->ctx, OTEL_##arg_sig##_EXPORTER_DESC,              \
-		                                                (arg_path), OTEL_##arg_sig##_LOGFILE(arg_ptr),               \
-		                                                exporter_maybe, &((arg_ptr)->err), name) == OTELC_RET_ERROR) \
+		if (otel_exporter_set_ostream_options<arg_type, arg_file>((arg_ptr)->ctx, OTEL_##arg_sig##_EXPORTER_DESC,     \
+		                                                          (arg_path), exporter_maybe, &((arg_ptr)->err),       \
+		                                                          name) == OTELC_RET_ERROR)                            \
 			OTELC_RETURN_INT(OTELC_RET_ERROR);                                                                   \
 	}
 #else
-  #define OTEL_EXPORTER_CASE_OSTREAM(arg_sig, arg_type, arg_ptr, arg_path)                  \
+  #define OTEL_EXPORTER_CASE_OSTREAM(arg_sig, arg_type, arg_file, arg_ptr, arg_path)        \
 	else if (strcasecmp(type, OTEL_EXPORTER_OSTREAM) == 0) {                            \
 		OTEL_##arg_sig##_ERROR(OTEL_##arg_sig##_EXPORTER_NOT_SUPPORTED("ostream")); \
 	}

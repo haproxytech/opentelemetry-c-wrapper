@@ -374,44 +374,167 @@ static int otel_exporter_set_otlp_http_options(const struct otelc_ctx *ctx, cons
 }
 
 
+#ifdef HAVE_OTEL_EXPORTER_OSTREAM
+
+/***
+ * NAME
+ *   otel_file_span_exporter - ostream span exporter that owns its output file
+ *
+ * DESCRIPTION
+ *   Opens the named file for writing and builds an SDK ostream span exporter
+ *   on top of it.  The caller checks is_open() to reject a file that could not
+ *   be opened; every SpanExporter interface method is forwarded to the wrapped
+ *   exporter unchanged.  The file stream is a member declared before the
+ *   wrapped exporter, so it outlives every write the exporter performs.
+ */
+otel_file_span_exporter::otel_file_span_exporter(const char *filename)
+	: file_(filename, std::ios::out), inner_(file_)
+{
+}
+
+
+std::unique_ptr<otel_sdk_trace::Recordable> otel_file_span_exporter::MakeRecordable() noexcept
+{
+	return inner_.MakeRecordable();
+}
+
+
+otel_sdk_common::ExportResult otel_file_span_exporter::Export(const otel_nostd::span<std::unique_ptr<otel_sdk_trace::Recordable>> &spans) noexcept
+{
+	return inner_.Export(spans);
+}
+
+
+bool otel_file_span_exporter::ForceFlush(std::chrono::microseconds timeout) noexcept
+{
+	return inner_.ForceFlush(timeout);
+}
+
+
+bool otel_file_span_exporter::Shutdown(std::chrono::microseconds timeout) noexcept
+{
+	return inner_.Shutdown(timeout);
+}
+
+
+/***
+ * NAME
+ *   otel_file_metric_exporter - ostream metric exporter that owns its output file
+ *
+ * DESCRIPTION
+ *   The metric counterpart of otel_file_span_exporter: opens the named file and
+ *   builds an SDK ostream metric exporter on top of it, forwarding every
+ *   PushMetricExporter interface method to the wrapped exporter.
+ */
+otel_file_metric_exporter::otel_file_metric_exporter(const char *filename)
+	: file_(filename, std::ios::out), inner_(file_)
+{
+}
+
+
+otel_sdk_common::ExportResult otel_file_metric_exporter::Export(const otel_sdk_metrics::ResourceMetrics &data) noexcept
+{
+	return inner_.Export(data);
+}
+
+
+otel_sdk_metrics::AggregationTemporality otel_file_metric_exporter::GetAggregationTemporality(otel_sdk_metrics::InstrumentType instrument_type) const noexcept
+{
+	return inner_.GetAggregationTemporality(instrument_type);
+}
+
+
+bool otel_file_metric_exporter::ForceFlush(std::chrono::microseconds timeout) noexcept
+{
+	return inner_.ForceFlush(timeout);
+}
+
+
+bool otel_file_metric_exporter::Shutdown(std::chrono::microseconds timeout) noexcept
+{
+	return inner_.Shutdown(timeout);
+}
+
+
+/***
+ * NAME
+ *   otel_file_log_exporter - ostream log record exporter that owns its output file
+ *
+ * DESCRIPTION
+ *   The log counterpart of otel_file_span_exporter: opens the named file and
+ *   builds an SDK ostream log record exporter on top of it, forwarding every
+ *   LogRecordExporter interface method to the wrapped exporter.
+ */
+otel_file_log_exporter::otel_file_log_exporter(const char *filename)
+	: file_(filename, std::ios::out), inner_(file_)
+{
+}
+
+
+std::unique_ptr<otel_sdk_logs::Recordable> otel_file_log_exporter::MakeRecordable() noexcept
+{
+	return inner_.MakeRecordable();
+}
+
+
+otel_sdk_common::ExportResult otel_file_log_exporter::Export(const otel_nostd::span<std::unique_ptr<otel_sdk_logs::Recordable>> &records) noexcept
+{
+	return inner_.Export(records);
+}
+
+
+bool otel_file_log_exporter::ForceFlush(std::chrono::microseconds timeout) noexcept
+{
+	return inner_.ForceFlush(timeout);
+}
+
+
+bool otel_file_log_exporter::Shutdown(std::chrono::microseconds timeout) noexcept
+{
+	return inner_.Shutdown(timeout);
+}
+
+#endif /* HAVE_OTEL_EXPORTER_OSTREAM */
+
+
 /***
  * NAME
  *   otel_exporter_set_ostream_options - populates ostream exporter options from YAML configuration
  *
  * SYNOPSIS
- *   template <typename C, typename T>
- *   static int otel_exporter_set_ostream_options(const struct otelc_ctx *ctx, const char *desc, const char *path, std::ofstream &stream, T &exporter, char **err, const char *name)
+ *   template <typename C, typename F, typename T>
+ *   static int otel_exporter_set_ostream_options(const struct otelc_ctx *ctx, const char *desc, const char *path, T &exporter, char **err, const char *name)
  *
  * ARGUMENTS
  *   ctx      - library context providing the YAML configuration
  *   desc     - description of the exporter
  *   path     - the YAML configuration path
- *   stream   - output file stream
  *   exporter - reference to a unique pointer where the created exporter is stored
  *   err      - address of a pointer to store an error message on failure
  *   name     - name of the exporter configuration node, or nullptr for default
  *
  * DESCRIPTION
  *   Reads and applies configuration values for an ostream exporter from a YAML
- *   document, opens the specified output stream, and creates the exporter.
- *   The created exporter is returned via the exporter parameter.  Each signal
- *   instance owns a single logfile stream, so at most one file-backed ostream
- *   exporter can exist per instance; the stdout and stderr variants are not
- *   limited.
+ *   document and creates the exporter.  The stdout and stderr variants write to
+ *   the standard streams through an exporter of the C type; any other filename
+ *   is opened by an exporter of the F type, which owns its file stream, so an
+ *   instance may hold any number of file-backed ostream exporters and a
+ *   repeated start may reopen a file that the previous pipeline still drains
+ *   into.  The created exporter is returned via the exporter parameter.
  *
- *   The function is type-agnostic and relies on the template parameter to
- *   determine the concrete exporter type to instantiate.
+ *   The function is type-agnostic and relies on the template parameters to
+ *   determine the concrete exporter types to instantiate.
  *
  * RETURN VALUE
  *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR on failure.
  */
-template <typename C, typename T>
-static int otel_exporter_set_ostream_options(const struct otelc_ctx *ctx, const char *desc, const char *path, std::ofstream &stream, T &exporter, char **err, const char *name = nullptr)
+template <typename C, typename F, typename T>
+static int otel_exporter_set_ostream_options(const struct otelc_ctx *ctx, const char *desc, const char *path, T &exporter, char **err, const char *name = nullptr)
 {
 	char filename[PATH_MAX] = OTEL_EXPORTER_OSTREAM_STDOUT;
 	int  rc;
 
-	OTELC_FUNC("%p, \"%s\", \"%s\", <stream>, <exporter>, %p:%p, \"%s\"", ctx, OTELC_STR_ARG(desc), OTELC_STR_ARG(path), OTELC_DPTR_ARGS(err), OTELC_STR_ARG(name));
+	OTELC_FUNC("%p, \"%s\", \"%s\", <exporter>, %p:%p, \"%s\"", ctx, OTELC_STR_ARG(desc), OTELC_STR_ARG(path), OTELC_DPTR_ARGS(err), OTELC_STR_ARG(name));
 
 	if (OTEL_NULL(desc))
 		OTEL_ERR_RETURN_INT(OTEL_ERROR_MSG_EXPORTER_DESC);
@@ -429,22 +552,17 @@ static int otel_exporter_set_ostream_options(const struct otelc_ctx *ctx, const 
 		exporter = otel::make_unique_nothrow<C>(std::cerr);
 	}
 	else {
-		if (stream.is_open())
-			OTEL_ERR_RETURN_INT("'%s': the instance logfile stream is already in use", filename);
-
-		stream.open(filename, std::ios::out);
-		if (stream.fail())
+		auto file_exporter = otel::make_unique_nothrow<F>(filename);
+		if (OTEL_NULL(file_exporter))
+			OTEL_ERR_RETURN_INT("Unable to create ostream exporter");
+		else if (!file_exporter->is_open())
 			OTEL_ERR_RETURN_INT("'%s': %s", filename, otel_strerror(errno));
-		else
-			exporter = otel::make_unique_nothrow<C>(stream);
+
+		exporter = std::move(file_exporter);
 	}
 
-	if (OTEL_NULL(exporter)) {
-		if (stream.is_open())
-			stream.close();
-
+	if (OTEL_NULL(exporter))
 		OTEL_ERR_RETURN_INT("Unable to create ostream exporter");
-	}
 
 	OTELC_RETURN_INT(OTELC_RET_OK);
 }
@@ -510,7 +628,7 @@ int otel_tracer_exporter_create(struct otelc_tracer *tracer, std::unique_ptr<ote
 		OTEL_TRACER_ERROR(OTEL_TRACER_EXPORTER_NOT_SUPPORTED("In-Memory"));
 #endif /* HAVE_OTEL_EXPORTER_IN_MEMORY */
 	}
-	OTEL_EXPORTER_CASE_OSTREAM(TRACER, otel_exporter_trace::OStreamSpanExporter, tracer, path)
+	OTEL_EXPORTER_CASE_OSTREAM(TRACER, otel_exporter_trace::OStreamSpanExporter, otel_file_span_exporter, tracer, path)
 	OTEL_EXPORTER_CASE_OTLP_FILE(TRACER, OtlpFileExporter, tracer, path)
 	OTEL_EXPORTER_CASE_OTLP_GRPC(TRACER, OtlpGrpcExporter, tracer, path)
 	OTEL_EXPORTER_CASE_OTLP_HTTP(TRACER, OtlpHttpExporter, tracer, path)
@@ -625,7 +743,7 @@ int otel_meter_exporter_create(struct otelc_meter *meter, std::unique_ptr<otel_s
 		OTEL_METER_ERROR(OTEL_METER_EXPORTER_NOT_SUPPORTED("In-Memory"));
 #endif /* HAVE_OTEL_EXPORTER_IN_MEMORY */
 	}
-	OTEL_EXPORTER_CASE_OSTREAM(METER, otel_exporter_metrics::OStreamMetricExporter, meter, path)
+	OTEL_EXPORTER_CASE_OSTREAM(METER, otel_exporter_metrics::OStreamMetricExporter, otel_file_metric_exporter, meter, path)
 	OTEL_EXPORTER_CASE_OTLP_FILE(METER, OtlpFileMetricExporter, meter, path)
 	OTEL_EXPORTER_CASE_OTLP_GRPC(METER, OtlpGrpcMetricExporter, meter, path)
 	OTEL_EXPORTER_CASE_OTLP_HTTP(METER, OtlpHttpMetricExporter, meter, path)
@@ -737,7 +855,7 @@ int otel_logger_exporter_create(struct otelc_logger *logger, std::unique_ptr<ote
 	else if (strcasecmp(type, OTEL_EXPORTER_IN_MEMORY) == 0) {
 		OTEL_LOGGER_ERROR(OTEL_LOGGER_EXPORTER_NOT_SUPPORTED("In-Memory"));
 	}
-	OTEL_EXPORTER_CASE_OSTREAM(LOGGER, otel_exporter_logs::OStreamLogRecordExporter, logger, path)
+	OTEL_EXPORTER_CASE_OSTREAM(LOGGER, otel_exporter_logs::OStreamLogRecordExporter, otel_file_log_exporter, logger, path)
 	OTEL_EXPORTER_CASE_OTLP_FILE(LOGGER, OtlpFileLogRecordExporter, logger, path)
 	OTEL_EXPORTER_CASE_OTLP_GRPC(LOGGER, OtlpGrpcLogRecordExporter, logger, path)
 	OTEL_EXPORTER_CASE_OTLP_HTTP(LOGGER, OtlpHttpLogRecordExporter, logger, path)
