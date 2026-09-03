@@ -26,10 +26,11 @@ __CPLUSPLUS_DECL_BEGIN
 #define DEFAULT_CTX_NAME   "default"
 
 
-extern int tests_run, tests_passed, tests_failed;
+extern int tests_run, tests_passed, tests_failed, tests_skipped;
 
 
 void        test_report(const char *name, int result);
+void        test_skip(const char *name, const char *reason);
 void        test_usage(const char *program_name);
 int         test_init(int argc, char **argv, const char *banner, const char **cfg_file);
 const char *test_get_ctx_name(void);

@@ -337,6 +337,8 @@ static void test_tracer_destroy_order(const struct otelc_ctx *ctx1, const struct
 }
 
 
+#if OTELC_HAVE_EXPORTER_IN_MEMORY
+
 /***
  * NAME
  *   test_two_meters_coexist - tests that two meter instances coexist
@@ -394,6 +396,8 @@ static void test_two_meters_coexist(const struct otelc_ctx *ctx1, const struct o
 
 	test_report("two meters coexist with independent providers", result);
 }
+
+#endif /* OTELC_HAVE_EXPORTER_IN_MEMORY */
 
 
 /***
@@ -453,6 +457,8 @@ static void test_two_loggers_coexist(const struct otelc_ctx *ctx1, const struct 
 }
 
 
+#if OTELC_HAVE_EXPORTER_IN_MEMORY
+
 /***
  * NAME
  *   test_two_meters_distinct_instrument_maps - tests per-meter instrument maps
@@ -508,6 +514,8 @@ static void test_two_meters_distinct_instrument_maps(const struct otelc_ctx *ctx
 
 	test_report("two meters have distinct instrument maps", result);
 }
+
+#endif /* OTELC_HAVE_EXPORTER_IN_MEMORY */
 
 
 /***
@@ -1350,6 +1358,13 @@ int main(int argc, char **argv)
 	if (retval >= 0)
 		return retval;
 
+#if !OTELC_HAVE_EXPORTER_OSTREAM || !OTELC_HAVE_EXPORTER_OTLP_FILE
+	/* The configuration entries of this suite write through both exporters. */
+	test_skip("multi-instance tests", "the build lacks the ostream or the OTLP file exporter");
+
+	return test_summary(EX_OK);
+#endif
+
 	retval = EX_OK;
 	OTELC_LOG(stdout, "");
 
@@ -1392,8 +1407,14 @@ int main(int argc, char **argv)
 	test_tracer_destroy_order(ctx[0], ctx[1]);
 
 	OTELC_LOG(stdout, "[multi-meter]");
+#if OTELC_HAVE_EXPORTER_IN_MEMORY
 	test_two_meters_coexist(ctx[0], ctx[1]);
 	test_two_meters_distinct_instrument_maps(ctx[0], ctx[1]);
+#else
+	/* The secondary metrics entry exports into memory. */
+	test_skip("two meters coexist with independent providers", "the build lacks the in-memory exporter");
+	test_skip("two meters have distinct instrument maps", "the build lacks the in-memory exporter");
+#endif
 
 	OTELC_LOG(stdout, "[multi-logger]");
 	test_two_loggers_coexist(ctx[0], ctx[1]);
