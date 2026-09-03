@@ -309,6 +309,14 @@ int main(void)
 }
 ```
 
+The meter offers more than the example shows: `update_instrument_kv_n` records
+a value together with attributes, `get_instrument` finds the id of an existing
+instrument by name and type, `add_view` registers a view that must precede the
+instruments it applies to and survives a restart, `add_instrument_callback`
+and `remove_instrument_callback` manage the callbacks of observable instruments,
+and `otelc_meter_aggr_parse()` turns an aggregation name from a configuration
+into the matching enum value.
+
 ### Logging
 
 ```c
@@ -383,10 +391,13 @@ belong to the caller and go to `OTELC_SFREE()`.  The library context itself is
 opaque.
 
 Every signal instance also offers the same housekeeping operations: `enabled`
-reads the `enabled` flag and `set_enabled` switches it, so the instance can be
-silenced at runtime without touching the SDK; `set_flush_timeout` changes the
-destroy-time flush budget; `force_flush` pushes the buffered telemetry out and
-`shutdown` closes the provider, both within an optional timeout.
+reports whether a started instance has its `enabled` flag set, and `set_enabled`
+switches the flag.  What a cleared flag holds back depends on the signal: the
+tracer stops handing out spans and extracted contexts, the meter stops creating
+instruments and views while existing instruments keep recording, and the logger
+stops emitting records.  `set_flush_timeout` changes the destroy-time flush
+budget; `force_flush` pushes the buffered telemetry out and `shutdown` closes
+the provider, both within an optional timeout.
 
 Operations are invoked through the `ops` pointer:
 
@@ -444,7 +455,8 @@ pointer on success or `NULL` on failure.
 Two families depart from that pair, and both are recognized by testing for
 `OTELC_RET_ERROR` rather than for `OTELC_RET_OK`, since a false answer and a
 success share the value zero: the `enabled` predicates return true or false,
-and `create_instrument()` returns a non-negative instrument ID while
+while `create_instrument()`, `get_instrument()`, both update operations and
+`add_view()` return a non-negative instrument or view ID, and the state query
 `otelc_ctx_nstate_get()` returns an `otelc_ctx_name_t` value.
 
 ### Utility Types

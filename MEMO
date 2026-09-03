@@ -737,7 +737,7 @@ Access pattern analysis:
 
   Instrument and view handles:
     - Created once during initialization
-    - Rarely accessed after creation (cached by application)
+    - Looked up under the shared lock on every update (the update hot path)
     - Long-lived (process lifetime)
     - Configured with 1 shard (degenerates to single map)
 
@@ -1111,7 +1111,7 @@ Tracer per-instance state:
     std::vector<SpanExporter *>    exporters;
 
   Operations snapshot the impl member they need (tracer, provider or propagator)
-  and bail out when it is empty.  During shutdown the member is dropped first,
+  and bail out when it is empty.  During destroy the member is dropped first,
   stopping the callers that arrive after the drop; calls already in flight must
   be drained before destroy runs.  Every file-backed ostream exporter owns its
   stream (see the otel_file_*_exporter wrappers in src/exporter.cpp), so an
@@ -1332,14 +1332,17 @@ Meter per-instance state:
   Each meter owns an otel_meter_impl structure (include/meter.h) holding the
   SDK MeterProvider and Meter, the per-instance instrument and view handle
   maps, the case-folded instrument_index, plus the create_mutex serializing
-  instrument and view creation.  Operations snapshot the meter member and bail
-  out when it is empty; shutdown drops it first, like the tracer.
+  instrument and view creation.  Instrument creation and the enabled query take
+  a snapshot of the meter member and bail out when it is empty, add_view and
+  the flush operations snapshot the provider, and destroy drops both first,
+  like the tracer.
 
 Meter startup (otel_meter_start):
 
   The function builds the provider stack from YAML configuration:
 
-    1. Read scope name from YAML (/signals/metrics/scope_name).
+    1. Read the scope name and the optional flush_timeout budget from the YAML
+       entry resolved under /signals/metrics.
     2. Create one or more exporter-reader pairs.  When the YAML exporters key
        is a sequence, each entry is resolved by name and paired with a matching
        reader (or the last reader if fewer readers than exporters are specified).
@@ -1580,7 +1583,7 @@ Logger per-instance state:
 
   Each logger owns an otel_logger_impl structure (include/logger.h) holding
   the SDK LoggerProvider and Logger.  Operations snapshot the logger member and
-  bail out when it is empty; shutdown drops it first, like the tracer and meter.
+  bail out when it is empty; destroy drops it first, like the tracer and meter.
 
 Logger instance structure:
 
