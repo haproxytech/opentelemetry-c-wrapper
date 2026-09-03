@@ -913,7 +913,8 @@ Per-component lifecycle:
 
 Handle initialization:
 
-  Tracer initialization creates the span and span context handle maps:
+  Tracer creation (shared-handle build) or the first span operation of a thread
+  (thread-local build) creates the span and span context handle maps:
     - otel_span handle (otel_handle<otel_span_handle *>)
     - otel_span_context handle (otel_handle<otel_span_context_handle *>)
     Both are shared by all tracers and use the otel_handle_map_shards count
@@ -936,10 +937,10 @@ Handle initialization:
   In the dynamic builds the maps are allocated lazily: in the thread-local build
   a thread allocates its maps on its first span start or carrier extraction,
   while the shared-handle build allocates the process-wide maps on the first
-  tracer create, serializing concurrent first creates with a function-local
-  mutex.  A newly allocated map continues handle numbering from the point where
-  the previous map generation stopped, so a leftover span or span context from
-  a destroyed generation can never alias a live handle of a newer generation
+  tracer create after they were torn down, under the mutex that also guards the
+  tracer count.  A newly allocated map continues handle numbering from the point
+  where the previous map generation stopped, so a leftover span or span context
+  from a destroyed generation never aliases a live handle of a newer generation
   with the same index.
 
   In the thread-local build a span start or carrier extraction may allocate
@@ -949,10 +950,10 @@ Handle initialization:
   are allocated, ends the spans still present and frees the maps when the thread
   exits.  A tracer must nevertheless be destroyed on the thread that created it;
   otherwise the creating thread's count never reaches zero and the destroying
-  thread's count underflows.  In the shared-handle build the last destroy tears
-  the maps down outside the initialization mutex, so create and destroy calls
-  that may overlap in time must be serialized externally; concurrent creates
-  among themselves and concurrent destroys among themselves remain safe.
+  thread's count underflows.  In the shared-handle build a tracer count change
+  and the map allocation or teardown it triggers run under one mutex, held by
+  otel_tracer_register() and otel_tracer_unregister() in src/tracer.cpp, so
+  create and destroy calls may overlap freely.
 
 Span and span context lifecycle:
 

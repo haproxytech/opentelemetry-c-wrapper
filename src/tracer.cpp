@@ -31,6 +31,15 @@
  */
 static THREAD_LOCAL std::atomic<int> otel_tracer_count{0};
 
+#ifdef OTELC_USE_THREAD_SHARED_HANDLE
+/***
+ * Keeps a tracer count transition together with the map allocation or teardown
+ * it triggers, so a create can never observe maps that a concurrent last
+ * destroy is tearing down.
+ */
+static std::mutex otel_tracer_count_mutex;
+#endif
+
 
 #ifndef OTELC_USE_STATIC_HANDLE
 
@@ -142,8 +151,9 @@ static void otel_tracer_handle_reaper_touch(void)
  *   When OTELC_USE_STATIC_HANDLE is defined the maps are file-scope statics
  *   constructed by the C++ runtime and this function is not compiled in.  In
  *   the shared-handle dynamic build the maps are process-wide and are allocated
- *   on the first tracer create across the whole program; concurrent first calls
- *   are serialized with a function-local mutex.  In the thread-local dynamic
+ *   by the first tracer create since library load or since the last destroy
+ *   tore them down; the caller holds the tracer count mutex, which keeps the
+ *   allocation and the count increment together.  In the thread-local dynamic
  *   build the maps are per-thread and are allocated on the first call from each
  *   thread.  A newly allocated map continues handle numbering from the point
  *   where the previous map generation stopped.
@@ -154,12 +164,6 @@ static void otel_tracer_handle_reaper_touch(void)
 static int otel_tracer_handle_init(void)
 {
 	OTELC_FUNC("");
-
-#ifdef OTELC_USE_THREAD_SHARED_HANDLE
-	/* Without this, two racing first creates would both allocate a map. */
-	static std::mutex                 init_mutex;
-	const std::lock_guard<std::mutex> guard(init_mutex);
-#endif
 
 	const size_t num_shards = otel_handle_map_shards.load();
 
@@ -188,6 +192,147 @@ static int otel_tracer_handle_init(void)
 }
 
 #endif /* OTELC_USE_STATIC_HANDLE */
+
+
+/***
+ * NAME
+ *   otel_tracer_register - counts a new tracer in and prepares the handle maps
+ *
+ * SYNOPSIS
+ *   static int otel_tracer_register(void)
+ *
+ * ARGUMENTS
+ *   This function takes no arguments.
+ *
+ * DESCRIPTION
+ *   Increments the live tracer count and, in the shared-handle dynamic build,
+ *   allocates the process-wide handle maps when they do not exist.  Both steps
+ *   run under the tracer count mutex, so a create can neither observe maps that
+ *   a concurrent last destroy is tearing down nor register against maps that
+ *   such a destroy is about to remove.  In the thread-local build only the
+ *   calling thread's count is incremented; its maps are allocated by the first
+ *   span start or carrier extraction on that thread.
+ *
+ * RETURN VALUE
+ *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR if the handle maps
+ *   could not be allocated.
+ */
+static int otel_tracer_register(void)
+{
+	int retval = OTELC_RET_OK;
+
+	OTELC_FUNC("");
+
+	OTEL_LOCK_TRACER_COUNT();
+
+	(void)otel_tracer_count.fetch_add(1, std::memory_order_relaxed);
+
+#if defined(OTELC_USE_THREAD_SHARED_HANDLE) && !defined(OTELC_USE_STATIC_HANDLE)
+	retval = otel_tracer_handle_init();
+#endif
+
+	OTELC_RETURN_INT(retval);
+}
+
+
+/***
+ * NAME
+ *   otel_tracer_unregister - counts a tracer out and tears the maps down last
+ *
+ * SYNOPSIS
+ *   static void otel_tracer_unregister(void)
+ *
+ * ARGUMENTS
+ *   This function takes no arguments.
+ *
+ * DESCRIPTION
+ *   Decrements the live tracer count under the tracer count mutex and, when the
+ *   count reaches zero, ends every span still present in the span handle map so
+ *   the processor can still export it, deletes the remaining span and span
+ *   context handles and, in the dynamic builds, releases the maps themselves
+ *   while saving the identifier bases for the next map generation.  Holding
+ *   the mutex across the decision and the teardown keeps a concurrent create
+ *   from registering against maps that are about to disappear.
+ *
+ * RETURN VALUE
+ *   This function does not return a value.
+ */
+static void otel_tracer_unregister(void)
+{
+	otel_trace::EndSpanOptions end_options{};
+	struct timespec            ts_steady;
+
+	OTELC_FUNC("");
+
+	OTEL_LOCK_TRACER_COUNT();
+
+	/* The maps are torn down only by the last tracer in the count's scope. */
+	if ((otel_tracer_count.fetch_sub(1, std::memory_order_acq_rel) - 1) != 0)
+		OTELC_RETURN();
+
+	/***
+	 * End any remaining spans before destroying the maps so the
+	 * processor can still export them, and delete their handles:
+	 * for_each_locked() clears the shards afterwards, so a handle
+	 * not deleted in the callback would leak together with the
+	 * span and context it owns.
+	 */
+	(void)clock_gettime(CLOCK_MONOTONIC, &ts_steady);
+	end_options.end_steady_time = otel_steady_timestamp(timespec_to_duration(&ts_steady));
+
+	/* Clear span contexts and end all remaining spans. */
+#ifdef OTELC_USE_STATIC_HANDLE
+	OTEL_HANDLE(otel_span_context, clear_locked());
+
+	OTEL_HANDLE(otel_span, for_each_locked([&](int64_t id __maybe_unused, struct otel_span_handle *handle) {
+		if (OTEL_NULL(handle))
+			return;
+
+		if (!OTEL_NULL(handle->span)) {
+			handle->span->End(end_options);
+
+			OTELC_DBG(DEBUG, "span #%" PRId64 " ended implicitly", id);
+		}
+
+		delete handle;
+	}));
+
+#else
+
+	/* Clear and destroy the span context handle map. */
+	if (!OTEL_NULL(otel_span_context)) {
+		OTEL_HANDLE(otel_span_context, clear_locked());
+
+		otel_span_context_id_base = OTEL_HANDLE(otel_span_context, id.load());
+
+		delete otel_span_context;
+		otel_span_context = nullptr;
+	}
+
+	/* End all remaining spans, delete their handles and destroy the span handle map. */
+	if (!OTEL_NULL(otel_span)) {
+		OTEL_HANDLE(otel_span, for_each_locked([&](int64_t id __maybe_unused, struct otel_span_handle *handle) {
+			if (OTEL_NULL(handle))
+				return;
+
+			if (!OTEL_NULL(handle->span)) {
+				handle->span->End(end_options);
+
+				OTELC_DBG(DEBUG, "span #%" PRId64 " ended implicitly", id);
+			}
+
+			delete handle;
+		}));
+
+		otel_span_id_base = OTEL_HANDLE(otel_span, id.load());
+
+		delete otel_span;
+		otel_span = nullptr;
+	}
+#endif /* OTELC_USE_STATIC_HANDLE */
+
+	OTELC_RETURN();
+}
 
 
 /***
@@ -1154,9 +1299,6 @@ static int otel_tracer_start(struct otelc_tracer *tracer)
  */
 static void otel_tracer_destroy(struct otelc_tracer **tracer)
 {
-	otel_trace::EndSpanOptions end_options{};
-	struct timespec            ts_steady;
-
 	OTELC_FUNC("%p:%p", OTELC_DPTR_ARGS(tracer));
 
 	if (OTEL_NULL(tracer) || OTEL_NULL(*tracer))
@@ -1170,71 +1312,8 @@ static void otel_tracer_destroy(struct otelc_tracer **tracer)
 	if (!OTEL_NULL(impl))
 		impl->tracer = {};
 
-	/* The maps are torn down only by the last tracer in the count's scope. */
-	const int remaining = otel_tracer_count.fetch_sub(1, std::memory_order_acq_rel) - 1;
-
-	if (remaining == 0) {
-		/***
-		 * End any remaining spans before destroying the maps so the
-		 * processor can still export them, and delete their handles:
-		 * for_each_locked() clears the shards afterwards, so a handle
-		 * not deleted in the callback would leak together with the
-		 * span and context it owns.
-		 */
-		(void)clock_gettime(CLOCK_MONOTONIC, &ts_steady);
-		end_options.end_steady_time = otel_steady_timestamp(timespec_to_duration(&ts_steady));
-
-		/* Clear span contexts and end all remaining spans. */
-#ifdef OTELC_USE_STATIC_HANDLE
-		OTEL_HANDLE(otel_span_context, clear_locked());
-
-		OTEL_HANDLE(otel_span, for_each_locked([&](int64_t id __maybe_unused, struct otel_span_handle *handle) {
-			if (OTEL_NULL(handle))
-				return;
-
-			if (!OTEL_NULL(handle->span)) {
-				handle->span->End(end_options);
-
-				OTELC_DBG(DEBUG, "span #%" PRId64 " ended implicitly", id);
-			}
-
-			delete handle;
-		}));
-
-#else
-
-		/* Clear and destroy the span context handle map. */
-		if (!OTEL_NULL(otel_span_context)) {
-			OTEL_HANDLE(otel_span_context, clear_locked());
-
-			otel_span_context_id_base = OTEL_HANDLE(otel_span_context, id.load());
-
-			delete otel_span_context;
-			otel_span_context = nullptr;
-		}
-
-		/* End all remaining spans, delete their handles and destroy the span handle map. */
-		if (!OTEL_NULL(otel_span)) {
-			OTEL_HANDLE(otel_span, for_each_locked([&](int64_t id __maybe_unused, struct otel_span_handle *handle) {
-				if (OTEL_NULL(handle))
-					return;
-
-				if (!OTEL_NULL(handle->span)) {
-					handle->span->End(end_options);
-
-					OTELC_DBG(DEBUG, "span #%" PRId64 " ended implicitly", id);
-				}
-
-				delete handle;
-			}));
-
-			otel_span_id_base = OTEL_HANDLE(otel_span, id.load());
-
-			delete otel_span;
-			otel_span = nullptr;
-		}
-#endif /* OTELC_USE_STATIC_HANDLE */
-	}
+	/* The maps are torn down with the last tracer in the count's scope. */
+	otel_tracer_unregister();
 
 	/* No global SDK provider is touched. */
 	if (!OTEL_NULL(impl)) {
@@ -1345,7 +1424,9 @@ static struct otelc_tracer *otel_tracer_new(void)
  *   Allocates and initializes a new tracer instance by calling
  *   otel_tracer_new().  On failure, an error message may be written
  *   to *err if provided.  The supplied context must be non-NULL and
- *   is retained by the tracer for later configuration lookups.
+ *   is retained by the tracer for later configuration lookups.  The tracer
+ *   is counted in before its configuration prefix is resolved, so a failed
+ *   create balances the count through the destroy it performs.
  *   The destroy-time provider flush budget defaults to
  *   OTELC_FLUSH_TIMEOUT_MS and can be overridden via the YAML configuration
  *   or changed at runtime through the set_flush_timeout operation.
@@ -1377,25 +1458,17 @@ struct otelc_tracer *otelc_tracer_create(const struct otelc_ctx *ctx, char **err
 	 * lifetime of the shared span and span-context maps and must stay
 	 * non-negative.
 	 *
-	 * NOTE: in the thread-local-handle build (neither
-	 * OTELC_USE_THREAD_SHARED_HANDLE nor OTELC_USE_STATIC_HANDLE defined),
+	 * NOTE: whenever OTELC_USE_THREAD_SHARED_HANDLE is undefined,
 	 * otel_tracer_count is thread_local.  A tracer must therefore be
 	 * destroyed on the same thread that created it, otherwise the create
 	 * thread's count never reaches zero (its maps leak) and the destroy
 	 * thread's count underflows.
-	 *
-	 * NOTE: in the shared-handle build (OTELC_USE_THREAD_SHARED_HANDLE
-	 * defined), the span and span-context maps are process-wide.  The
-	 * teardown sequence at the end of otel_tracer_destroy runs without
-	 * holding the init_mutex used by otel_tracer_handle_init, so a create
-	 * racing with the last live tracer's destroy can observe a map pointer
-	 * that the teardown has freed but not yet set to nullptr.  Callers must
-	 * therefore serialise create and destroy externally; concurrent creates
-	 * among themselves and concurrent destroys among themselves remain
-	 * safe, only mixed create/destroy sequences need external
-	 * serialisation.
 	 */
-	(void)otel_tracer_count.fetch_add(1, std::memory_order_relaxed);
+	if (otel_tracer_register() == OTELC_RET_ERROR) {
+		otel_tracer_destroy(&retptr);
+
+		OTEL_ERR_RETURN_PTR(OTEL_ERROR_MSG_ENOMEM("tracer handle"));
+	}
 
 	if (yaml_resolve_prefix(ctx->fyd, err, OTEL_YAML_TRACER_PREFIX, ctx->name, OTEL_YAML_NAME_DEFAULT, &(retptr->yaml_prefix)) == OTELC_RET_ERROR) {
 		/* yaml_resolve_prefix already populated *err. */
@@ -1403,14 +1476,6 @@ struct otelc_tracer *otelc_tracer_create(const struct otelc_ctx *ctx, char **err
 
 		OTELC_RETURN_PTR(retptr);
 	}
-
-#if defined(OTELC_USE_THREAD_SHARED_HANDLE) && !defined(OTELC_USE_STATIC_HANDLE)
-	if (otel_tracer_handle_init() == OTELC_RET_ERROR) {
-		otel_tracer_destroy(&retptr);
-
-		OTEL_ERR_RETURN_PTR(OTEL_ERROR_MSG_ENOMEM("tracer handle"));
-	}
-#endif
 
 	OTELC_DBG_TRACER(OTEL, "tracer", retptr);
 
