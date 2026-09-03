@@ -891,7 +891,8 @@ Per-component lifecycle:
 
   Each component (tracer, meter, logger) follows an identical pattern: a public
   create function calls an internal factory, which allocates via OTELC_CALLOC,
-  zeroes the err and scope_name fields, and wires the ops vtable.
+  zeroes the err and scope_name fields, sets the enabled flag and the default
+  flush_timeout budget, allocates the impl state, and wires the ops vtable.
 
   Component    Public create            Factory          Destroy
   ---------    ---------------          ----------       ----------
@@ -901,12 +902,12 @@ Per-component lifecycle:
 
   Structures returned to callers:
 
-    otelc_tracer  (tracer.h)  -- err, scope_name, yaml_prefix, enabled, ops,
-                                 ctx, impl
-    otelc_meter   (meter.h)   -- err, scope_name, yaml_prefix, enabled, ops,
-                                 ctx, impl
+    otelc_tracer  (tracer.h)  -- err, scope_name, yaml_prefix, enabled,
+                                 flush_timeout, ops, ctx, impl
+    otelc_meter   (meter.h)   -- err, scope_name, yaml_prefix, enabled,
+                                 flush_timeout, ops, ctx, impl
     otelc_logger  (logger.h)  -- err, scope_name, yaml_prefix, min_severity,
-                                 enabled, ops, ctx, impl
+                                 enabled, flush_timeout, ops, ctx, impl
 
   The ops field in each structure is a vtable pointer that dispatches all
   subsequent operations through indirect function calls.
@@ -1107,20 +1108,22 @@ Tracer per-instance state:
     shared_ptr<TracerProvider>     provider;
     shared_ptr<Tracer>             tracer;
     shared_ptr<TextMapPropagator>  propagator;
+    std::vector<SpanExporter *>    exporters;
 
-  Operations snapshot the tracer member and bail out when it is empty.
-  During shutdown the member is dropped first, stopping the callers that arrive
-  after the drop; calls already in flight must be drained before destroy runs.
-  A file-backed ostream exporter owns its stream (see the otel_file_*_exporter
-  wrappers in src/exporter.cpp), so an instance holds no logfile of its own, may
-  carry several file exporters, and may reopen a file on a repeated start while
-  the previous pipeline still drains into the old stream.
+  Operations snapshot the impl member they need (tracer, provider or propagator)
+  and bail out when it is empty.  During shutdown the member is dropped first,
+  stopping the callers that arrive after the drop; calls already in flight must
+  be drained before destroy runs.  Every file-backed ostream exporter owns its
+  stream (see the otel_file_*_exporter wrappers in src/exporter.cpp), so an
+  instance holds no logfile of its own, may carry several file exporters, and
+  may reopen a file on a repeated start while the previous pipeline still drains
+  into the old stream.
 
 Tracer startup (otel_tracer_start):
 
   The function builds the provider stack bottom-up from YAML configuration:
 
-    1. Read scope name from YAML.
+    1. Read the scope name and the optional flush_timeout budget from YAML.
     2. Create sampler (AlwaysOn, AlwaysOff, TraceIdRatioBased, ParentBased or
        Composite).
     3. Create exporter-processor pairs.  YAML sequences allow multiple pairs;
@@ -1131,8 +1134,8 @@ Tracer startup (otel_tracer_start):
        OTELC_SCOPE_VERSION, OTELC_SCOPE_SCHEMA_URL).
     5. Set up propagator: either CompositePropagator (HttpTraceContext
        + BaggagePropagator) or HttpTraceContext alone.
-    6. Store the provider, tracer, and propagator in the per-instance impl;
-       no global SDK provider or propagator is registered.
+    6. Store the provider, tracer, propagator and exporter list in the impl of
+       the instance; no global SDK provider or propagator is registered.
 
 Span creation (otel_tracer_start_span_with_options):
 
