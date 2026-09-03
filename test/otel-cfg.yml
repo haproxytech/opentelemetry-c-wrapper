@@ -149,6 +149,10 @@ exporters:
     type:     ostream
     filename: __multi_metrics_b
 
+  exporter_metrics_restart:
+    type:     ostream
+    filename: __metrics_restart
+
   exporter_logs_otlp_file:
     type:           otlp_file
     thread_name:    "OTLP/file logs"
@@ -319,7 +323,7 @@ signals:
   traces:
     default:
       scope_name: "OTEL C wrapper - traces"
-#     flush_timeout: 5000
+      flush_timeout: 5000
       exporters:
         - exporter_traces_ostream
         - exporter_traces_otlp_file
@@ -374,7 +378,7 @@ signals:
   metrics:
     default:
       scope_name: "OTEL C wrapper - metrics"
-#     flush_timeout: 5000
+      flush_timeout: 5000
       exporters:
         - exporter_metrics_ostream
         - exporter_metrics_otlp_file
@@ -395,6 +399,15 @@ signals:
       readers:    reader_metrics
       providers:  provider_metrics
 
+    # The tests that start a meter of their own, or start one twice, use this
+    # entry; its own output file keeps their exports out of the main file and
+    # is read back to check the exported values.
+    restart:
+      scope_name: "OTEL C wrapper - metrics restart"
+      exporters:  exporter_metrics_restart
+      readers:    reader_metrics_multi
+      providers:  provider_metrics
+
     multi_a:
       scope_name: "OTEL C wrapper - metrics multi A"
       exporters:  exporter_metrics_multi_a
@@ -412,7 +425,7 @@ signals:
       scope_name: "OTEL C wrapper - logs"
       # Optional initial minimum log severity; TRACE (the default) allows all.
       min_severity: TRACE
-#     flush_timeout: 5000
+      flush_timeout: 5000
       exporters:
         - exporter_logs_ostream
         - exporter_logs_otlp_file
