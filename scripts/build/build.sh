@@ -14,7 +14,10 @@ SH_DIR="$(realpath "$(dirname "${0}")")"
 . "${SH_DIR}/common.sh"
 
 
+# OpenSSL can take the place of AWS-LC: swap the comment marks of the two rows.
+#
 "${SH_DIR}/aws-lc-AWS-LC-FIPS-3.0.0-install.sh"
+#"${SH_DIR}/openssl-3.5.8-install.sh"
 "${SH_DIR}/curl-curl-8_21_0-install.sh"
 "${SH_DIR}/abseil-cpp-20250512.1-install.sh"
 "${SH_DIR}/c-ares-1.34.5-install.sh"

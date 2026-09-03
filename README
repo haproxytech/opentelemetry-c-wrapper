@@ -185,10 +185,12 @@ Whichever script is used, the result should be the same.  However, the use of
 the build-bundle.sh script is recommended for this task.  It builds AWS-LC first
 and compiles curl against it, so that the whole bundle shares one SSL library;
 the curl of the system is left out on purpose, as it is tied to the SSL library
-of the system, and two such libraries in one process clash.  In a dynamic build
-zlib comes from the system, while a static build compiles it as well, as an
-archive installed into the prefix ahead of the SDK: the SDK takes zlib only as
-an installed package, and the system ships it as a shared object.
+of the system, and two such libraries in one process clash.  OpenSSL can take
+the place of AWS-LC when the comment marks of the two rows in build-bundle.sh
+and build.sh are swapped.  In a dynamic build zlib comes from the system, while
+a static build compiles it too, as an archive installed into the prefix ahead
+of the SDK, which takes zlib only as an installed package, and the system ships
+it as a shared object.
 
 Example of how to run an installation script:
 
@@ -205,9 +207,9 @@ defaults to /opt.  The second names the root directory of the installation, and
 setting it is not recommended, as it serves debugging alone.  The third one,
 which build-bundle.sh alone accepts, controls how the OTel C++ SDK libraries are
 built: "dynamic", the default, or "static".  With "static" the SDK is compiled
-as archives (.a) instead of shared objects (.so), and so are AWS-LC, zlib and
-curl; that is what linking the OTel C wrapper statically requires.  A prefix
-should be emptied before it is reused for the other lib-type.
+as archives (.a) instead of shared objects (.so), and so are the SSL library,
+zlib and curl; that is what linking the OTel C wrapper statically requires.  A
+prefix should be emptied before it is reused for the other lib-type.
 
 Finally, the installation script will verify that all library dependencies for
 programs in the <prefix>/bin directory and libraries in the <prefix>/lib
@@ -232,13 +234,15 @@ script recognizes the marker and builds such a tree as it stands: the bundled
 sources are used unchanged instead of being fetched again, and the dependencies
 that the tree carries are never taken from an installed package, so that a stale
 installation cannot hijack the build.  A static build takes the zlib and curl
-sources from the assembled tree as well.  AWS-LC is not part of that tree; its
-release tarball is used as it is when it is placed next to the scripts.
+sources from the assembled tree as well.  The SSL library is not part of that
+tree; its release tarball is used as it is when placed next to the scripts.
 
 List of (almost) all dependencies for the OTel C++ client package:
 
   * AWS libcrypto (AWS-LC)
     https://github.com/aws/aws-lc
+  * OpenSSL - a TLS/SSL and crypto library, usable in place of AWS-LC
+    https://github.com/openssl/openssl
   * curl - a command-line tool for transferring data from or to a server using
     URLs
     https://github.com/curl/curl
