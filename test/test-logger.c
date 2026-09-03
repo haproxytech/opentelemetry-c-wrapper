@@ -15,6 +15,8 @@
  */
 #include "test-util.h"
 
+#define LOGS_RESTART_FILE   "__logs_restart"
+
 
 /***
  * NAME
@@ -138,7 +140,7 @@ static void test_log_basic(struct otelc_logger *logger)
 {
 	int retval = TEST_FAIL;
 
-	if (OTELC_OPS(logger, log, OTELC_LOG_SEVERITY_INFO, 0, NULL, NULL, 0, NULL, 0, 0, NULL, NULL, NULL, 0, "basic log message") >= 0)
+	if (OTELC_OPS(logger, log, OTELC_LOG_SEVERITY_INFO, 0, NULL, NULL, 0, NULL, 0, 0, NULL, NULL, NULL, 0, "basic log message") > 0)
 		retval = TEST_PASS;
 
 	test_report("log basic INFO", retval);
@@ -165,7 +167,7 @@ static void test_log_severity_trace(struct otelc_logger *logger)
 {
 	int retval = TEST_FAIL;
 
-	if (OTELC_OPS(logger, log, OTELC_LOG_SEVERITY_TRACE, 0, NULL, NULL, 0, NULL, 0, 0, NULL, NULL, NULL, 0, "trace message") >= 0)
+	if (OTELC_OPS(logger, log, OTELC_LOG_SEVERITY_TRACE, 0, NULL, NULL, 0, NULL, 0, 0, NULL, NULL, NULL, 0, "trace message") > 0)
 		retval = TEST_PASS;
 
 	test_report("log TRACE severity", retval);
@@ -192,7 +194,7 @@ static void test_log_severity_debug(struct otelc_logger *logger)
 {
 	int retval = TEST_FAIL;
 
-	if (OTELC_OPS(logger, log, OTELC_LOG_SEVERITY_DEBUG, 0, NULL, NULL, 0, NULL, 0, 0, NULL, NULL, NULL, 0, "debug message") >= 0)
+	if (OTELC_OPS(logger, log, OTELC_LOG_SEVERITY_DEBUG, 0, NULL, NULL, 0, NULL, 0, 0, NULL, NULL, NULL, 0, "debug message") > 0)
 		retval = TEST_PASS;
 
 	test_report("log DEBUG severity", retval);
@@ -219,7 +221,7 @@ static void test_log_severity_warn(struct otelc_logger *logger)
 {
 	int retval = TEST_FAIL;
 
-	if (OTELC_OPS(logger, log, OTELC_LOG_SEVERITY_WARN, 0, NULL, NULL, 0, NULL, 0, 0, NULL, NULL, NULL, 0, "warning message") >= 0)
+	if (OTELC_OPS(logger, log, OTELC_LOG_SEVERITY_WARN, 0, NULL, NULL, 0, NULL, 0, 0, NULL, NULL, NULL, 0, "warning message") > 0)
 		retval = TEST_PASS;
 
 	test_report("log WARN severity", retval);
@@ -246,7 +248,7 @@ static void test_log_severity_error(struct otelc_logger *logger)
 {
 	int retval = TEST_FAIL;
 
-	if (OTELC_OPS(logger, log, OTELC_LOG_SEVERITY_ERROR, 0, NULL, NULL, 0, NULL, 0, 0, NULL, NULL, NULL, 0, "error message") >= 0)
+	if (OTELC_OPS(logger, log, OTELC_LOG_SEVERITY_ERROR, 0, NULL, NULL, 0, NULL, 0, 0, NULL, NULL, NULL, 0, "error message") > 0)
 		retval = TEST_PASS;
 
 	test_report("log ERROR severity", retval);
@@ -273,7 +275,7 @@ static void test_log_severity_fatal(struct otelc_logger *logger)
 {
 	int retval = TEST_FAIL;
 
-	if (OTELC_OPS(logger, log, OTELC_LOG_SEVERITY_FATAL, 0, NULL, NULL, 0, NULL, 0, 0, NULL, NULL, NULL, 0, "fatal message") >= 0)
+	if (OTELC_OPS(logger, log, OTELC_LOG_SEVERITY_FATAL, 0, NULL, NULL, 0, NULL, 0, 0, NULL, NULL, NULL, 0, "fatal message") > 0)
 		retval = TEST_PASS;
 
 	test_report("log FATAL severity", retval);
@@ -303,7 +305,7 @@ static void test_log_with_explicit_ids(struct otelc_logger *logger)
 	static const uint8_t trace_id[OTELC_TRACE_ID_SIZE] = { 0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x70, 0x80, 0x90, 0xa0, 0xb0, 0xc0, 0xd0, 0xe0, 0xf0, 0x01 };
 	int                  retval = TEST_FAIL;
 
-	if (OTELC_OPS(logger, log, OTELC_LOG_SEVERITY_INFO, 0, NULL, span_id, sizeof(span_id), trace_id, sizeof(trace_id), 0x01, NULL, NULL, NULL, 0, "log with explicit IDs") >= 0)
+	if (OTELC_OPS(logger, log, OTELC_LOG_SEVERITY_INFO, 0, NULL, span_id, sizeof(span_id), trace_id, sizeof(trace_id), 0x01, NULL, NULL, NULL, 0, "log with explicit IDs") > 0)
 		retval = TEST_PASS;
 
 	test_report("log with explicit span/trace IDs", retval);
@@ -363,7 +365,7 @@ static void test_log_with_timestamp(struct otelc_logger *logger)
 
 	(void)clock_gettime(CLOCK_REALTIME, &ts);
 
-	if (OTELC_OPS(logger, log, OTELC_LOG_SEVERITY_INFO, 0, NULL, NULL, 0, NULL, 0, 0, &ts, NULL, NULL, 0, "log with timestamp") >= 0)
+	if (OTELC_OPS(logger, log, OTELC_LOG_SEVERITY_INFO, 0, NULL, NULL, 0, NULL, 0, 0, &ts, NULL, NULL, 0, "log with timestamp") > 0)
 		retval = TEST_PASS;
 
 	test_report("log with timestamp", retval);
@@ -397,7 +399,7 @@ static void test_log_with_attributes(struct otelc_logger *logger)
 	};
 	int retval = TEST_FAIL;
 
-	if (OTELC_OPS(logger, log, OTELC_LOG_SEVERITY_INFO, 0, NULL, NULL, 0, NULL, 0, 0, NULL, NULL, attr, OTELC_TABLESIZE(attr), "log with attributes") >= 0)
+	if (OTELC_OPS(logger, log, OTELC_LOG_SEVERITY_INFO, 0, NULL, NULL, 0, NULL, 0, 0, NULL, NULL, attr, OTELC_TABLESIZE(attr), "log with attributes") > 0)
 		retval = TEST_PASS;
 
 	test_report("log with attributes", retval);
@@ -434,7 +436,7 @@ static void test_log_with_all_options(struct otelc_logger *logger)
 
 	(void)clock_gettime(CLOCK_REALTIME, &ts);
 
-	if (OTELC_OPS(logger, log, OTELC_LOG_SEVERITY_WARN, 0, NULL, span_id, sizeof(span_id), trace_id, sizeof(trace_id), 0x01, &ts, NULL, attr, OTELC_TABLESIZE(attr), "full options: item=%d", 7) >= 0)
+	if (OTELC_OPS(logger, log, OTELC_LOG_SEVERITY_WARN, 0, NULL, span_id, sizeof(span_id), trace_id, sizeof(trace_id), 0x01, &ts, NULL, attr, OTELC_TABLESIZE(attr), "full options: item=%d", 7) > 0)
 		retval = TEST_PASS;
 
 	test_report("log with all options", retval);
@@ -462,7 +464,7 @@ static void test_log_with_event_id(struct otelc_logger *logger)
 {
 	int retval = TEST_FAIL;
 
-	if (OTELC_OPS(logger, log, OTELC_LOG_SEVERITY_INFO, 1001, "user.login", NULL, 0, NULL, 0, 0, NULL, NULL, NULL, 0, "User logged in") >= 0)
+	if (OTELC_OPS(logger, log, OTELC_LOG_SEVERITY_INFO, 1001, "user.login", NULL, 0, NULL, 0, 0, NULL, NULL, NULL, 0, "User logged in") > 0)
 		retval = TEST_PASS;
 
 	test_report("log with event_id", retval);
@@ -488,14 +490,35 @@ static void test_log_with_event_id(struct otelc_logger *logger)
  */
 static void test_logger_enabled(struct otelc_logger *logger)
 {
-	int rc, retval = TEST_PASS;
+	const otelc_log_severity_t saved = logger->min_severity;
+	int                        retval = TEST_PASS;
 
-	rc = OTELC_OPS(logger, enabled, OTELC_LOG_SEVERITY_INFO);
-	if (rc == OTELC_RET_ERROR)
+	/* The threshold is TRACE, so every level passes. */
+	if (OTELC_OPS(logger, enabled, OTELC_LOG_SEVERITY_INFO) != true)
+		retval = TEST_FAIL;
+	if (OTELC_OPS(logger, enabled, OTELC_LOG_SEVERITY_FATAL) != true)
 		retval = TEST_FAIL;
 
-	rc = OTELC_OPS(logger, enabled, OTELC_LOG_SEVERITY_FATAL);
-	if (rc == OTELC_RET_ERROR)
+	/* A raised threshold shows in the query and in the stored value. */
+	if (OTELC_OPS(logger, set_min_severity, OTELC_LOG_SEVERITY_WARN) != OTELC_RET_OK)
+		retval = TEST_FAIL;
+	if (OTELC_OPS(logger, enabled, OTELC_LOG_SEVERITY_INFO) != false)
+		retval = TEST_FAIL;
+	if (OTELC_OPS(logger, enabled, OTELC_LOG_SEVERITY_ERROR) != true)
+		retval = TEST_FAIL;
+	if (logger->min_severity != OTELC_LOG_SEVERITY_WARN)
+		retval = TEST_FAIL;
+
+	/* An invalid severity is an error for the query and the setter alike. */
+	OTELC_SFREE_CLEAR(logger->err);
+	if ((OTELC_OPS(logger, enabled, (otelc_log_severity_t)99) != OTELC_RET_ERROR) || _NULL(logger->err))
+		retval = TEST_FAIL;
+	if (OTELC_OPS(logger, set_min_severity, (otelc_log_severity_t)99) != OTELC_RET_ERROR)
+		retval = TEST_FAIL;
+	if (OTELC_OPS(logger, set_min_severity, OTELC_LOG_SEVERITY_INVALID) != OTELC_RET_ERROR)
+		retval = TEST_FAIL;
+
+	if (OTELC_OPS(logger, set_min_severity, saved) != OTELC_RET_OK)
 		retval = TEST_FAIL;
 
 	test_report("logger enabled", retval);
@@ -524,7 +547,7 @@ static void test_log_span_basic(struct otelc_logger *logger, const struct otelc_
 {
 	int retval = TEST_FAIL;
 
-	if (OTELC_OPS(logger, log_span, OTELC_LOG_SEVERITY_INFO, 0, NULL, span, NULL, NULL, NULL, 0, "log with span context") >= 0)
+	if (OTELC_OPS(logger, log_span, OTELC_LOG_SEVERITY_INFO, 0, NULL, span, NULL, NULL, NULL, 0, "log with span context") > 0)
 		retval = TEST_PASS;
 
 	test_report("log_span basic", retval);
@@ -557,7 +580,7 @@ static void test_log_span_with_attributes(struct otelc_logger *logger, const str
 	};
 	int retval = TEST_FAIL;
 
-	if (OTELC_OPS(logger, log_span, OTELC_LOG_SEVERITY_DEBUG, 0, NULL, span, NULL, NULL, attr, OTELC_TABLESIZE(attr), "span log with attrs") >= 0)
+	if (OTELC_OPS(logger, log_span, OTELC_LOG_SEVERITY_DEBUG, 0, NULL, span, NULL, NULL, attr, OTELC_TABLESIZE(attr), "span log with attrs") > 0)
 		retval = TEST_PASS;
 
 	test_report("log_span with attributes", retval);
@@ -589,7 +612,7 @@ static void test_log_span_with_timestamp(struct otelc_logger *logger, const stru
 
 	(void)clock_gettime(CLOCK_REALTIME, &ts);
 
-	if (OTELC_OPS(logger, log_span, OTELC_LOG_SEVERITY_ERROR, 0, NULL, span, &ts, NULL, NULL, 0, "span log with timestamp") >= 0)
+	if (OTELC_OPS(logger, log_span, OTELC_LOG_SEVERITY_ERROR, 0, NULL, span, &ts, NULL, NULL, 0, "span log with timestamp") > 0)
 		retval = TEST_PASS;
 
 	test_report("log_span with timestamp", retval);
@@ -617,7 +640,7 @@ static void test_log_span_null(struct otelc_logger *logger)
 {
 	int retval = TEST_FAIL;
 
-	if (OTELC_OPS(logger, log_span, OTELC_LOG_SEVERITY_INFO, 0, NULL, NULL, NULL, NULL, NULL, 0, "log_span with NULL span") >= 0)
+	if (OTELC_OPS(logger, log_span, OTELC_LOG_SEVERITY_INFO, 0, NULL, NULL, NULL, NULL, NULL, 0, "log_span with NULL span") > 0)
 		retval = TEST_PASS;
 
 	test_report("log_span with NULL span", retval);
@@ -683,7 +706,7 @@ static void test_log_span_with_all_options(struct otelc_logger *logger, const st
 
 	(void)clock_gettime(CLOCK_REALTIME, &ts);
 
-	if (OTELC_OPS(logger, log_span, OTELC_LOG_SEVERITY_WARN, 0, NULL, span, &ts, NULL, attr, OTELC_TABLESIZE(attr), "full span options: item=%d", 7) >= 0)
+	if (OTELC_OPS(logger, log_span, OTELC_LOG_SEVERITY_WARN, 0, NULL, span, &ts, NULL, attr, OTELC_TABLESIZE(attr), "full span options: item=%d", 7) > 0)
 		retval = TEST_PASS;
 
 	test_report("log_span with all options", retval);
@@ -712,7 +735,7 @@ static void test_log_span_with_event_id(struct otelc_logger *logger, const struc
 {
 	int retval = TEST_FAIL;
 
-	if (OTELC_OPS(logger, log_span, OTELC_LOG_SEVERITY_INFO, 2001, "request.complete", span, NULL, NULL, NULL, 0, "Request completed") >= 0)
+	if (OTELC_OPS(logger, log_span, OTELC_LOG_SEVERITY_INFO, 2001, "request.complete", span, NULL, NULL, NULL, 0, "Request completed") > 0)
 		retval = TEST_PASS;
 
 	test_report("log_span with event_id", retval);
@@ -985,11 +1008,338 @@ static void test_shutdown(struct otelc_logger *logger)
 	const struct timespec timeout = { .tv_sec = 5, .tv_nsec = 0 };
 	int                   retval = TEST_FAIL;
 
-	if ((OTELC_OPS(logger, shutdown, NULL) == OTELC_RET_OK) &&
-	    (OTELC_OPS(logger, shutdown, &timeout) == OTELC_RET_OK))
+	if (OTELC_OPS(logger, shutdown, NULL) == OTELC_RET_OK)
 		retval = TEST_PASS;
 
+	/* A repeated shutdown's outcome is the SDK's; it only has to return. */
+	(void)OTELC_OPS(logger, shutdown, &timeout);
+
 	test_report("shutdown", retval);
+}
+
+
+/***
+ * NAME
+ *   test_logger_create_null_ctx - tests logger creation without a context
+ *
+ * SYNOPSIS
+ *   static void test_logger_create_null_ctx(void)
+ *
+ * ARGUMENTS
+ *   This function takes no arguments.
+ *
+ * DESCRIPTION
+ *   Verifies that otelc_logger_create() refuses a NULL context and reports the
+ *   refusal through the err argument.
+ *
+ * RETURN VALUE
+ *   This function does not return a value.
+ */
+static void test_logger_create_null_ctx(void)
+{
+	struct otelc_logger *logger;
+	char                *err = NULL;
+	int                  retval = TEST_FAIL;
+
+	logger = otelc_logger_create(NULL, &err);
+	if (_NULL(logger) && _nNULL(err))
+		retval = TEST_PASS;
+
+	if (_nNULL(logger))
+		OTELC_OPSR(logger, destroy);
+	OTELC_SFREE(err);
+
+	test_report("logger create with NULL context", retval);
+}
+
+
+/***
+ * NAME
+ *   test_logger_unstarted - tests the operations of a logger never started
+ *
+ * SYNOPSIS
+ *   static void test_logger_unstarted(struct otelc_ctx *ctx)
+ *
+ * ARGUMENTS
+ *   ctx - library context providing the YAML configuration
+ *
+ * DESCRIPTION
+ *   Verifies that a logger that was created but never started reports the
+ *   enabled query, the severity setter, both record variants, force_flush()
+ *   and shutdown() as errors, leaving a message behind, and that it can still
+ *   be destroyed.
+ *
+ * RETURN VALUE
+ *   This function does not return a value.
+ */
+static void test_logger_unstarted(struct otelc_ctx *ctx)
+{
+	const struct otelc_value  body = { .u_type = OTELC_VALUE_INT64, .u.value_int64 = INT64_C(1) };
+	struct otelc_logger      *logger;
+	char                     *err = NULL;
+	int                       rc, retval = TEST_PASS;
+
+	logger = otelc_logger_create(ctx, &err);
+	if (_NULL(logger)) {
+		retval = TEST_FAIL;
+	} else {
+		if (OTELC_OPS(logger, enabled, OTELC_LOG_SEVERITY_INFO) != OTELC_RET_ERROR)
+			retval = TEST_FAIL;
+		if (OTELC_OPS(logger, set_min_severity, OTELC_LOG_SEVERITY_WARN) != OTELC_RET_ERROR)
+			retval = TEST_FAIL;
+
+		rc = OTELC_OPS(logger, log, OTELC_LOG_SEVERITY_INFO, 0, NULL, NULL, 0, NULL, 0, 0, NULL, NULL, NULL, 0, "unstarted");
+		if (rc != OTELC_RET_ERROR)
+			retval = TEST_FAIL;
+
+		rc = OTELC_OPS(logger, log_body, OTELC_LOG_SEVERITY_INFO, 0, NULL, NULL, 0, NULL, 0, 0, NULL, NULL, NULL, 0, &body);
+		if (rc != OTELC_RET_ERROR)
+			retval = TEST_FAIL;
+
+		if (OTELC_OPS(logger, force_flush, NULL) != OTELC_RET_ERROR)
+			retval = TEST_FAIL;
+		if (OTELC_OPS(logger, shutdown, NULL) != OTELC_RET_ERROR)
+			retval = TEST_FAIL;
+		if (_NULL(logger->err))
+			retval = TEST_FAIL;
+
+		OTELC_OPSR(logger, destroy);
+	}
+
+	OTELC_SFREE(err);
+
+	test_report("logger operations before start", retval);
+}
+
+
+/***
+ * NAME
+ *   test_log_invalid_args - tests the tolerated and refused record arguments
+ *
+ * SYNOPSIS
+ *   static void test_log_invalid_args(struct otelc_logger *logger)
+ *
+ * ARGUMENTS
+ *   logger - logger instance
+ *
+ * DESCRIPTION
+ *   Verifies that a formatted record is still emitted with identifier buffers
+ *   shorter than the SDK size, with an attribute count but no array, and with
+ *   an event id without a name together with an observed timestamp, and that
+ *   a body record accepts the null, unsigned and data value types while an
+ *   unknown value type is refused with a message.
+ *
+ * RETURN VALUE
+ *   This function does not return a value.
+ */
+static void test_log_invalid_args(struct otelc_logger *logger)
+{
+	static const uint8_t     sid[4] = { 0x01, 0x02, 0x03, 0x04 };
+	static char              data_str[] = "data body";
+	const struct otelc_value body_null = { .u_type = OTELC_VALUE_NULL };
+	const struct otelc_value body_u64 = { .u_type = OTELC_VALUE_UINT64, .u.value_uint64 = UINT64_C(7) };
+	const struct otelc_value body_data = { .u_type = OTELC_VALUE_DATA, .u.value_data = data_str };
+	const struct otelc_value body_bad = { .u_type = (otelc_value_type_t)99 };
+	const struct timespec    ts_obs = { .tv_sec = 1, .tv_nsec = 0 };
+	int                      rc, retval = TEST_PASS;
+
+	/* Identifier buffers shorter than the SDK size leave the correlation empty. */
+	rc = OTELC_OPS(logger, log, OTELC_LOG_SEVERITY_INFO, 0, NULL, sid, 4, sid, 4, 0, NULL, NULL, NULL, 0, "short ids");
+	if (rc <= 0)
+		retval = TEST_FAIL;
+
+	/* An attribute count without an array is ignored. */
+	rc = OTELC_OPS(logger, log, OTELC_LOG_SEVERITY_INFO, 0, NULL, NULL, 0, NULL, 0, 0, NULL, NULL, NULL, 3, "no attributes");
+	if (rc <= 0)
+		retval = TEST_FAIL;
+
+	/* An event id without a name and an observed timestamp are accepted. */
+	rc = OTELC_OPS(logger, log, OTELC_LOG_SEVERITY_INFO, 77, NULL, NULL, 0, NULL, 0, 0, NULL, &ts_obs, NULL, 0, "event without name");
+	if (rc <= 0)
+		retval = TEST_FAIL;
+
+	rc = OTELC_OPS(logger, log_body, OTELC_LOG_SEVERITY_INFO, 0, NULL, NULL, 0, NULL, 0, 0, NULL, NULL, NULL, 0, &body_null);
+	if (rc != OTELC_RET_OK)
+		retval = TEST_FAIL;
+	rc = OTELC_OPS(logger, log_body, OTELC_LOG_SEVERITY_INFO, 0, NULL, NULL, 0, NULL, 0, 0, NULL, NULL, NULL, 0, &body_u64);
+	if (rc != OTELC_RET_OK)
+		retval = TEST_FAIL;
+	rc = OTELC_OPS(logger, log_body, OTELC_LOG_SEVERITY_INFO, 0, NULL, NULL, 0, NULL, 0, 0, NULL, NULL, NULL, 0, &body_data);
+	if (rc != OTELC_RET_OK)
+		retval = TEST_FAIL;
+
+	OTELC_SFREE_CLEAR(logger->err);
+	rc = OTELC_OPS(logger, log_body, OTELC_LOG_SEVERITY_INFO, 0, NULL, NULL, 0, NULL, 0, 0, NULL, NULL, NULL, 0, &body_bad);
+	if ((rc != OTELC_RET_ERROR) || _NULL(logger->err))
+		retval = TEST_FAIL;
+
+	test_report("log with unusual arguments", retval);
+}
+
+
+/***
+ * NAME
+ *   test_logger_set_enabled - tests the runtime switch of the logger
+ *
+ * SYNOPSIS
+ *   static void test_logger_set_enabled(struct otelc_logger *logger)
+ *
+ * ARGUMENTS
+ *   logger - logger instance
+ *
+ * DESCRIPTION
+ *   Verifies that clearing the wrapper flag with set_enabled() makes the
+ *   enabled query report false and makes every record variant return zero
+ *   without emitting, and that setting the flag again restores emission.
+ *
+ * RETURN VALUE
+ *   This function does not return a value.
+ */
+static void test_logger_set_enabled(struct otelc_logger *logger)
+{
+	const struct otelc_value body = { .u_type = OTELC_VALUE_INT64, .u.value_int64 = INT64_C(1) };
+	int                      rc, retval = TEST_PASS;
+
+	if (OTELC_OPS(logger, set_enabled, false) != OTELC_RET_OK)
+		retval = TEST_FAIL;
+	if (OTELC_OPS(logger, enabled, OTELC_LOG_SEVERITY_INFO) != false)
+		retval = TEST_FAIL;
+
+	rc = OTELC_OPS(logger, log, OTELC_LOG_SEVERITY_INFO, 0, NULL, NULL, 0, NULL, 0, 0, NULL, NULL, NULL, 0, "disabled");
+	if (rc != 0)
+		retval = TEST_FAIL;
+	rc = OTELC_OPS(logger, log_span, OTELC_LOG_SEVERITY_INFO, 0, NULL, NULL, NULL, NULL, NULL, 0, "disabled");
+	if (rc != 0)
+		retval = TEST_FAIL;
+	rc = OTELC_OPS(logger, log_body, OTELC_LOG_SEVERITY_INFO, 0, NULL, NULL, 0, NULL, 0, 0, NULL, NULL, NULL, 0, &body);
+	if (rc != 0)
+		retval = TEST_FAIL;
+
+	if (OTELC_OPS(logger, set_enabled, true) != OTELC_RET_OK)
+		retval = TEST_FAIL;
+	if (OTELC_OPS(logger, enabled, OTELC_LOG_SEVERITY_INFO) != true)
+		retval = TEST_FAIL;
+
+	rc = OTELC_OPS(logger, log, OTELC_LOG_SEVERITY_INFO, 0, NULL, NULL, 0, NULL, 0, 0, NULL, NULL, NULL, 0, "enabled again");
+	if (rc <= 0)
+		retval = TEST_FAIL;
+
+	test_report("logger set_enabled", retval);
+}
+
+
+/***
+ * NAME
+ *   test_logger_set_flush_timeout - tests the destroy-time flush budget
+ *
+ * SYNOPSIS
+ *   static void test_logger_set_flush_timeout(struct otelc_ctx *ctx)
+ *
+ * ARGUMENTS
+ *   ctx - library context whose configuration allows a second logger
+ *
+ * DESCRIPTION
+ *   Starts a logger of its own and verifies that the budget starts at the
+ *   library default, that set_flush_timeout() rejects a negative value and a
+ *   value above OTELC_FLUSH_TIMEOUT_MS_MAX with a message, and that it stores
+ *   the maximum and zero.  The logger is destroyed with a zero budget after a
+ *   record was emitted, which takes the exporter shutdown path of destroy.
+ *
+ * RETURN VALUE
+ *   This function does not return a value.
+ */
+static void test_logger_set_flush_timeout(struct otelc_ctx *ctx)
+{
+	struct otelc_logger *logger;
+	char                *err = NULL;
+	int                  rc, retval = TEST_PASS;
+
+	logger = otelc_logger_create(ctx, &err);
+	if (_NULL(logger) || (OTELC_OPS(logger, start) != OTELC_RET_OK)) {
+		retval = TEST_FAIL;
+	} else {
+		if (logger->flush_timeout != OTELC_FLUSH_TIMEOUT_MS)
+			retval = TEST_FAIL;
+		if ((OTELC_OPS(logger, set_flush_timeout, -1) != OTELC_RET_ERROR) || _NULL(logger->err))
+			retval = TEST_FAIL;
+		if (OTELC_OPS(logger, set_flush_timeout, OTELC_FLUSH_TIMEOUT_MS_MAX + 1) != OTELC_RET_ERROR)
+			retval = TEST_FAIL;
+		if (OTELC_OPS(logger, set_flush_timeout, OTELC_FLUSH_TIMEOUT_MS_MAX) != OTELC_RET_OK)
+			retval = TEST_FAIL;
+		if (logger->flush_timeout != OTELC_FLUSH_TIMEOUT_MS_MAX)
+			retval = TEST_FAIL;
+		if ((OTELC_OPS(logger, set_flush_timeout, 0) != OTELC_RET_OK) || (logger->flush_timeout != 0))
+			retval = TEST_FAIL;
+
+		/* An emitted record gives the zero-budget destroy something to drop. */
+		rc = OTELC_OPS(logger, log, OTELC_LOG_SEVERITY_INFO, 0, NULL, NULL, 0, NULL, 0, 0, NULL, NULL, NULL, 0, "zero budget");
+		if (rc <= 0)
+			retval = TEST_FAIL;
+	}
+
+	if (_nNULL(logger))
+		OTELC_OPSR(logger, destroy);
+	OTELC_SFREE(err);
+
+	test_report("logger set_flush_timeout", retval);
+}
+
+
+/***
+ * NAME
+ *   test_logger_restart_and_export - tests a repeated start and the exported records
+ *
+ * SYNOPSIS
+ *   static void test_logger_restart_and_export(struct otelc_ctx *ctx)
+ *
+ * ARGUMENTS
+ *   ctx - library context whose configuration writes to a file of its own
+ *
+ * DESCRIPTION
+ *   Starts a logger of its own twice and then emits a formatted record, a
+ *   typed body record and a record with a NULL span.  After the destroy the
+ *   exporter file is read back and must contain the body of each record,
+ *   which shows that a restarted logger emits through its new pipeline and
+ *   that every record variant reaches the exporter.
+ *
+ * RETURN VALUE
+ *   This function does not return a value.
+ */
+static void test_logger_restart_and_export(struct otelc_ctx *ctx)
+{
+	const struct otelc_value  body = { .u_type = OTELC_VALUE_INT64, .u.value_int64 = INT64_C(424242) };
+	struct otelc_logger      *logger;
+	char                     *err = NULL;
+	int                       rc, retval = TEST_PASS;
+
+	logger = otelc_logger_create(ctx, &err);
+	if (_NULL(logger) || (OTELC_OPS(logger, start) != OTELC_RET_OK) || (OTELC_OPS(logger, start) != OTELC_RET_OK)) {
+		retval = TEST_FAIL;
+	} else {
+		rc = OTELC_OPS(logger, log, OTELC_LOG_SEVERITY_INFO, 0, NULL, NULL, 0, NULL, 0, 0, NULL, NULL, NULL, 0, "restart marker %d", 7);
+		if (rc <= 0)
+			retval = TEST_FAIL;
+		rc = OTELC_OPS(logger, log_body, OTELC_LOG_SEVERITY_INFO, 0, NULL, NULL, 0, NULL, 0, 0, NULL, NULL, NULL, 0, &body);
+		if (rc != OTELC_RET_OK)
+			retval = TEST_FAIL;
+		rc = OTELC_OPS(logger, log_span, OTELC_LOG_SEVERITY_WARN, 0, NULL, NULL, NULL, NULL, NULL, 0, "after restart");
+		if (rc <= 0)
+			retval = TEST_FAIL;
+	}
+
+	/* The destroy flushes and closes the file, which is then read back. */
+	if (_nNULL(logger))
+		OTELC_OPSR(logger, destroy);
+	OTELC_SFREE(err);
+
+	if (test_file_contains(LOGS_RESTART_FILE, "restart marker 7") == 0)
+		retval = TEST_FAIL;
+	if (test_file_contains(LOGS_RESTART_FILE, "424242") == 0)
+		retval = TEST_FAIL;
+	if (test_file_contains(LOGS_RESTART_FILE, "after restart") == 0)
+		retval = TEST_FAIL;
+
+	test_report("logger restart emits through the new pipeline", retval);
 }
 
 
@@ -1006,14 +1356,16 @@ static void test_shutdown(struct otelc_logger *logger)
  *
  * DESCRIPTION
  *   Initializes the OpenTelemetry library, creates a logger, runs all logger
- *   tests, and reports the results.
+ *   tests, and reports the results.  A second context loads the 'restart'
+ *   entry of the configuration, which writes to a file of its own, for the
+ *   tests that start a logger of their own and read its exports back.
  *
  * RETURN VALUE
  *   Returns EX_OK if all tests pass, or EX_SOFTWARE if any test fails.
  */
 int main(int argc, char **argv)
 {
-	struct otelc_ctx    *ctx    = NULL;
+	struct otelc_ctx    *ctx    = NULL, *ctx_aux = NULL;
 	struct otelc_logger *logger = NULL;
 	struct otelc_tracer *tracer = NULL;
 	struct otelc_span   *span = NULL;
@@ -1044,14 +1396,22 @@ int main(int argc, char **argv)
 		return test_done(EX_SOFTWARE, otel_err);
 	}
 
+	ctx_aux = otelc_init(cfg_file, "restart", &otel_err);
+	if (_NULL(ctx_aux)) {
+		OTELC_LOG(stderr, "ERROR: %s", _NULL(otel_err) ? "Unable to init the auxiliary context" : otel_err);
+
+		return test_done(EX_SOFTWARE, otel_err);
+	}
+
 	/***
-	 * Tests that create and destroy loggers in isolation.  These must run
-	 * before the main logger is created because logger destruction clears
-	 * the global otel_logger atomic.
+	 * Tests that create and destroy loggers in isolation.  They run before
+	 * the main logger exists, so a failure in them cannot affect it.
 	 */
 	OTELC_LOG(stdout, "[logger lifecycle]");
 	test_logger_create_destroy(ctx);
 	test_logger_create_err_null(ctx);
+	test_logger_create_null_ctx();
+	test_logger_unstarted(ctx);
 
 	/***
 	 * Create and start the main logger for the remaining tests.
@@ -1096,6 +1456,7 @@ int main(int argc, char **argv)
 	test_log_with_all_options(logger);
 	test_log_with_event_id(logger);
 	test_log_body_explicit_ids(logger);
+	test_log_invalid_args(logger);
 
 	/***
 	 * Logger query tests.
@@ -1105,6 +1466,7 @@ int main(int argc, char **argv)
 	test_logger_enabled(logger);
 	test_set_min_severity(logger);
 	test_severity_parse();
+	test_logger_set_enabled(logger);
 
 	/***
 	 * Logging with span context.  Create and start a tracer to obtain an
@@ -1152,6 +1514,8 @@ int main(int argc, char **argv)
 	 */
 	OTELC_LOG(stdout, "");
 	OTELC_LOG(stdout, "[logger operations]");
+	test_logger_set_flush_timeout(ctx_aux);
+	test_logger_restart_and_export(ctx_aux);
 	test_force_flush(logger);
 	test_shutdown(logger);
 
@@ -1167,6 +1531,8 @@ int main(int argc, char **argv)
 	if (otelc_statistics_check(NULL, 1, 0, 0, 0, 0, 0) != 0)
 		retval = TEST_FAIL;
 	test_report("handle statistics", retval);
+
+	otelc_deinit(&ctx_aux, NULL, NULL, NULL);
 
 	return test_done(retval, otel_err);
 }
