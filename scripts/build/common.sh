@@ -10,11 +10,33 @@
     SH_CMAKE_ARGS=
 SH_CONFIGURE_ARGS=
        SH_PKG_URL="${SH_PKG_URL:-}"
+       SH_PKG_DEP="${SH_PKG_DEP:-}"
+    SH_OPT_BUNDLE="${SH_OPT_BUNDLE:-}"
+  SH_ARG_LIB_TYPE="${SH_ARG_LIB_TYPE:-dynamic}"
+   SH_SHARED_LIBS=
+   SH_STATIC_LIBS=
     SH_SYS_LIBDIR="/usr/lib/x86_64-linux-gnu"
         SH_LIBDIR="${SH_ARG_PREFIX}/lib"
     SH_LIBDIR_EXT=
+      SH_EX_USAGE=64
+   SH_EX_SOFTWARE=70
 
 . /etc/os-release
+
+
+# The lib-type decides whether every library built here comes out as a
+# shared object or as a static archive.
+#
+if test "${SH_ARG_LIB_TYPE}" = "dynamic"; then
+	SH_SHARED_LIBS="ON"
+	SH_STATIC_LIBS="OFF"
+elif test "${SH_ARG_LIB_TYPE}" = "static"; then
+	SH_SHARED_LIBS="OFF"
+	SH_STATIC_LIBS="ON"
+else
+	echo "ERROR: unknown lib-type '${SH_ARG_LIB_TYPE}', expected 'dynamic' or 'static'" >&2
+	exit ${SH_EX_USAGE}
+fi
 
 
 sh_ldd_check ()
@@ -38,16 +60,25 @@ sh_ldd_check ()
 	return ${_var_retval}
 }
 
+# The install prefix is searched first, so that the libraries already built
+# into it win over the system packages.  The archives are compiled as PIC so
+# that they can still be linked into a shared object later on.  The policy
+# floor lets cmake 4 configure the packages that still declare a minimum
+# version below 3.5.
+#
 sh_configure_cmake ()
 {
 	cmake -DCMAKE_INSTALL_PREFIX="${SH_ARG_PREFIX}" \
+		-DCMAKE_PREFIX_PATH="${SH_ARG_PREFIX}" \
+		-DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
 		-DCMAKE_C_FLAGS="-O2" \
 		-DCMAKE_CXX_FLAGS="-O2" \
 		${SH_CMAKE_ARGS} \
 		-DCMAKE_VERBOSE_MAKEFILE:BOOL=ON \
 		-DCMAKE_INSTALL_LIBDIR=lib${SH_LIBDIR_EXT} \
 		-DCMAKE_INSTALL_RPATH="${SH_LIBDIR}${SH_LIBDIR_EXT}" \
-		-DBUILD_SHARED_LIBS=ON \
+		-DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+		-DBUILD_SHARED_LIBS=${SH_SHARED_LIBS} \
 		-DCMAKE_BUILD_TYPE=Release \
 		"${@}" ..
 }
@@ -70,16 +101,27 @@ sh_make ()
 
 sh_archive ()
 {
+	# The tree assembled by opentelemetry-cpp-monorepo.sh carries the name
+	# of the SDK install script, which pins the SDK version in one place.
+	#
+	local _var_cwd="${PWD}"
+	local _var_src="${SH_PKG}"
+	local _var_monorepo_dir="$(basename "$(dirname "${0}")"/opentelemetry-cpp-*-install.sh -install.sh)"
+
 	#
 	# A tree assembled by the opentelemetry-cpp-monorepo.sh script is used
 	# as is: the release tarball is neither downloaded nor extracted over
 	# it, so building from the assembled tree never touches the network.
+	# A dependency whose sources that script staged under build/_deps of
+	# the assembled tree is built from there for the same reason.
 	#
-	if test ! -f "${SH_PKG}/.monorepo"; then
+	if test -n "${SH_PKG_DEP}" -a -f "${_var_monorepo_dir}/.monorepo" -a -d "${_var_monorepo_dir}/build/_deps/${SH_PKG_DEP}-src"; then
+		_var_src="${_var_monorepo_dir}/build/_deps/${SH_PKG_DEP}-src"
+	elif test ! -f "${SH_PKG}/.monorepo"; then
 		test -f "${SH_PKG}.tar.gz" || wget "${SH_PKG_URL}" -O "${SH_PKG}.tar.gz"
 		tar xf "${SH_PKG}.tar.gz"
 	fi
-	cd "${SH_PKG}" || exit 1
+	cd "${_var_src}" || exit 1
 
 	if test -f ".monorepo"; then
 		#
@@ -101,18 +143,18 @@ sh_archive ()
 		SH_CMAKE_ARGS="${SH_CMAKE_ARGS} -DCMAKE_DISABLE_FIND_PACKAGE_absl=ON"
 
 		git checkout -- . || exit 1
-		find .. -maxdepth 1 -name "*${SH_PKG}.patch" -type f | grep -q . && {
+		find "${_var_cwd}" -maxdepth 1 -name "*${SH_PKG}.patch" -type f | grep -q . && {
 			local _var_file=
 
-			for _var_file in ../*"${SH_PKG}.patch"; do
+			for _var_file in "${_var_cwd}/"*"${SH_PKG}.patch"; do
 				git apply "${_var_file}" || exit 1
 			done
 		}
 	else
-		find .. -maxdepth 1 -name "*${SH_PKG}.patch" -type f | grep -q . && {
+		find "${_var_cwd}" -maxdepth 1 -name "*${SH_PKG}.patch" -type f | grep -q . && {
 			local _var_file=
 
-			for _var_file in ../*"${SH_PKG}.patch"; do
+			for _var_file in "${_var_cwd}/"*"${SH_PKG}.patch"; do
 				patch -p1 < "${_var_file}"
 			done
 		}

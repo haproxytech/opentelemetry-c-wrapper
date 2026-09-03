@@ -7,28 +7,34 @@ SH_PKG_URL="https://github.com/open-telemetry/opentelemetry-cpp/archive/refs/tag
 . "$(realpath "$(dirname "${0}")")/common.sh"
 
 
-SH_ARG_LIB_TYPE="${SH_ARG_LIB_TYPE:-dynamic}"
-
-test "${SH_ARG_LIB_TYPE}" = "dynamic" && SH_SHARED_LIBS="ON"
-test "${SH_ARG_LIB_TYPE}" = "static"  && SH_SHARED_LIBS="OFF"
-
-# CMAKE_POLICY_VERSION_MINIMUM=3.5 is an added option in case cmake version 4.1
-# (the latest) is used.
-#
 # find_package(ryml) is disabled because the SDK does not check the ryml
 # version, so a stale ryml in the prefix would silently override the pinned
 # one; the pinned version is always fetched and built instead.
 #
+# AWS-LC, curl and zlib are taken as installed packages: a static build finds
+# the archives that build-bundle.sh installed into the prefix beforehand, a
+# dynamic build finds the shared objects there, or falls back to the ones of
+# the system.
+#
+# A bundle build leaves abseil, protobuf, gRPC and nlohmann json to the SDK,
+# which compiles the pinned versions itself and installs them into the prefix,
+# so that an installation of them found elsewhere never takes their place.
+#
+if test "${SH_OPT_BUNDLE}" = "true"; then
+	SH_CMAKE_ARGS="${SH_CMAKE_ARGS} -DCMAKE_DISABLE_FIND_PACKAGE_gRPC=ON"
+	SH_CMAKE_ARGS="${SH_CMAKE_ARGS} -DCMAKE_DISABLE_FIND_PACKAGE_Protobuf=ON"
+	SH_CMAKE_ARGS="${SH_CMAKE_ARGS} -DCMAKE_DISABLE_FIND_PACKAGE_absl=ON"
+	SH_CMAKE_ARGS="${SH_CMAKE_ARGS} -DCMAKE_DISABLE_FIND_PACKAGE_nlohmann_json=ON"
+fi
+
 sh_configure_cmake \
 	-DBUILD_PACKAGE=ON \
 	-DCMAKE_DISABLE_FIND_PACKAGE_ryml=ON \
-	-DCMAKE_POSITION_INDEPENDENT_CODE=ON \
 	-DCMAKE_CXX_STANDARD=17 \
-	-DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
 	-DOPENSSL_ROOT_DIR="${SH_ARG_PREFIX}" \
-	-DCURL_LIBRARY="${SH_SYS_LIBDIR}/libcurl.so" \
-	-DZLIB_LIBRARY="${SH_SYS_LIBDIR}/libz.so" \
-	-DZLIB_INCLUDE_DIR="/usr/include" \
+	-DOPENSSL_USE_STATIC_LIBS=${SH_STATIC_LIBS} \
+	-DCURL_USE_STATIC_LIBS=${SH_STATIC_LIBS} \
+	-DZLIB_USE_STATIC_LIBS=${SH_STATIC_LIBS} \
 	-DWITH_ABI_VERSION_1=OFF \
 	-DWITH_ABI_VERSION_2=ON \
 	-DWITH_CONFIGURATION=ON \
@@ -48,9 +54,8 @@ sh_configure_cmake \
 	-DWITH_BENCHMARK=OFF \
 	-DWITH_EXAMPLES=OFF \
 	-DWITH_FUNC_TESTS=OFF \
-	-DBUILD_TESTING=OFF \
-	-DBUILD_SHARED_LIBS=${SH_SHARED_LIBS}
-sh_make
+	-DBUILD_TESTING=OFF
+sh_make || exit ${SH_EX_SOFTWARE}
 
 # rapidyaml and c4core have errors in the cmake installation part and install
 # the library in the lib directory instead of in lib64 (on linux systems that

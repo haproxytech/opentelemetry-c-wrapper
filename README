@@ -181,14 +181,14 @@ patches in scripts/build/ must be applied to the OpenTelemetry C++ source tree
 before the compilation and the same CMake configuration options found in the
 scripts/build/opentelemetry-cpp-1.28.0-install.sh script must be used.
 
-Whichever script is used, the result should be the same.  However, it is
-recommended to use the build-bundle.sh script for this task.  In that script,
-the AWS-LC and curl build steps are commented out by default, so the script uses
-the OpenSSL and curl libraries present on the system.  An SSL library (OpenSSL
-or another supported implementation) must be installed on the system; if
-curl is not available, the OTel C++ build process downloads and compiles it
-automatically.  Those two steps can be uncommented to build AWS-LC and curl
-from source instead; build.sh runs both of them as it stands.
+Whichever script is used, the result should be the same.  However, the use of
+the build-bundle.sh script is recommended for this task.  It builds AWS-LC first
+and compiles curl against it, so that the whole bundle shares one SSL library;
+the curl of the system is left out on purpose, as it is tied to the SSL library
+of the system, and two such libraries in one process clash.  In a dynamic build
+zlib comes from the system, while a static build compiles it as well, as an
+archive installed into the prefix ahead of the SDK: the SDK takes zlib only as
+an installed package, and the system ships it as a shared object.
 
 Example of how to run an installation script:
 
@@ -205,8 +205,9 @@ defaults to /opt.  The second names the root directory of the installation, and
 setting it is not recommended, as it serves debugging alone.  The third one,
 which build-bundle.sh alone accepts, controls how the OTel C++ SDK libraries are
 built: "dynamic", the default, or "static".  With "static" the SDK is compiled
-as archives (.a) instead of shared objects (.so), which is what linking the OTel
-C wrapper statically requires.
+as archives (.a) instead of shared objects (.so), and so are AWS-LC, zlib and
+curl; that is what linking the OTel C wrapper statically requires.  A prefix
+should be emptied before it is reused for the other lib-type.
 
 Finally, the installation script will verify that all library dependencies for
 programs in the <prefix>/bin directory and libraries in the <prefix>/lib
@@ -230,7 +231,9 @@ A non-empty second argument keeps the upstream remotes attached.  The install
 script recognizes the marker and builds such a tree as it stands: the bundled
 sources are used unchanged instead of being fetched again, and the dependencies
 that the tree carries are never taken from an installed package, so that a stale
-installation cannot hijack the build.
+installation cannot hijack the build.  A static build takes the zlib and curl
+sources from the assembled tree as well.  AWS-LC is not part of that tree; its
+release tarball is used as it is when it is placed next to the scripts.
 
 List of (almost) all dependencies for the OTel C++ client package:
 
@@ -239,6 +242,8 @@ List of (almost) all dependencies for the OTel C++ client package:
   * curl - a command-line tool for transferring data from or to a server using
     URLs
     https://github.com/curl/curl
+  * zlib - a general purpose data compression library
+    https://github.com/madler/zlib
   * Abseil - C++ Common Libraries
     https://github.com/abseil/abseil-cpp
   * c-ares - a modern DNS (stub) resolver library
