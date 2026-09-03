@@ -154,6 +154,15 @@ AC_DEFUN([AX_WITH_OPENTELEMETRY], [
 
 		AC_MSG_NOTICE([*** OpenTelemetry exporters ***])
 
+		dnl One flag per exporter type, published through the generated public header.
+		_ax_have_exporter_elasticsearch=0
+		_ax_have_exporter_in_memory=0
+		_ax_have_exporter_ostream=0
+		_ax_have_exporter_otlp_file=0
+		_ax_have_exporter_otlp_grpc=0
+		_ax_have_exporter_otlp_http=0
+		_ax_have_exporter_zipkin=0
+
 		AC_MSG_CHECKING([for Elasticsearch exporter])
 		LIBS="${_saved_libs} ${OPENTELEMETRY_LIBS} -lopentelemetry_exporter_elasticsearch_logs ${OPENTELEMETRY_SYSLIBS}"
 		AC_LINK_IFELSE([
@@ -163,6 +172,7 @@ AC_DEFUN([AX_WITH_OPENTELEMETRY], [
 			)], [
 				AC_MSG_RESULT([yes])
 				AC_DEFINE([HAVE_OTEL_EXPORTER_ELASTICSEARCH], [1], [Have OpenTelemetry Elasticsearch exporter.])
+				_ax_have_exporter_elasticsearch=1
 				OPENTELEMETRY_LIBS="${OPENTELEMETRY_LIBS} -lopentelemetry_exporter_elasticsearch_logs"
 			], [AC_MSG_RESULT([no])]
 		)
@@ -176,6 +186,7 @@ AC_DEFUN([AX_WITH_OPENTELEMETRY], [
 			)], [
 				AC_MSG_RESULT([yes])
 				AC_DEFINE([HAVE_OTEL_EXPORTER_IN_MEMORY], [1], [Have OpenTelemetry In-Memory exporter.])
+				_ax_have_exporter_in_memory=1
 				OPENTELEMETRY_LIBS="${OPENTELEMETRY_LIBS} -lopentelemetry_exporter_in_memory -lopentelemetry_exporter_in_memory_metric"
 			], [AC_MSG_RESULT([no])]
 		)
@@ -190,6 +201,7 @@ AC_DEFUN([AX_WITH_OPENTELEMETRY], [
 			)], [
 				AC_MSG_RESULT([yes])
 				AC_DEFINE([HAVE_OTEL_EXPORTER_OSTREAM], [1], [Have OpenTelemetry Ostream exporter.])
+				_ax_have_exporter_ostream=1
 				OPENTELEMETRY_LIBS="${OPENTELEMETRY_LIBS} -lopentelemetry_exporter_ostream_span -lopentelemetry_exporter_ostream_metrics -lopentelemetry_exporter_ostream_logs"
 			], [AC_MSG_RESULT([no])]
 		)
@@ -203,6 +215,7 @@ AC_DEFUN([AX_WITH_OPENTELEMETRY], [
 			)], [
 				AC_MSG_RESULT([yes])
 				AC_DEFINE([HAVE_OTEL_EXPORTER_OTLP_FILE], [1], [Have OpenTelemetry OTLP/File exporter.])
+				_ax_have_exporter_otlp_file=1
 				OPENTELEMETRY_LIBS="${OPENTELEMETRY_LIBS} -lopentelemetry_exporter_otlp_file -lopentelemetry_exporter_otlp_file_metric -lopentelemetry_exporter_otlp_file_log"
 			], [AC_MSG_RESULT([no])]
 		)
@@ -216,6 +229,7 @@ AC_DEFUN([AX_WITH_OPENTELEMETRY], [
 			)], [
 				AC_MSG_RESULT([yes])
 				AC_DEFINE([HAVE_OTEL_EXPORTER_OTLP_GRPC], [1], [Have OpenTelemetry OTLP/gRPC exporter.])
+				_ax_have_exporter_otlp_grpc=1
 				OPENTELEMETRY_LIBS="${OPENTELEMETRY_LIBS} -lopentelemetry_exporter_otlp_grpc -lopentelemetry_exporter_otlp_grpc_metrics -lopentelemetry_exporter_otlp_grpc_log"
 			], [AC_MSG_RESULT([no])]
 		)
@@ -229,6 +243,7 @@ AC_DEFUN([AX_WITH_OPENTELEMETRY], [
 			)], [
 				AC_MSG_RESULT([yes])
 				AC_DEFINE([HAVE_OTEL_EXPORTER_OTLP_HTTP], [1], [Have OpenTelemetry OTLP/HTTP exporter.])
+				_ax_have_exporter_otlp_http=1
 				OPENTELEMETRY_LIBS="${OPENTELEMETRY_LIBS} -lopentelemetry_exporter_otlp_http -lopentelemetry_exporter_otlp_http_metric -lopentelemetry_exporter_otlp_http_log"
 			], [AC_MSG_RESULT([no])]
 		)
@@ -242,6 +257,7 @@ AC_DEFUN([AX_WITH_OPENTELEMETRY], [
 			)], [
 				AC_MSG_RESULT([yes])
 				AC_DEFINE([HAVE_OTEL_EXPORTER_ZIPKIN], [1], [Have OpenTelemetry Zipkin exporter.])
+				_ax_have_exporter_zipkin=1
 				OPENTELEMETRY_LIBS="${OPENTELEMETRY_LIBS} -lopentelemetry_exporter_zipkin_trace"
 			], [AC_MSG_RESULT([no])]
 		)

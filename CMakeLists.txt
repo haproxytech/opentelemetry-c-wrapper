@@ -829,6 +829,18 @@ execute_process(
     COMMAND_ERROR_IS_FATAL ANY
 )
 
+## Exporter availability -- one public macro per exporter type, set to 1 or 0
+## (mirrors AX_OTEL_CPP_HDR_EXPORTERS).
+set(OTEL_CPP_HDR_EXPORTERS "")
+foreach(_name IN ITEMS ELASTICSEARCH IN_MEMORY OSTREAM OTLP_FILE OTLP_GRPC OTLP_HTTP ZIPKIN)
+    if(HAVE_OTEL_EXPORTER_${_name})
+        string(APPEND OTEL_CPP_HDR_EXPORTERS "#define OTELC_HAVE_EXPORTER_${_name} 1\n")
+    else()
+        string(APPEND OTEL_CPP_HDR_EXPORTERS "#define OTELC_HAVE_EXPORTER_${_name} 0\n")
+    endif()
+endforeach()
+string(STRIP "${OTEL_CPP_HDR_EXPORTERS}" OTEL_CPP_HDR_EXPORTERS)
+
 configure_file(
     "${CMAKE_CURRENT_SOURCE_DIR}/include/opentelemetry-c-wrapper/otel_cpp.h.in"
     "${CMAKE_CURRENT_BINARY_DIR}/include/opentelemetry-c-wrapper/otel_cpp.h"
