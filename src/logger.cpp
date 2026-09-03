@@ -847,9 +847,13 @@ static int otel_logger_start(struct otelc_logger *logger)
 		if (count < 0)
 			OTELC_RETURN_INT(OTELC_RET_ERROR);
 
-		int count_exporters = yaml_get_sequence_len(logger->ctx->fyd, &(logger->err), path_e);
+		int count_exporters = 0;
+
+		/* A scalar exporters key is valid and must not leave a message behind. */
+		if (yaml_is_sequence(logger->ctx->fyd, path_e))
+			count_exporters = yaml_get_sequence_len(logger->ctx->fyd, &(logger->err), path_e);
 		if (count_exporters < 0)
-			count_exporters = 0;
+			OTELC_RETURN_INT(OTELC_RET_ERROR);
 
 		for (int i = 0; i < count; i++) {
 			std::unique_ptr<otel_sdk_logs::LogRecordExporter>  exporter;

@@ -1146,9 +1146,13 @@ static int otel_meter_start(struct otelc_meter *meter)
 		if (count < 0)
 			OTELC_RETURN_INT(OTELC_RET_ERROR);
 
-		int count_readers = yaml_get_sequence_len(meter->ctx->fyd, &(meter->err), path_r);
+		int count_readers = 0;
+
+		/* A scalar readers key is valid and must not leave a message behind. */
+		if (yaml_is_sequence(meter->ctx->fyd, path_r))
+			count_readers = yaml_get_sequence_len(meter->ctx->fyd, &(meter->err), path_r);
 		if (count_readers < 0)
-			count_readers = 0;
+			OTELC_RETURN_INT(OTELC_RET_ERROR);
 
 		for (int i = 0; i < count; i++) {
 			std::unique_ptr<otel_sdk_metrics::PushMetricExporter>            exporter;

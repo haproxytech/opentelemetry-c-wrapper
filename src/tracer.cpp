@@ -1130,9 +1130,13 @@ static int otel_tracer_start(struct otelc_tracer *tracer)
 		if (count < 0)
 			OTELC_RETURN_INT(OTELC_RET_ERROR);
 
-		int count_exporters = yaml_get_sequence_len(tracer->ctx->fyd, &(tracer->err), path_e);
+		int count_exporters = 0;
+
+		/* A scalar exporters key is valid and must not leave a message behind. */
+		if (yaml_is_sequence(tracer->ctx->fyd, path_e))
+			count_exporters = yaml_get_sequence_len(tracer->ctx->fyd, &(tracer->err), path_e);
 		if (count_exporters < 0)
-			count_exporters = 0;
+			OTELC_RETURN_INT(OTELC_RET_ERROR);
 
 		/* Iterate over each processor/exporter pair in the sequence. */
 		for (int i = 0; i < count; i++) {
