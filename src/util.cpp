@@ -2296,11 +2296,15 @@ void otelc_lib_shutdown(void)
  * DESCRIPTION
  *   Closes the YAML configuration document attached to the context and releases
  *   any input state the parser still holds for the file.  This lets the caller
- *   drop all filesystem access once initialization is complete, which is useful
- *   when the process is later confined or chrooted.  The context itself remains
+ *   drop all filesystem access once every signal instance has been created and
+ *   started, which is useful when the process is later confined or chrooted.
+ *   The create functions and the start operation read the document, so after
+ *   this call no signal instance can be created against the context and no
+ *   existing instance can be started, for the first time or again; the name
+ *   states recorded by otelc_init() stay readable.  The context itself remains
  *   valid and must still be torn down with otelc_deinit() when it is no longer
- *   needed.  Calling this function on a NULL context or on a context whose
- *   configuration document has already been closed is a no-op.
+ *   needed.  A call on a NULL context or on a context whose configuration
+ *   document has already been closed is a no-op.
  *
  * RETURN VALUE
  *   This function does not return a value.

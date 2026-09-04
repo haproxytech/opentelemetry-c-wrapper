@@ -431,7 +431,9 @@ or Clang; the plain call through the `ops` pointer works with any compiler.
 1. `ctx = otelc_init(cfgfile, name, &err)` -- parse the YAML configuration
    and create a library context.  The `name` selects which named signal
    entry is loaded under each signal section; if no entry matches, the
-   `default` entry is used.
+   `default` entry is used, and when that is absent too, a section kept in the
+   legacy layout, with the settings directly under the signal subtree, serves
+   as a last resort.
 2. `otelc_*_create(ctx, &err)` -- allocate a signal instance bound to the
    context.
 3. `instance->ops->start(instance)` -- start the pipeline.
@@ -453,7 +455,11 @@ or Clang; the plain call through the `ops` pointer works with any compiler.
 All configuration and provider state is per-context, so multiple contexts may
 coexist in the same process, each with its own configuration and named signal
 selection.  The helper `otelc_close_cfg(ctx)` releases the parsed YAML document
-attached to a context independently of the providers.
+attached to a context independently of the providers, once every signal instance
+has been created and started.  The create functions and the start operation read
+the document, so after the call no signal instance can be created against the
+context and no existing instance can be started, for the first time or again;
+the name states recorded by `otelc_init()` stay readable.
 
 ### Return Conventions
 

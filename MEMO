@@ -872,9 +872,12 @@ Global entry points:
 
   otelc_close_cfg (src/util.cpp):
     Releases the parsed YAML document attached to a context independently of
-    the providers, letting the process drop filesystem access once
-    initialization is complete.  The context itself remains valid and is
-    still torn down with otelc_deinit().
+    the providers, letting the process drop filesystem access once every signal
+    instance has been created and started.  The create functions and the start
+    operation read the document, so afterwards no signal instance can be created
+    against the context and no existing instance can be started, for the first
+    time or again; the name states recorded by otelc_init() stay readable.  The
+    context itself remains valid and is still torn down with otelc_deinit().
 
   otelc_lib_shutdown (src/util.cpp):
     Reinstates the default SDK internal log handler, resets the external memory
