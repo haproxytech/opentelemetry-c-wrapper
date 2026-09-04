@@ -576,6 +576,279 @@ static void test_tracers_span_isolation(const struct otelc_ctx *ctx_a, const str
 
 /***
  * NAME
+ *   test_tracers_span_across_instances - tests cross-instance parenting
+ *
+ * SYNOPSIS
+ *   static void test_tracers_span_across_instances(const struct otelc_ctx *ctx_a, const struct otelc_ctx *ctx_b)
+ *
+ * ARGUMENTS
+ *   ctx_a - library context exporting traces to the file MULTI_TRACES_A
+ *   ctx_b - library context exporting traces to the file MULTI_TRACES_B
+ *
+ * DESCRIPTION
+ *   Creates a tracer on each context, starts a span on the first one and uses
+ *   that span as the parent of a span started on the second one.  The handle
+ *   map is not owned by a tracer, so the second instance resolves the span the
+ *   first one created: the child has to be created, has to record because its
+ *   parent is sampled, and has to belong to the trace of its parent.  The
+ *   baggage set on the parent has to be readable on the child, which the
+ *   context of the parent carries over, and the child takes attributes, an
+ *   event, a status, an exception and a link to the span of the other
+ *   instance.  Both tracers are then destroyed so that the simple processors
+ *   export the spans, and each file has to hold the span of its own instance
+ *   only, the exported child naming the identifier of the parent span as its
+ *   own parent and holding the data set on it.
+ *
+ * RETURN VALUE
+ *   This function does not return a value.
+ */
+static void test_tracers_span_across_instances(const struct otelc_ctx *ctx_a, const struct otelc_ctx *ctx_b)
+{
+	static const struct otelc_kv attr[] = {
+		{ .key = (char *)"multi-attr-str", .value = { .u_type = OTELC_VALUE_STRING, .u.value_string = "multi-attr-value" } },
+		{ .key = (char *)"multi-attr-int", .value = { .u_type = OTELC_VALUE_INT64,  .u.value_int64  = INT64_C(7) } },
+	};
+	struct otelc_tracer *tracer_a = NULL, *tracer_b = NULL;
+	struct otelc_span   *span_a = NULL, *span_b = NULL;
+	struct timespec      ts_system;
+	uint8_t              tid_a[OTELC_TRACE_ID_SIZE], tid_b[OTELC_TRACE_ID_SIZE];
+	uint8_t              sid_a[OTELC_SPAN_ID_SIZE], sid_b[OTELC_SPAN_ID_SIZE];
+	uint8_t              flags;
+	char                 parent_id[(OTELC_SPAN_ID_SIZE * 2) + 1] = "";
+	char                *err_a = NULL, *err_b = NULL, *value;
+	int                  result = TEST_FAIL;
+
+	(void)clock_gettime(CLOCK_REALTIME, &ts_system);
+
+	tracer_a = otelc_tracer_create(ctx_a, &err_a);
+	tracer_b = otelc_tracer_create(ctx_b, &err_b);
+
+	if (_nNULL(tracer_a) && _nNULL(tracer_b)
+	    && (OTELC_OPS(tracer_a, start) == OTELC_RET_OK)
+	    && (OTELC_OPS(tracer_b, start) == OTELC_RET_OK)) {
+		span_a = OTELC_OPS(tracer_a, start_span, "multi-span-parent");
+		if (_nNULL(span_a)) {
+			/* Set before the child, which inherits it. */
+			if (OTELC_OPS(span_a, set_baggage_var, "multi-bag", "multi-bag-value", NULL) < 0)
+				result = TEST_FAIL;
+
+			span_b = OTELC_OPS(tracer_b, start_span_with_options, "multi-span-child", span_a, NULL, NULL, NULL, OTELC_SPAN_KIND_SERVER, NULL, 0);
+			if (_nNULL(span_b)) {
+				result = TEST_PASS;
+
+				/* A sampled parent, so the child records. */
+				if (OTELC_OPS(span_b, is_recording) != true)
+					result = TEST_FAIL;
+
+				/* The child carries its own span data. */
+				if (OTELC_OPS(span_b, set_attribute_kv_n, attr, OTELC_TABLESIZE(attr)) != OTELC_TABLESIZE(attr))
+					result = TEST_FAIL;
+				if (OTELC_OPS(span_b, add_event_kv_n, "multi-event", &ts_system, attr, OTELC_TABLESIZE(attr)) != OTELC_TABLESIZE(attr))
+					result = TEST_FAIL;
+				if (OTELC_OPS(span_b, set_status, OTELC_SPAN_STATUS_ERROR, "multi-status") != OTELC_RET_OK)
+					result = TEST_FAIL;
+				if (OTELC_OPS(span_b, record_exception, "multi-exception", "broken", NULL, &ts_system, NULL, 0) != OTELC_RET_OK)
+					result = TEST_FAIL;
+
+				/* A link to the span of the other instance. */
+				if (OTELC_OPS(span_b, add_link, span_a, NULL, attr, OTELC_TABLESIZE(attr)) != OTELC_RET_OK)
+					result = TEST_FAIL;
+
+				/* The parent baggage reached the child. */
+				value = OTELC_OPS(span_b, get_baggage, "multi-bag");
+				if (_NULL(value) || (strcmp(value, "multi-bag-value") != 0))
+					result = TEST_FAIL;
+
+				OTELC_SFREE(value);
+
+				/* Both spans belong to the same trace. */
+				if ((OTELC_OPS(span_a, get_id, sid_a, sizeof(sid_a), tid_a, sizeof(tid_a), &flags) != OTELC_RET_OK)
+				    || (OTELC_OPS(span_b, get_id, sid_b, sizeof(sid_b), tid_b, sizeof(tid_b), &flags) != OTELC_RET_OK)
+				    || (memcmp(tid_a, tid_b, OTELC_TRACE_ID_SIZE) != 0))
+					result = TEST_FAIL;
+				else
+					(void)otelc_strlcpy(parent_id, sizeof(parent_id), otelc_strhex(sid_a, sizeof(sid_a)), 0);
+
+				OTELC_OPSR(span_b, end);
+			}
+
+			OTELC_OPSR(span_a, end);
+		}
+	}
+
+	otelc_deinit(NULL, &tracer_a, NULL, NULL);
+	otelc_deinit(NULL, &tracer_b, NULL, NULL);
+
+	if ((result == TEST_PASS)
+	    && (test_file_contains(MULTI_TRACES_A, "multi-span-parent") == 1)
+	    && (test_file_contains(MULTI_TRACES_A, "multi-span-child") == 0)
+	    && (test_file_contains(MULTI_TRACES_A, "multi-attr-value") == 0)
+	    && (test_file_contains(MULTI_TRACES_B, "multi-span-child") == 1)
+	    && (test_file_contains(MULTI_TRACES_B, "multi-span-parent") == 0)
+	    && (test_file_contains(MULTI_TRACES_B, parent_id) == 1)
+	    && (test_file_contains(MULTI_TRACES_B, "multi-attr-value") == 1)
+	    && (test_file_contains(MULTI_TRACES_B, "multi-event") == 1)
+	    && (test_file_contains(MULTI_TRACES_B, "multi-status") == 1)
+	    && (test_file_contains(MULTI_TRACES_B, "multi-exception") == 1))
+		result = TEST_PASS;
+	else
+		result = TEST_FAIL;
+
+	OTELC_SFREE(err_a);
+	OTELC_SFREE(err_b);
+
+	test_report("a span of one instance parents a span of another", result);
+}
+
+
+/***
+ * NAME
+ *   test_tracers_unsampled_across_instances - tests a sampled-out trace
+ *
+ * SYNOPSIS
+ *   static void test_tracers_unsampled_across_instances(const struct otelc_ctx *ctx_a, const struct otelc_ctx *ctx_b)
+ *
+ * ARGUMENTS
+ *   ctx_a - library context exporting traces to the file MULTI_TRACES_A
+ *   ctx_b - library context exporting traces to the file MULTI_TRACES_B
+ *
+ * DESCRIPTION
+ *   Starts a span on the first instance from a remote parent context whose
+ *   sampled flag is cleared and uses it as the parent of a span started on
+ *   the second instance.  Each sampler answers a parent that is not sampled
+ *   with its always_off delegate, so both spans have to report themselves as
+ *   not recording while still belonging to the trace of the parent.  The
+ *   attributes, the event, the status, the exception and the link of the
+ *   child have to be accepted, the baggage set on the parent has to stay
+ *   readable on the child, and none of that data may reach the exporter.  A
+ *   span without a parent is started on each instance as well, which the
+ *   samplers do record: the exporter files have to hold that span alone,
+ *   proving that the two pipelines were writing and left out the
+ *   sampled-out spans only.
+ *
+ * RETURN VALUE
+ *   This function does not return a value.
+ */
+static void test_tracers_unsampled_across_instances(const struct otelc_ctx *ctx_a, const struct otelc_ctx *ctx_b)
+{
+	static const uint8_t trace_id[OTELC_TRACE_ID_SIZE] = {
+		0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28,
+		0x29, 0x2a, 0x2b, 0x2c, 0x2d, 0x2e, 0x2f, 0x20
+	};
+	static const uint8_t span_id[OTELC_SPAN_ID_SIZE] = {
+		0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38
+	};
+	static const struct otelc_kv attr[] = {
+		{ .key = (char *)"unsampled-attr-str", .value = { .u_type = OTELC_VALUE_STRING, .u.value_string = "unsampled-attr-value" } },
+		{ .key = (char *)"unsampled-attr-int", .value = { .u_type = OTELC_VALUE_INT64,  .u.value_int64  = INT64_C(9) } },
+	};
+	struct otelc_span_context *context = NULL;
+	struct otelc_tracer       *tracer_a = NULL, *tracer_b = NULL;
+	struct otelc_span         *span_a = NULL, *span_b = NULL;
+	struct otelc_span         *sampled_a = NULL, *sampled_b = NULL;
+	struct timespec            ts_system;
+	uint8_t                    tid[OTELC_TRACE_ID_SIZE];
+	uint8_t                    sid[OTELC_SPAN_ID_SIZE];
+	uint8_t                    flags;
+	char                      *err_a = NULL, *err_b = NULL, *value;
+	int                        result = TEST_FAIL;
+
+	(void)clock_gettime(CLOCK_REALTIME, &ts_system);
+
+	tracer_a = otelc_tracer_create(ctx_a, &err_a);
+	tracer_b = otelc_tracer_create(ctx_b, &err_b);
+	context  = otelc_span_context_create(trace_id, sizeof(trace_id), span_id, sizeof(span_id), 0x00, true, NULL, &err_a);
+
+	if (_nNULL(tracer_a) && _nNULL(tracer_b) && _nNULL(context)
+	    && (OTELC_OPS(tracer_a, start) == OTELC_RET_OK)
+	    && (OTELC_OPS(tracer_b, start) == OTELC_RET_OK)) {
+		span_a = OTELC_OPS(tracer_a, start_span_with_options, "multi-span-unsampled-a", NULL, context, NULL, NULL, OTELC_SPAN_KIND_SERVER, NULL, 0);
+		if (_nNULL(span_a)) {
+			/* Set before the child, which inherits it. */
+			if (OTELC_OPS(span_a, set_baggage_var, "unsampled-bag", "unsampled-bag-value", NULL) < 0)
+				result = TEST_FAIL;
+
+			span_b = OTELC_OPS(tracer_b, start_span_with_options, "multi-span-unsampled-b", span_a, NULL, NULL, NULL, OTELC_SPAN_KIND_SERVER, NULL, 0);
+		}
+
+		if (_nNULL(span_a) && _nNULL(span_b)) {
+			result = TEST_PASS;
+
+			/* An unsampled parent, so neither span records. */
+			if ((OTELC_OPS(span_a, is_recording) != false) || (OTELC_OPS(span_b, is_recording) != false))
+				result = TEST_FAIL;
+
+			/* The span data is accepted and then discarded. */
+			if (OTELC_OPS(span_b, set_attribute_kv_n, attr, OTELC_TABLESIZE(attr)) != OTELC_TABLESIZE(attr))
+				result = TEST_FAIL;
+			if (OTELC_OPS(span_b, add_event_kv_n, "unsampled-event", &ts_system, attr, OTELC_TABLESIZE(attr)) != OTELC_TABLESIZE(attr))
+				result = TEST_FAIL;
+			if (OTELC_OPS(span_b, set_status, OTELC_SPAN_STATUS_ERROR, "unsampled-status") != OTELC_RET_OK)
+				result = TEST_FAIL;
+			if (OTELC_OPS(span_b, record_exception, "unsampled-exception", "broken", NULL, &ts_system, NULL, 0) != OTELC_RET_OK)
+				result = TEST_FAIL;
+			if (OTELC_OPS(span_b, add_link, span_a, NULL, attr, OTELC_TABLESIZE(attr)) != OTELC_RET_OK)
+				result = TEST_FAIL;
+
+			/* The baggage is kept, the sampling decision aside. */
+			value = OTELC_OPS(span_b, get_baggage, "unsampled-bag");
+			if (_NULL(value) || (strcmp(value, "unsampled-bag-value") != 0))
+				result = TEST_FAIL;
+
+			OTELC_SFREE(value);
+
+			/* The trace of the parent is kept all the same. */
+			if ((OTELC_OPS(span_b, get_id, sid, sizeof(sid), tid, sizeof(tid), &flags) != OTELC_RET_OK)
+			    || (memcmp(trace_id, tid, OTELC_TRACE_ID_SIZE) != 0))
+				result = TEST_FAIL;
+		}
+
+		/* A span without a parent is sampled by both instances. */
+		sampled_a = OTELC_OPS(tracer_a, start_span, "multi-span-sampled-a");
+		sampled_b = OTELC_OPS(tracer_b, start_span, "multi-span-sampled-b");
+
+		if (_NULL(sampled_a) || _NULL(sampled_b))
+			result = TEST_FAIL;
+		else if ((OTELC_OPS(sampled_a, is_recording) != true) || (OTELC_OPS(sampled_b, is_recording) != true))
+			result = TEST_FAIL;
+	}
+
+	if (_nNULL(sampled_b))
+		OTELC_OPSR(sampled_b, end);
+	if (_nNULL(sampled_a))
+		OTELC_OPSR(sampled_a, end);
+	if (_nNULL(span_b))
+		OTELC_OPSR(span_b, end);
+	if (_nNULL(span_a))
+		OTELC_OPSR(span_a, end);
+	if (_nNULL(context))
+		OTELC_OPSR(context, destroy);
+
+	otelc_deinit(NULL, &tracer_a, NULL, NULL);
+	otelc_deinit(NULL, &tracer_b, NULL, NULL);
+
+	if ((result == TEST_PASS)
+	    && (test_file_contains(MULTI_TRACES_A, "multi-span-sampled-a") == 1)
+	    && (test_file_contains(MULTI_TRACES_A, "multi-span-unsampled-a") == 0)
+	    && (test_file_contains(MULTI_TRACES_B, "multi-span-sampled-b") == 1)
+	    && (test_file_contains(MULTI_TRACES_B, "multi-span-unsampled-b") == 0)
+	    && (test_file_contains(MULTI_TRACES_B, "unsampled-attr-value") == 0)
+	    && (test_file_contains(MULTI_TRACES_B, "unsampled-event") == 0)
+	    && (test_file_contains(MULTI_TRACES_B, "unsampled-status") == 0)
+	    && (test_file_contains(MULTI_TRACES_B, "unsampled-exception") == 0))
+		result = TEST_PASS;
+	else
+		result = TEST_FAIL;
+
+	OTELC_SFREE(err_a);
+	OTELC_SFREE(err_b);
+
+	test_report("a sampled-out trace is exported by no instance", result);
+}
+
+
+/***
+ * NAME
  *   test_tracer_destroy_leftover_spans - tests teardown with spans left open
  *
  * SYNOPSIS
@@ -1127,6 +1400,8 @@ int main(int argc, char **argv)
 
 	OTELC_LOG(stdout, "[multi-isolation]");
 	test_tracers_span_isolation(ctx_multi[0], ctx_multi[1]);
+	test_tracers_span_across_instances(ctx_multi[0], ctx_multi[1]);
+	test_tracers_unsampled_across_instances(ctx_multi[0], ctx_multi[1]);
 	test_tracer_destroy_leftover_spans(ctx_multi[0]);
 	test_loggers_record_isolation(ctx_multi[0], ctx_multi[1]);
 	test_meters_value_isolation(ctx_multi[0], ctx_multi[1]);
