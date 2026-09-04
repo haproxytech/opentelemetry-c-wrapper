@@ -705,7 +705,11 @@ All configuration and provider state is per-context, so multiple contexts may
 coexist in the same process, each loaded from a distinct configuration file
 or selecting a distinct named signal entry.  The helper otelc_close_cfg(ctx)
 releases the parsed YAML document attached to a context independently of the
-providers.
+providers, once every signal instance has been created and started.  The create
+functions and the start operation read the document, so after the call no signal
+instance can be created against the context and no existing instance can be
+started, for the first time or again; the name states recorded by otelc_init()
+stay readable.
 
 Tracers, meters and loggers each fully own their own SDK provider, exporters,
 processors and (for tracers) text-map propagator; meters also own their own
