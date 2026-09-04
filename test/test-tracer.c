@@ -356,6 +356,109 @@ static void test_span_is_recording(struct otelc_tracer *tracer)
 
 /***
  * NAME
+ *   test_span_not_recording - tests the operations on a sampled-out span
+ *
+ * SYNOPSIS
+ *   static void test_span_not_recording(struct otelc_tracer *tracer)
+ *
+ * ARGUMENTS
+ *   tracer - tracer instance
+ *
+ * DESCRIPTION
+ *   Verifies the behavior of a span the sampler left out.  Such a span is
+ *   obtained from a remote parent context whose sampled flag is cleared,
+ *   which the parent_based sampler of the test configuration answers with
+ *   its default always_off delegate.  The span must report itself as not
+ *   recording, and the operations whose data the SDK then discards must
+ *   still report success: the attribute and event setters return the number
+ *   of key-value pairs they were given, and the status, the link and the
+ *   exception return OTELC_RET_OK.  Baggage is not discarded because it is
+ *   propagated regardless of the sampling decision, so it must still be
+ *   readable, and the identifiers of the span must keep the trace of the
+ *   parent with the sampled flag cleared.
+ *
+ * RETURN VALUE
+ *   This function does not return a value.
+ */
+static void test_span_not_recording(struct otelc_tracer *tracer)
+{
+	static const uint8_t trace_id[OTELC_TRACE_ID_SIZE] = {
+		0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88,
+		0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x01
+	};
+	static const uint8_t span_id[OTELC_SPAN_ID_SIZE] = {
+		0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x01, 0x02
+	};
+	static const struct otelc_kv attr[] = {
+		{ .key = (char *)"attr_1", .value = { .u_type = OTELC_VALUE_STRING, .u.value_string = "value_1" } },
+		{ .key = (char *)"attr_2", .value = { .u_type = OTELC_VALUE_INT64,  .u.value_int64  = INT64_C(2) } },
+	};
+	struct otelc_span_context *context;
+	struct otelc_span         *span;
+	struct timespec            ts_system;
+	uint8_t                    out_tid[OTELC_TRACE_ID_SIZE];
+	uint8_t                    out_sid[OTELC_SPAN_ID_SIZE];
+	uint8_t                    out_flags;
+	char                      *err = NULL, *value;
+	int                        retval = TEST_FAIL;
+
+	(void)clock_gettime(CLOCK_REALTIME, &ts_system);
+
+	/* A remote parent whose sampled flag is cleared. */
+	context = otelc_span_context_create(trace_id, sizeof(trace_id), span_id, sizeof(span_id), 0x00, true, NULL, &err);
+	if (_nNULL(context)) {
+		span = OTELC_OPS(tracer, start_span_with_options, "not recording span", NULL, context, NULL, &ts_system, OTELC_SPAN_KIND_SERVER, NULL, 0);
+		if (_nNULL(span)) {
+			retval = TEST_PASS;
+
+			/* The sampler left the span out. */
+			if (OTELC_OPS(span, is_recording) != false)
+				retval = TEST_FAIL;
+
+			/* The discarded data is still reported as accepted. */
+			if (OTELC_OPS(span, set_attribute_kv_n, attr, OTELC_TABLESIZE(attr)) != OTELC_TABLESIZE(attr))
+				retval = TEST_FAIL;
+			if (OTELC_OPS(span, add_event_kv_n, "event_1", &ts_system, attr, OTELC_TABLESIZE(attr)) != OTELC_TABLESIZE(attr))
+				retval = TEST_FAIL;
+			if (OTELC_OPS(span, set_status, OTELC_SPAN_STATUS_ERROR, "not recorded") != OTELC_RET_OK)
+				retval = TEST_FAIL;
+			if (OTELC_OPS(span, add_link, NULL, context, attr, OTELC_TABLESIZE(attr)) != OTELC_RET_OK)
+				retval = TEST_FAIL;
+			if (OTELC_OPS(span, record_exception, "RuntimeError", "not recorded", NULL, &ts_system, NULL, 0) != OTELC_RET_OK)
+				retval = TEST_FAIL;
+
+			/* Baggage is kept whatever the decision was. */
+			if (OTELC_OPS(span, set_baggage_var, "bag_key", "bag_value", NULL) < 0) {
+				retval = TEST_FAIL;
+			} else {
+				value = OTELC_OPS(span, get_baggage, "bag_key");
+				if (_NULL(value) || (strcmp(value, "bag_value") != 0))
+					retval = TEST_FAIL;
+
+				OTELC_SFREE(value);
+			}
+
+			/* The parent's trace is kept, unsampled. */
+			if (OTELC_OPS(span, get_id, out_sid, sizeof(out_sid), out_tid, sizeof(out_tid), &out_flags) == OTELC_RET_OK) {
+				if ((memcmp(trace_id, out_tid, OTELC_TRACE_ID_SIZE) != 0) || ((out_flags & 0x01) != 0))
+					retval = TEST_FAIL;
+			} else {
+				retval = TEST_FAIL;
+			}
+
+			OTELC_OPSR(span, end);
+		}
+
+		OTELC_OPSR(context, destroy);
+	}
+
+	OTELC_SFREE(err);
+	test_report("span not recording", retval);
+}
+
+
+/***
+ * NAME
  *   test_span_set_attribute - tests setting attributes on a span
  *
  * SYNOPSIS
@@ -2065,6 +2168,7 @@ int main(int argc, char **argv)
 	OTELC_LOG(stdout, "[span metadata]");
 	test_span_get_id(tracer);
 	test_span_is_recording(tracer);
+	test_span_not_recording(tracer);
 	test_span_set_attribute(tracer);
 	test_span_add_event(tracer);
 	test_span_add_event_null_timestamp(tracer);
@@ -2124,9 +2228,9 @@ int main(int argc, char **argv)
 	OTELC_LOG(stdout, "");
 	OTELC_LOG(stdout, "[handle statistics]");
 
-	if (otelc_statistics_check(NULL, 0, 0, 75, 0, 75, 75) != 0)
+	if (otelc_statistics_check(NULL, 0, 0, 76, 0, 76, 76) != 0)
 		retval = TEST_FAIL;
-	if (otelc_statistics_check(NULL, 1, 0, 15, 0, 15, 15) != 0)
+	if (otelc_statistics_check(NULL, 1, 0, 16, 0, 16, 16) != 0)
 		retval = TEST_FAIL;
 	test_report("handle statistics", retval);
 
