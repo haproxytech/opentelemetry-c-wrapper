@@ -171,7 +171,8 @@ static int otel_span_is_recording(const struct otelc_span *span)
  *   (using code OTELC_SPAN_STATUS_ERROR).  By default, all spans have a status
  *   of OTELC_SPAN_STATUS_UNSET, which means that the span operation completed
  *   without error.  The OTELC_SPAN_STATUS_OK status is reserved for situations
- *   where a span needs to be explicitly marked as successful.
+ *   where a span needs to be explicitly marked as successful.  On a span that
+ *   is not recording the call returns OTELC_RET_OK without touching the status.
  *
  * RETURN VALUE
  *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR in case of an error.
@@ -186,6 +187,10 @@ static int otel_span_set_status(const struct otelc_span *span, otelc_span_status
 		OTEL_SPAN_RETURN_INT("Invalid span status: %d", status);
 
 	OTEL_LOCK_SPAN_HANDLE(_INT, span);
+
+	/* Not recording: the status is discarded. */
+	if (!handle->span->IsRecording())
+		OTELC_RETURN_INT(OTELC_RET_OK);
 
 	handle->span->SetStatus(OTEL_CAST_STATIC(otel_trace::StatusCode, status), otel_nostd::string_view{OTEL_NULL(desc) ? "" : desc});
 
@@ -913,7 +918,8 @@ static int otel_span_set_one_attribute(otel_nostd::shared_ptr<otel_trace::Span> 
  *   Sets attributes on the span.  An attribute is a key-value pair with a
  *   unique key that provides additional information about the span.  If an
  *   attribute with the same key has already been set, its value will be
- *   updated with the new one.
+ *   updated with the new one.  On a span that is not recording the pairs are
+ *   only counted, none is converted or set.
  *
  * RETURN VALUE
  *   Returns the number of attributes set, or OTELC_RET_ERROR in case of an
@@ -935,10 +941,13 @@ static int otel_span_set_attribute_var(const struct otelc_span *span, const char
 
 	OTEL_LOCK_SPAN_HANDLE(_INT, span);
 
+	/* Not recording: the attributes are discarded, only count them. */
+	const bool is_recording = handle->span->IsRecording();
+
 	/* Iterate over the variadic key-value pairs and set each attribute. */
 	OTEL_VA_AUTO(ap, value);
 	for (retval = 0; !OTEL_NULL(key) && !OTEL_NULL(value); retval++) {
-		if (otel_span_set_one_attribute(handle->span, key, value) == OTELC_RET_ERROR)
+		if (is_recording && (otel_span_set_one_attribute(handle->span, key, value) == OTELC_RET_ERROR))
 			OTEL_SPAN_RETURN_INT(OTEL_ERROR_MSG_SET_SPAN_ATTR);
 
 		key = va_arg(ap, decltype(key));
@@ -966,7 +975,8 @@ static int otel_span_set_attribute_var(const struct otelc_span *span, const char
  *   Sets attributes on the span.  An attribute is a key-value pair with a
  *   unique key that provides additional information about the span.  If an
  *   attribute with the same key has already been set, its value will be
- *   updated with the new one.
+ *   updated with the new one.  On a span that is not recording the pairs are
+ *   only counted, none is converted or set.
  *
  * RETURN VALUE
  *   Returns the number of attributes set, or OTELC_RET_ERROR in case of an
@@ -986,10 +996,13 @@ static int otel_span_set_attribute_kv_var(const struct otelc_span *span, const s
 
 	OTEL_LOCK_SPAN_HANDLE(_INT, span);
 
+	/* Not recording: the attributes are discarded, only count them. */
+	const bool is_recording = handle->span->IsRecording();
+
 	/* Iterate over the variadic kv pairs and set each attribute. */
 	OTEL_VA_AUTO(ap, kv);
 	for (retval = 0; !OTEL_NULL(kv); retval++) {
-		if (otel_span_set_one_attribute(handle->span, kv->key, &(kv->value)) == OTELC_RET_ERROR)
+		if (is_recording && (otel_span_set_one_attribute(handle->span, kv->key, &(kv->value)) == OTELC_RET_ERROR))
 			OTEL_SPAN_RETURN_INT(OTEL_ERROR_MSG_SET_SPAN_ATTR);
 
 		kv = va_arg(ap, decltype(kv));
@@ -1015,7 +1028,8 @@ static int otel_span_set_attribute_kv_var(const struct otelc_span *span, const s
  *   Sets attributes on the span.  An attribute is a key-value pair with a
  *   unique key that provides additional information about the span.  If an
  *   attribute with the same key has already been set, its value will be
- *   updated with the new one.
+ *   updated with the new one.  On a span that is not recording the pairs are
+ *   only counted, none is converted or set.
  *
  * RETURN VALUE
  *   Returns the number of attributes set, or OTELC_RET_ERROR in case of an
@@ -1035,6 +1049,10 @@ static int otel_span_set_attribute_kv_n(const struct otelc_span *span, const str
 		OTEL_SPAN_RETURN_INT(OTEL_ERROR_MSG_INVALID_ATTR_KV " array size");
 
 	OTEL_LOCK_SPAN_HANDLE(_INT, span);
+
+	/* Not recording: the attributes are discarded, only count them. */
+	if (!handle->span->IsRecording())
+		OTELC_RETURN_INT(OTEL_CAST_STATIC(int, kv_len));
 
 	/* Iterate over the kv array and set each attribute. */
 	for (retval = 0; retval < OTEL_CAST_STATIC(int, kv_len); retval++)
@@ -1104,7 +1122,8 @@ static int otel_span_add_one_event(const struct otelc_span *span, otel_attribute
  * DESCRIPTION
  *   Adds an event to the span.  An event can be customized with a timestamp
  *   and a set of attributes, which are key-value pairs providing additional
- *   information.
+ *   information.  On a span that is not recording the pairs are only counted
+ *   and no event is added.
  *
  * RETURN VALUE
  *   Returns the number of attributes that the added event contains,
@@ -1130,13 +1149,16 @@ static int otel_span_add_event_var(const struct otelc_span *span, const char *na
 
 	OTEL_LOCK_SPAN_HANDLE(_INT, span);
 
+	/* Not recording: the event is discarded, only count the pairs. */
+	const bool is_recording = handle->span->IsRecording();
+
 	if (!OTEL_NULL(ts_system))
 		timestamp = otel_system_timestamp(timespec_to_duration(ts_system));
 
 	/* Iterate over the variadic key-value pairs and add each to the event. */
 	OTEL_VA_AUTO(ap, value);
 	for (retval = 0; !OTEL_NULL(key) && !OTEL_NULL(value); retval++) {
-		if (otel_span_add_one_event(span, attr, key, value) == OTELC_RET_ERROR)
+		if (is_recording && (otel_span_add_one_event(span, attr, key, value) == OTELC_RET_ERROR))
 			OTEL_SPAN_RETURN_INT(OTEL_ERROR_MSG_SET_EVENT_ATTR);
 
 		key = va_arg(ap, decltype(key));
@@ -1144,7 +1166,7 @@ static int otel_span_add_event_var(const struct otelc_span *span, const char *na
 			value = va_arg(ap, decltype(value));
 	}
 
-	if (retval > 0)
+	if (is_recording && (retval > 0))
 		handle->span->AddEvent(otel_nostd::string_view{name}, timestamp, attr);
 
 	OTELC_RETURN_INT(retval);
@@ -1168,7 +1190,8 @@ static int otel_span_add_event_var(const struct otelc_span *span, const char *na
  * DESCRIPTION
  *   Adds an event to the span.  An event can be customized with a timestamp
  *   and a set of attributes, which are key-value pairs providing additional
- *   information.
+ *   information.  On a span that is not recording the pairs are only counted
+ *   and no event is added.
  *
  * RETURN VALUE
  *   Returns the number of attributes that the added event contains,
@@ -1192,19 +1215,22 @@ static int otel_span_add_event_kv_var(const struct otelc_span *span, const char 
 
 	OTEL_LOCK_SPAN_HANDLE(_INT, span);
 
+	/* Not recording: the event is discarded, only count the pairs. */
+	const bool is_recording = handle->span->IsRecording();
+
 	if (!OTEL_NULL(ts_system))
 		timestamp = otel_system_timestamp(timespec_to_duration(ts_system));
 
 	/* Iterate over the variadic kv pairs and add each to the event. */
 	OTEL_VA_AUTO(ap, kv);
 	for (retval = 0; !OTEL_NULL(kv); retval++) {
-		if (otel_span_add_one_event(span, attr, kv->key, &(kv->value)) == OTELC_RET_ERROR)
+		if (is_recording && (otel_span_add_one_event(span, attr, kv->key, &(kv->value)) == OTELC_RET_ERROR))
 			OTEL_SPAN_RETURN_INT(OTEL_ERROR_MSG_SET_EVENT_ATTR);
 
 		kv = va_arg(ap, decltype(kv));
 	}
 
-	if (retval > 0)
+	if (is_recording && (retval > 0))
 		handle->span->AddEvent(otel_nostd::string_view{name}, timestamp, attr);
 
 	OTELC_RETURN_INT(retval);
@@ -1228,7 +1254,8 @@ static int otel_span_add_event_kv_var(const struct otelc_span *span, const char 
  * DESCRIPTION
  *   Adds an event to the span.  An event can be customized with a timestamp
  *   and a set of attributes, which are key-value pairs providing additional
- *   information.
+ *   information.  On a span that is not recording the pairs are only counted
+ *   and no event is added.
  *
  * RETURN VALUE
  *   Returns the number of attributes that the added event contains,
@@ -1251,13 +1278,17 @@ static int otel_span_add_event_kv_n(const struct otelc_span *span, const char *n
 	else if (kv_len == 0)
 		OTEL_SPAN_RETURN_INT(OTEL_ERROR_MSG_INVALID_EVENT_KV " array size");
 
+	OTEL_LOCK_SPAN_HANDLE(_INT, span);
+
+	/* Not recording: the event is discarded, only count the pairs. */
+	if (!handle->span->IsRecording())
+		OTELC_RETURN_INT(OTEL_CAST_STATIC(int, kv_len));
+
 	try {
 		OTEL_DBG_THROW();
 		attr.reserve(kv_len);
 	}
 	OTEL_CATCH_SIGNAL_RETURN( , OTEL_SPAN_RETURN_INT, "Unable to allocate event attributes")
-
-	OTEL_LOCK_SPAN_HANDLE(_INT, span);
 
 	if (!OTEL_NULL(ts_system))
 		timestamp = otel_system_timestamp(timespec_to_duration(ts_system));
@@ -1291,7 +1322,8 @@ static int otel_span_add_event_kv_n(const struct otelc_span *span, const char *n
  * DESCRIPTION
  *   Adds a link to another span, identified by its span context.  The link can
  *   be specified either by a span instance (link_span) or by a span context
- *   (link_context), but not both.
+ *   (link_context), but not both.  On a span that is not recording the call
+ *   returns OTELC_RET_OK before the target and the attributes are resolved.
  *
  * RETURN VALUE
  *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR in case of an error.
@@ -1312,6 +1344,13 @@ static int otel_span_add_link(const struct otelc_span *span, const struct otelc_
 
 	if (OTEL_NULL(link_span) && OTEL_NULL(link_context))
 		OTEL_SPAN_RETURN_INT("One of link_span or link_context must be specified");
+
+	/*
+	 * Not recording: the link is discarded.  The helper is used because the
+	 * span lock must not be held while the link target is looked up.
+	 */
+	if (otel_span_is_recording(span) == 0)
+		OTELC_RETURN_INT(OTELC_RET_OK);
 
 	if (!OTEL_NULL(kv) && (kv_len > 0)) {
 		try {
@@ -1378,7 +1417,8 @@ static int otel_span_add_link(const struct otelc_span *span, const struct otelc_
  *   semantic conventions.  The event is named "exception" and carries the
  *   standard attributes exception.type, exception.message, and
  *   exception.stacktrace.  Additional attributes can be provided via the kv
- *   array.
+ *   array.  On a span that is not recording the event is not built and the call
+ *   returns OTELC_RET_OK.
  *
  * RETURN VALUE
  *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR in case of an error.
@@ -1396,6 +1436,10 @@ static int otel_span_record_exception(const struct otelc_span *span, const char 
 		OTEL_SPAN_RETURN_INT("Invalid exception type");
 
 	OTEL_LOCK_SPAN_HANDLE(_INT, span);
+
+	/* Not recording: the exception event is discarded. */
+	if (!handle->span->IsRecording())
+		OTELC_RETURN_INT(OTELC_RET_OK);
 
 	if (!OTEL_NULL(ts_system))
 		timestamp = otel_system_timestamp(timespec_to_duration(ts_system));

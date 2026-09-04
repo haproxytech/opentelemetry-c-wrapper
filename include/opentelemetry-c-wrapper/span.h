@@ -669,7 +669,8 @@ struct otelc_span_ops {
 	 *   Sets attributes on the span.  An attribute is a key-value pair with
 	 *   a unique key that provides additional information about the span.
 	 *   If an attribute with the same key has already been set, its value
-	 *   will be updated with the new one.
+	 *   will be updated with the new one.  On a span that is not recording
+	 *   the pairs are only counted, none is converted or set.
 	 *
 	 * RETURN VALUE
 	 *   Returns the number of attributes set, or OTELC_RET_ERROR in case of
@@ -694,7 +695,8 @@ struct otelc_span_ops {
 	 *   Sets attributes on the span.  An attribute is a key-value pair with
 	 *   a unique key that provides additional information about the span.
 	 *   If an attribute with the same key has already been set, its value
-	 *   will be updated with the new one.
+	 *   will be updated with the new one.  On a span that is not recording
+	 *   the pairs are only counted, none is converted or set.
 	 *
 	 * RETURN VALUE
 	 *   Returns the number of attributes set, or OTELC_RET_ERROR in case of
@@ -719,7 +721,8 @@ struct otelc_span_ops {
 	 *   Sets attributes on the span.  An attribute is a key-value pair with
 	 *   a unique key that provides additional information about the span.
 	 *   If an attribute with the same key has already been set, its value
-	 *   will be updated with the new one.
+	 *   will be updated with the new one.  On a span that is not recording
+	 *   the pairs are only counted, none is converted or set.
 	 *
 	 * RETURN VALUE
 	 *   Returns the number of attributes set, or OTELC_RET_ERROR in case of
@@ -746,7 +749,8 @@ struct otelc_span_ops {
 	 * DESCRIPTION
 	 *   Adds an event to the span.  An event can be customized with a
 	 *   timestamp and a set of attributes, which are key-value pairs
-	 *   providing additional information.
+	 *   providing additional information.  On a span that is not recording
+	 *   the pairs are only counted and no event is added.
 	 *
 	 * RETURN VALUE
 	 *   Returns the number of attributes that the added event contains,
@@ -772,7 +776,8 @@ struct otelc_span_ops {
 	 * DESCRIPTION
 	 *   Adds an event to the span.  An event can be customized with a
 	 *   timestamp and a set of attributes, which are key-value pairs
-	 *   providing additional information.
+	 *   providing additional information.  On a span that is not recording
+	 *   the pairs are only counted and no event is added.
 	 *
 	 * RETURN VALUE
 	 *   Returns the number of attributes that the added event contains,
@@ -798,7 +803,8 @@ struct otelc_span_ops {
 	 * DESCRIPTION
 	 *   Adds an event to the span.  An event can be customized with a
 	 *   timestamp and a set of attributes, which are key-value pairs
-	 *   providing additional information.
+	 *   providing additional information.  On a span that is not recording
+	 *   the pairs are only counted and no event is added.
 	 *
 	 * RETURN VALUE
 	 *   Returns the number of attributes that the added event contains,
@@ -824,7 +830,9 @@ struct otelc_span_ops {
 	 * DESCRIPTION
 	 *   Adds a link to another span, identified by its span context.  The
 	 *   link can be specified either by a span instance (link_span) or by
-	 *   a span context (link_context), but not both.
+	 *   a span context (link_context), but not both.  On a span that is not
+	 *   recording the call returns OTELC_RET_OK before the target and the
+	 *   attributes are resolved.
 	 *
 	 * RETURN VALUE
 	 *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR in case of an
@@ -852,7 +860,9 @@ struct otelc_span_ops {
 	 *   default, all spans have a status of OTELC_SPAN_STATUS_UNSET, which
 	 *   means that the span operation completed without error.  The
 	 *   OTELC_SPAN_STATUS_OK status is reserved for situations where a
-	 *   span needs to be explicitly marked as successful.
+	 *   span needs to be explicitly marked as successful.  On a span that
+	 *   is not recording the call returns OTELC_RET_OK without touching
+	 *   the status.
 	 *
 	 * RETURN VALUE
 	 *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR in case of an
@@ -936,7 +946,8 @@ struct otelc_span_ops {
 	 *   OpenTelemetry semantic conventions.  The event is named "exception"
 	 *   and carries standard attributes: exception.type, exception.message,
 	 *   and exception.stacktrace.  Additional attributes can be provided
-	 *   via the kv array.
+	 *   via the kv array.  On a span that is not recording the event is not
+	 *   built and the call returns OTELC_RET_OK.
 	 *
 	 * RETURN VALUE
 	 *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR in case of an
