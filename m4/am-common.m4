@@ -453,8 +453,19 @@ AC_DEFUN([AX_ENABLE_DEBUG], [
 				[test "${enableval}" = "yes"],
 				[
 					AC_DEFINE([DEBUG], [1], [Define to 1 if you want to include debugging options.])
-					CFLAGS="${CFLAGS} -g -O0"
-					CXXFLAGS="${CXXFLAGS} -g -O0"
+					dnl Replace the default flags of the compiler checks and append
+					dnl to the flags given to configure, so a debug build always
+					dnl ends with -g -O0.
+					AS_IF(
+						[test "${ac_cv_env_CFLAGS_set}" != "set"],
+						[CFLAGS="-g -O0"],
+						[CFLAGS="${CFLAGS} -g -O0"]
+					)
+					AS_IF(
+						[test "${ac_cv_env_CXXFLAGS_set}" != "set"],
+						[CXXFLAGS="-g -O0"],
+						[CXXFLAGS="${CXXFLAGS} -g -O0"]
+					)
 				],
 				[]
 			)
