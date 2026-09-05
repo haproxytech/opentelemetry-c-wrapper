@@ -499,6 +499,8 @@ static struct otelc_span *otel_tracer_start_span_with_options(struct otelc_trace
 				const auto lh = OTEL_SPAN_HANDLE(links[i].span);
 				if (OTEL_NULL(lh))
 					OTEL_TRACER_RETURN_PTR("Link[%zu]: invalid span", i);
+				else if (OTEL_NULL(lh->span))
+					OTEL_TRACER_RETURN_PTR("Link[%zu]: unable to get span context", i);
 
 				link_ctx = lh->span->GetContext();
 			}
@@ -508,6 +510,8 @@ static struct otelc_span *otel_tracer_start_span_with_options(struct otelc_trace
 				const auto ch = OTEL_SPAN_CONTEXT_HANDLE(links[i].context);
 				if (OTEL_NULL(ch))
 					OTEL_TRACER_RETURN_PTR("Link[%zu]: invalid span context", i);
+				else if (OTEL_NULL(ch->context))
+					OTEL_TRACER_RETURN_PTR("Link[%zu]: unable to get span context", i);
 
 				link_ctx = otel_trace::GetSpan(*(ch->context))->GetContext();
 			}
@@ -1091,6 +1095,12 @@ static int otel_tracer_shutdown(struct otelc_tracer *tracer, const struct timesp
  *   before invoking start, including a repeated start: the concurrent calls
  *   snapshot the provider, tracer, and propagator handles that start replaces,
  *   and such a snapshot racing with the replacement is a data race.
+ *
+ *   A repeated start also needs every span of this tracer to have been ended:
+ *   the start releases the previous provider, which shuts its pipeline down,
+ *   so a span still open at that moment is dropped when it ends; a batch
+ *   processor drops it silently, a single one reports the loss in the SDK
+ *   internal log.
  *
  * RETURN VALUE
  *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR in case of an error.

@@ -1152,6 +1152,12 @@ Tracer startup (otel_tracer_start):
     6. Store the provider, tracer, propagator and exporter list in the impl of
        the instance; no global SDK provider or propagator is registered.
 
+  A repeated start replaces the stored provider, and the SDK shuts the pipeline
+  of the released provider down.  A span still open at that moment holds the
+  Tracer of that pipeline, so its End() reaches a shut-down processor and the
+  span is dropped; a batch processor drops it silently, a single one reports the
+  loss in the SDK internal log.
+
 Span creation (otel_tracer_start_span_with_options):
 
   Receives C parameters and translates them into C++ API calls:
