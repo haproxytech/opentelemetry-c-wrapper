@@ -85,7 +85,9 @@ typedef void (*otelc_metric_observable_instrument_cb_t)(struct otelc_metric_obse
  * same registry mutex, so a callback that takes the map lock can deadlock with
  * them.  A descriptor must also stay with the instruments of a single meter;
  * collections of different meters run concurrently and would race on the shared
- * 'value' slot.
+ * 'value' slot.  The descriptor itself must stay valid until the callback is
+ * removed or the meter is destroyed, since the reader thread may invoke it at
+ * any collection until then.
  */
 struct otelc_metric_observable_cb {
 	otelc_metric_observable_instrument_cb_t  func;  /* Observation callback invoked at collection time. */
@@ -151,9 +153,10 @@ struct otelc_meter_ops {
 	 * DESCRIPTION
 	 *   Updates the specified metric instrument with the provided value.
 	 *   The instrument is identified by its instrument ID, as returned by
-	 *   otel_meter_create_instrument().  For synchronous instruments, the value is
-	 *   recorded immediately.  For observable instruments, this function performs
-	 *   no operation, as values are collected via the observation callback.
+	 *   create_instrument().  For synchronous instruments, the value is
+	 *   recorded immediately.  For observable instruments, this function
+	 *   performs no operation, as values are collected via the observation
+	 *   callback.
 	 *
 	 *   For uint64 instruments (counter and histogram), an OTELC_VALUE_INT64 value
 	 *   is accepted if it is non-negative, and is cast to uint64_t.  Negative
@@ -182,9 +185,9 @@ struct otelc_meter_ops {
 	 * DESCRIPTION
 	 *   Updates the specified metric instrument with the provided value and
 	 *   attributes.  The instrument is identified by its instrument ID, as
-	 *   returned by otel_meter_create_instrument().  For synchronous
-	 *   instruments, the value and attributes are recorded immediately.  For
-	 *   observable instruments, this function performs no operation.
+	 *   returned by create_instrument().  For synchronous instruments, the
+	 *   value and attributes are recorded immediately.  For observable
+	 *   instruments, this function performs no operation.
 	 *
 	 *   For uint64 instruments (counter and histogram), an OTELC_VALUE_INT64 value
 	 *   is accepted if it is non-negative, and is cast to uint64_t.  Negative
@@ -209,12 +212,12 @@ struct otelc_meter_ops {
 	 *   data  - observable callback descriptor to register
 	 *
 	 * DESCRIPTION
-	 *   Registers an observation callback for the specified metric instrument.
-	 *   The instrument is identified by its instrument ID, as returned by
-	 *   otel_meter_create_instrument().  This function is applicable only to
-	 *   observable instrument types; the callback will be invoked by the metrics
-	 *   SDK during collection to produce measurement values.  For non-observable
-	 *   instruments, this function has no effect.
+	 *   Registers an observation callback for the specified metric
+	 *   instrument.  The instrument is identified by its instrument ID, as
+	 *   returned by create_instrument().  This function is applicable only
+	 *   to observable instrument types; the callback will be invoked by the
+	 *   metrics SDK during collection to produce measurement values.  For
+	 *   non-observable instruments, this function has no effect.
 	 *
 	 * RETURN VALUE
 	 *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR on failure.
@@ -235,12 +238,12 @@ struct otelc_meter_ops {
 	 *   data  - observable callback descriptor to unregister
 	 *
 	 * DESCRIPTION
-	 *   Removes a previously registered observation callback for the specified
-	 *   metric instrument.  The instrument is identified by its instrument ID, as
-	 *   returned by otel_meter_create_instrument().  This function only affects
-	 *   observable instruments; for non-observable instruments, it performs no
-	 *   operation.  After removal, the callback will no longer be invoked during
-	 *   metrics collection.
+	 *   Removes a previously registered observation callback for the
+	 *   specified metric instrument.  The instrument is identified by its
+	 *   instrument ID, as returned by create_instrument().  This function
+	 *   only affects observable instruments; for non-observable ones, it
+	 *   performs no operation.  After removal, the callback will no longer
+	 *   be invoked during metrics collection.
 	 *
 	 *   Multiple callback functions can be registered on the same instrument.
 	 *   Therefore, when removing a callback, the specific function instance must

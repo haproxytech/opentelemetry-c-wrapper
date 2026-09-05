@@ -578,10 +578,10 @@ static int otel_nolock_meter_add_instrument_callback(struct otelc_meter *meter, 
  * DESCRIPTION
  *   Registers an observation callback for the specified metric instrument.
  *   The instrument is identified by its instrument ID, as returned by
- *   otel_meter_create_instrument().  This function is applicable only to
- *   observable instrument types; the callback will be invoked by the metrics
- *   SDK during collection to produce measurement values.  For non-observable
- *   instruments, this function has no effect.
+ *   create_instrument().  This function is applicable only to observable
+ *   instrument types; the callback will be invoked by the metrics SDK during
+ *   collection to produce measurement values.  For non-observable instruments,
+ *   this function has no effect.
  *
  * RETURN VALUE
  *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR on failure.
@@ -616,10 +616,10 @@ static int otel_meter_add_instrument_callback(struct otelc_meter *meter, int idx
  * DESCRIPTION
  *   Removes a previously registered observation callback for the specified
  *   metric instrument.  The instrument is identified by its instrument ID, as
- *   returned by otel_meter_create_instrument().  This function only affects
- *   observable instruments; for non-observable instruments, it performs no
- *   operation.  After removal, the callback will no longer be invoked during
- *   metrics collection.
+ *   returned by create_instrument().  This function only affects observable
+ *   instruments; for non-observable instruments, it performs no operation.
+ *   After removal, the callback will no longer be invoked during metrics
+ *   collection.
  *
  *   Multiple callback functions can be registered on the same instrument.
  *   Therefore, when removing a callback, the specific function instance must
@@ -922,9 +922,9 @@ static int otel_meter_instrument_value_type(struct otelc_meter *meter, const str
  * DESCRIPTION
  *   Updates the specified metric instrument with the provided value.
  *   The instrument is identified by its instrument ID, as returned by
- *   otel_meter_create_instrument().  For synchronous instruments, the value is
- *   recorded immediately.  For observable instruments, this function performs
- *   no operation, as values are collected via the observation callback.
+ *   create_instrument().  For synchronous instruments, the value is recorded
+ *   immediately.  For observable instruments, this function performs no
+ *   operation, as values are collected via the observation callback.
  *
  *   For uint64 instruments (counter and histogram), an OTELC_VALUE_INT64 value
  *   is accepted if it is non-negative, and is cast to uint64_t.  Negative
@@ -1000,9 +1000,9 @@ static int otel_meter_update_instrument(struct otelc_meter *meter, int idx, cons
  * DESCRIPTION
  *   Updates the specified metric instrument with the provided value and
  *   attributes.  The instrument is identified by its instrument ID, as
- *   returned by otel_meter_create_instrument().  For synchronous
- *   instruments, the value and attributes are recorded immediately.  For
- *   observable instruments, this function performs no operation.
+ *   returned by create_instrument().  For synchronous instruments, the value
+ *   and attributes are recorded immediately.  For observable instruments, this
+ *   function performs no operation.
  *
  *   For uint64 instruments (counter and histogram), an OTELC_VALUE_INT64 value
  *   is accepted if it is non-negative, and is cast to uint64_t.  Negative
