@@ -200,7 +200,9 @@ static int otel_logger_set_enabled(struct otelc_logger *logger, bool enabled)
  *   Changes the minimum severity threshold of the underlying logger at
  *   runtime.  After this call, only log records whose severity is equal to
  *   or greater than the given level are emitted; lower severity records are
- *   silently discarded.
+ *   silently discarded.  The logger must already be started, since the
+ *   threshold is applied to its SDK logger; a call on an unstarted logger is
+ *   rejected.
  *
  * RETURN VALUE
  *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR in case of an error.
@@ -795,6 +797,11 @@ static int otel_logger_shutdown(struct otelc_logger *logger, const struct timesp
  *   current threshold is kept.  The optional flush_timeout key of the subtree
  *   sets the destroy-time provider flush budget; without it the current
  *   budget is kept.
+ *
+ *   The caller must drain every concurrent operation on this logger instance
+ *   before invoking start, including a repeated start: the concurrent calls
+ *   snapshot the SDK logger and provider handles that start replaces, and
+ *   such a snapshot racing with the replacement is a data race.
  *
  * RETURN VALUE
  *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR in case of an error.

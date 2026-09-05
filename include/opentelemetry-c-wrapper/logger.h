@@ -131,7 +131,9 @@ struct otelc_logger_ops {
 	 *   Changes the minimum severity threshold of the underlying logger
 	 *   at runtime.  After this call, only log records whose severity is
 	 *   equal to or greater than the given level are emitted; lower
-	 *   severity records are silently discarded.
+	 *   severity records are silently discarded.  The logger must already
+	 *   be started, since the threshold is applied to its SDK logger; a
+	 *   call on an unstarted logger is rejected.
 	 *
 	 * RETURN VALUE
 	 *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR in case of
