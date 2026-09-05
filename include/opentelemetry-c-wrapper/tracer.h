@@ -301,6 +301,12 @@ struct otelc_tracer_ops {
 	 *   handles that start replaces, and such a snapshot racing with the
 	 *   replacement is a data race.
 	 *
+	 *   A repeated start also needs every span of this tracer to have been
+	 *   ended: the start releases the previous provider, which shuts its
+	 *   pipeline down, so a span still open at that moment is dropped when
+	 *   it ends; a batch processor drops it silently, a single one reports
+	 *   the loss in the SDK internal log.
+	 *
 	 * RETURN VALUE
 	 *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR in case of an
 	 *   error.

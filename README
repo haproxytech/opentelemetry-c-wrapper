@@ -793,7 +793,10 @@ Common to the tracer, the meter and the logger:
                         within the flush budget, builds the provider anew and
                         replaces the previous one, whose exporters are shut
                         down first; exactly as for destroy, every concurrent
-                        operation must be drained before a restart
+                        operation must be drained before a restart and, for a
+                        tracer, all its spans must have been ended; a span still
+                        open then belongs to the pipeline that start shuts down
+                        and is dropped when it ends
   * set_enabled       - last wins
   * set_flush_timeout - last wins
   * force_flush       - per call
