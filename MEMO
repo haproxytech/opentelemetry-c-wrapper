@@ -1727,8 +1727,8 @@ Logger startup (otel_logger_start):
        OTELC_SCOPE_SCHEMA_URL).
     6. Set minimum severity on the obtained logger via
        SetMinimumSeverity(uint8_t).
-    7. Store the provider and logger in the per-instance impl; no global SDK
-       provider is registered.
+    7. Store the provider, the logger and the exporter list in the per-instance
+       impl; no global SDK provider is registered.
 
   The SetMinimumSeverity() method is protected in the C++ Logger base class.
   The wrapper accesses it through a helper struct:
