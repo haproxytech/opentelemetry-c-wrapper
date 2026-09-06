@@ -1426,7 +1426,7 @@ When the queue fills up, new records are silently dropped.  The library reports
 the drop count through otelc_pipeline_status_get(); section 9.1 has the details.
 
 Type "single" exports each record immediately, on the thread that produced it.
-It reads no keys beyond 'type'.
+The batch keys are still read and range-checked in its block, but not used.
 
 
 6.7. Readers
@@ -1557,13 +1557,13 @@ Traces signal
   scope_name (string, mandatory)
       Instrumentation scope name for the tracer.
 
-  exporters (string or list of strings)
+  exporters (string or list of strings, mandatory)
       Exporter name(s) from the top-level 'exporters' section.
 
   samplers (string)
       Sampler name from the top-level 'samplers' section.
 
-  processors (string or list of strings)
+  processors (string or list of strings, mandatory)
       Processor name(s) from the top-level 'processors' section.
 
   providers (string)
@@ -1580,7 +1580,7 @@ Metrics signal
   scope_name (string, mandatory)
       Instrumentation scope name for the meter.
 
-  exporters (string or list of strings)
+  exporters (string or list of strings, mandatory)
       Exporter name(s) from the top-level 'exporters' section.
 
   readers (string or list of strings)
@@ -1600,10 +1600,10 @@ Logs signal
   scope_name (string, mandatory)
       Instrumentation scope name for the logger.
 
-  exporters (string or list of strings)
+  exporters (string or list of strings, mandatory)
       Exporter name(s) from the top-level 'exporters' section.
 
-  processors (string or list of strings)
+  processors (string or list of strings, mandatory)
       Processor name(s) from the top-level 'processors' section.
 
   providers (string)

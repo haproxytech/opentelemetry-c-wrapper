@@ -690,9 +690,9 @@ int otel_tracer_processor_create(struct otelc_tracer *tracer, std::unique_ptr<ot
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
 	else if (rc == 0) {
 		if (name != nullptr)
-			OTEL_TRACER_RETURN_INT("'%s': OpenTelemetry traces processor type not specified", name);
+			OTEL_TRACER_RETURN_INT("'%s': OpenTelemetry traces processor not specified", name);
 		else
-			OTEL_TRACER_RETURN_INT("OpenTelemetry traces processor type not specified");
+			OTEL_TRACER_RETURN_INT("OpenTelemetry traces processor not specified");
 	}
 	else if (strcasecmp(type, "batch") == 0)
 		flag_batch = true;
@@ -807,9 +807,9 @@ int otel_logger_processor_create(struct otelc_logger *logger, std::unique_ptr<ot
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
 	else if (rc == 0) {
 		if (name != nullptr)
-			OTEL_LOGGER_RETURN_INT("'%s': OpenTelemetry logs processor type not specified", name);
+			OTEL_LOGGER_RETURN_INT("'%s': OpenTelemetry logs processor not specified", name);
 		else
-			OTEL_LOGGER_RETURN_INT("OpenTelemetry logs processor type not specified");
+			OTEL_LOGGER_RETURN_INT("OpenTelemetry logs processor not specified");
 	}
 	else if (strcasecmp(type, "batch") == 0)
 		flag_batch = true;

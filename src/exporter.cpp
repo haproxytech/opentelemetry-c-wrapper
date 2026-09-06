@@ -80,12 +80,6 @@ static int otel_exporter_set_otlp_file_options(const struct otelc_ctx *ctx, cons
 	                   OTEL_YAML_END);
 	if (rc == OTELC_RET_ERROR)
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
-	else if (rc == 0) {
-		if (OTEL_NULL(name))
-			OTEL_ERR_RETURN_INT("OpenTelemetry exporter type not specified");
-		else
-			OTEL_ERR_RETURN_INT("'%s': OpenTelemetry exporter type not specified", name);
-	}
 
 	fs_options.file_pattern   = file_pattern;
 	fs_options.alias_pattern  = alias_pattern;
