@@ -2039,6 +2039,11 @@ Error handling:
   errors through the tree's callbacks, so the throwing handler installed on
   the tree contains malformed input and a parse error cannot abort the process.
 
+  Rapidyaml 0.11 replaced the single error callback with the basic, the parse
+  and the visit callbacks, which differ only in the type of the error details
+  argument, so a RYML_VERSION_GE() check installs a templated ryml_throw_error()
+  on each of them and keeps the single-callback handler for older releases.
+
   yaml_open() wraps tree allocation and parsing in a single try block.  On
   success the unique_ptr is released to transfer ownership to the caller.
 
