@@ -717,9 +717,13 @@ distinct instrument and view registries.  The shared span and the span-context
 handle maps are reference-counted by the tracers and torn down only when the
 last tracer is destroyed, so destroying any one tracer does not invalidate the
 spans owned by another tracer that is still in use.  A span or span context
-that outlives its own tracer supports only the end, end_with_options and destroy
-operations; any other operation on such a leftover instance fails and records
-no error message.
+that outlives the last tracer, and with it the handle maps, supports only the
+end, end_with_options and destroy operations; any other operation on such a
+leftover instance fails and, in the default build, records no error message.
+A span whose own tracer is gone while other tracers keep the maps alive stays
+usable at the SDK level, but its error reporting and its inject operation still
+reach into the freed tracer structure, so the spans of a tracer must be ended
+before the tracer is destroyed.
 
 Strings handed to the caller through an err argument are allocated by the API
 and are released with OTELC_SFREE(), the macro that tolerates a null pointer.

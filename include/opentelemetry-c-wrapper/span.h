@@ -457,7 +457,8 @@ struct otelc_span_ops {
 	 *   the end time of the span.  <status> is used to set the status of
 	 *   the span and its setting can be avoided if OTELC_SPAN_STATUS_IGNORE
 	 *   is used as the argument.  <desc> is used as a text description
-	 *   that can be set for the span status.
+	 *   that can be set for the span status; a NULL <desc> leaves the
+	 *   description empty, as set_status does.
 	 *
 	 * RETURN VALUE
 	 *   This function does not return a value.
@@ -742,22 +743,23 @@ struct otelc_span_ops {
 	 *   span      - span instance
 	 *   name      - name of the event being added
 	 *   ts_system - time of the event being added
-	 *   key       - attribute key for the event being added
-	 *   value     - attribute value for the event being added
+	 *   key       - attribute key for the event being added, or NULL for an event without attributes
+	 *   value     - attribute value for the event being added, ignored when key is NULL
 	 *   ...       - additional attribute key-value pairs, terminated by a NULL key
 	 *
 	 * DESCRIPTION
 	 *   Adds an event to the span.  An event can be customized with a
 	 *   timestamp and a set of attributes, which are key-value pairs
-	 *   providing additional information.  On a span that is not recording
-	 *   the pairs are only counted and no event is added.
+	 *   providing additional information; a NULL key adds the event
+	 *   without attributes.  On a span that is not recording the pairs are
+	 *   only counted and no event is added.
 	 *
 	 * RETURN VALUE
 	 *   Returns the number of attributes that the added event contains,
 	 *   or OTELC_RET_ERROR in case of an error.
 	 */
 	int (*add_event_var)(const struct otelc_span *span, const char *name, const struct timespec *ts_system, const char *key, const struct otelc_value *value, ...)
-		OTELC_NONNULL(1, 2, 4, 5);
+		OTELC_NONNULL(1, 2);
 
 	/***
 	 * NAME
@@ -770,21 +772,22 @@ struct otelc_span_ops {
 	 *   span      - span instance
 	 *   name      - name of the event being added
 	 *   ts_system - time of the event being added
-	 *   kv        - key-value pair of the attribute being set
+	 *   kv        - key-value pair of the attribute being set, or NULL for an event without attributes
 	 *   ...       - additional key-value pairs, terminated by NULL
 	 *
 	 * DESCRIPTION
 	 *   Adds an event to the span.  An event can be customized with a
 	 *   timestamp and a set of attributes, which are key-value pairs
-	 *   providing additional information.  On a span that is not recording
-	 *   the pairs are only counted and no event is added.
+	 *   providing additional information; a NULL kv adds the event
+	 *   without attributes.  On a span that is not recording the pairs are
+	 *   only counted and no event is added.
 	 *
 	 * RETURN VALUE
 	 *   Returns the number of attributes that the added event contains,
 	 *   or OTELC_RET_ERROR in case of an error.
 	 */
 	int (*add_event_kv_var)(const struct otelc_span *span, const char *name, const struct timespec *ts_system, const struct otelc_kv *kv, ...)
-		OTELC_NONNULL(1, 2, 4);
+		OTELC_NONNULL(1, 2);
 
 	/***
 	 * NAME
@@ -797,21 +800,22 @@ struct otelc_span_ops {
 	 *   span      - span instance
 	 *   name      - name of the event being added
 	 *   ts_system - time of the event being added
-	 *   kv        - an array of key-value pairs of attributes to be set
-	 *   kv_len    - size of key-value pair array
+	 *   kv        - an array of key-value pairs of attributes to be set, or NULL when kv_len is 0
+	 *   kv_len    - size of key-value pair array, or 0 for an event without attributes
 	 *
 	 * DESCRIPTION
 	 *   Adds an event to the span.  An event can be customized with a
 	 *   timestamp and a set of attributes, which are key-value pairs
-	 *   providing additional information.  On a span that is not recording
-	 *   the pairs are only counted and no event is added.
+	 *   providing additional information; a kv_len of zero adds the event
+	 *   without attributes.  On a span that is not recording the pairs are
+	 *   only counted and no event is added.
 	 *
 	 * RETURN VALUE
 	 *   Returns the number of attributes that the added event contains,
 	 *   or OTELC_RET_ERROR in case of an error.
 	 */
 	int (*add_event_kv_n)(const struct otelc_span *span, const char *name, const struct timespec *ts_system, const struct otelc_kv *kv, size_t kv_len)
-		OTELC_NONNULL(1, 2, 4);
+		OTELC_NONNULL(1, 2);
 
 	/***
 	 * NAME
@@ -860,9 +864,9 @@ struct otelc_span_ops {
 	 *   default, all spans have a status of OTELC_SPAN_STATUS_UNSET, which
 	 *   means that the span operation completed without error.  The
 	 *   OTELC_SPAN_STATUS_OK status is reserved for situations where a
-	 *   span needs to be explicitly marked as successful.  On a span that
-	 *   is not recording the call returns OTELC_RET_OK without touching
-	 *   the status.
+	 *   span needs to be explicitly marked as successful.  A NULL <desc>
+	 *   leaves the description empty.  On a span that is not recording
+	 *   the call returns OTELC_RET_OK without touching the status.
 	 *
 	 * RETURN VALUE
 	 *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR in case of an
