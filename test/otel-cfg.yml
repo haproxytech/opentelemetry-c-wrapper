@@ -15,6 +15,11 @@ exporters:
     file_size:      134217728
     rotate_size:    5
 
+  # Carries its type alone on purpose: every other key of an otlp_file block
+  # is optional, and a block that leaves them at their defaults must start.
+  exporter_traces_otlp_file_default:
+    type: otlp_file
+
   exporter_traces_otlp_grpc:
     type:                             otlp_grpc
     thread_name:                      "OTLP/gRPC trace"
@@ -363,6 +368,16 @@ signals:
       processors:
         - processor_traces_single
         - processor_traces_single
+      providers:  provider_traces
+
+    # Names the exporter block that carries its type alone; a tracer started
+    # against this entry shows that an otlp_file exporter left on its defaults
+    # is accepted.  No span is created through it, so no log file is opened.
+    otlp_file_default:
+      scope_name: "OTEL C wrapper - traces otlp_file defaults"
+      exporters:  exporter_traces_otlp_file_default
+      samplers:   sampler_traces
+      processors: processor_traces_single
       providers:  provider_traces
 
     multi_a:

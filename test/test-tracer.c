@@ -2416,6 +2416,52 @@ static void test_tracer_restart(struct otelc_ctx *ctx)
 
 /***
  * NAME
+ *   test_tracer_otlp_file_defaults - tests an otlp_file exporter left on its defaults
+ *
+ * SYNOPSIS
+ *   static void test_tracer_otlp_file_defaults(const char *cfg_file)
+ *
+ * ARGUMENTS
+ *   cfg_file - path of the YAML configuration the tests read
+ *
+ * DESCRIPTION
+ *   Opens a context of its own on the 'otlp_file_default' entry and starts a
+ *   tracer against it.  The exporter block that entry names carries its type
+ *   alone, so every other key takes its default; such a block was once read as
+ *   a missing node and failed the start.  No span is created, so the exporter
+ *   never opens a log file.
+ *
+ * RETURN VALUE
+ *   This function does not return a value.
+ */
+static void test_tracer_otlp_file_defaults(const char *cfg_file)
+{
+	struct otelc_ctx    *ctx;
+	struct otelc_tracer *tracer;
+	char                *err = NULL;
+	int                  retval = TEST_FAIL;
+
+	ctx = otelc_init(cfg_file, "otlp_file_default", &err);
+	if (_nNULL(ctx)) {
+		tracer = otelc_tracer_create(ctx, &err);
+		if (_nNULL(tracer)) {
+			if (OTELC_OPS(tracer, start) == OTELC_RET_OK)
+				retval = TEST_PASS;
+
+			OTELC_OPSR(tracer, destroy);
+		}
+
+		otelc_deinit(&ctx, NULL, NULL, NULL);
+	}
+
+	OTELC_SFREE(err);
+
+	test_report("tracer otlp_file defaults", retval);
+}
+
+
+/***
+ * NAME
  *   test_span_context_create_basic - tests span context creation from raw IDs
  *
  * SYNOPSIS
@@ -2769,8 +2815,9 @@ static int test_handle_statistics(void)
  * DESCRIPTION
  *   Initializes the OpenTelemetry library, creates a tracer, runs all tracer
  *   tests, and reports the results.  A second context loads the 'restart'
- *   entry of the configuration, which writes to files of its own, for the
- *   tests that start a tracer of their own.
+ *   entry of the configuration, which writes to files of its own, for most of
+ *   the tests that start a tracer of their own; the otlp_file defaults test
+ *   opens the context it needs by itself.
  *
  * RETURN VALUE
  *   Returns EX_OK if all tests pass, or EX_SOFTWARE if any test fails.
@@ -2915,6 +2962,7 @@ int main(int argc, char **argv)
 	test_tracer_set_enabled(tracer);
 	test_tracer_set_flush_timeout(ctx_aux);
 	test_tracer_restart(ctx_aux);
+	test_tracer_otlp_file_defaults(cfg_file);
 	test_force_flush(tracer);
 	test_shutdown(tracer);
 
