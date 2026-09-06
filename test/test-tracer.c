@@ -838,6 +838,44 @@ static void test_span_add_event_null_timestamp(struct otelc_tracer *tracer)
 
 /***
  * NAME
+ *   test_span_add_event_no_attr - tests adding events without attributes
+ *
+ * SYNOPSIS
+ *   static void test_span_add_event_no_attr(struct otelc_tracer *tracer)
+ *
+ * ARGUMENTS
+ *   tracer - tracer instance
+ *
+ * DESCRIPTION
+ *   Verifies that every add_event variant accepts an empty attribute list and
+ *   reports zero attributes for the added event, and that an array length
+ *   given without an array is still rejected.
+ *
+ * RETURN VALUE
+ *   This function does not return a value.
+ */
+static void test_span_add_event_no_attr(struct otelc_tracer *tracer)
+{
+	struct otelc_span *span;
+	int                retval = TEST_FAIL;
+
+	span = OTELC_OPS(tracer, start_span, "event no attr span");
+	if (_nNULL(span)) {
+		if ((OTELC_OPS(span, add_event_var, "ev_no_attr_1", NULL, NULL, NULL, NULL) == 0) &&
+		    (OTELC_OPS(span, add_event_kv_var, "ev_no_attr_2", NULL, NULL, NULL) == 0) &&
+		    (OTELC_OPS(span, add_event_kv_n, "ev_no_attr_3", NULL, NULL, 0) == 0) &&
+		    (OTELC_OPS(span, add_event_kv_n, "ev_no_attr_4", NULL, NULL, 1) == OTELC_RET_ERROR))
+			retval = TEST_PASS;
+
+		OTELC_OPSR(span, end);
+	}
+
+	test_report("span add_event without attributes", retval);
+}
+
+
+/***
+ * NAME
  *   test_span_set_status - tests setting span status
  *
  * SYNOPSIS
@@ -2825,6 +2863,7 @@ int main(int argc, char **argv)
 	test_span_set_attribute(tracer);
 	test_span_add_event(tracer);
 	test_span_add_event_null_timestamp(tracer);
+	test_span_add_event_no_attr(tracer);
 	test_span_set_status(tracer);
 	test_span_set_operation_name(tracer);
 	test_span_add_link(tracer);
@@ -2894,7 +2933,6 @@ int main(int argc, char **argv)
 
 	return test_done(retval, otel_err);
 }
-
 
 /*
  * Local variables:

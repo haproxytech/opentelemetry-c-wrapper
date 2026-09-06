@@ -171,8 +171,9 @@ static int otel_span_is_recording(const struct otelc_span *span)
  *   (using code OTELC_SPAN_STATUS_ERROR).  By default, all spans have a status
  *   of OTELC_SPAN_STATUS_UNSET, which means that the span operation completed
  *   without error.  The OTELC_SPAN_STATUS_OK status is reserved for situations
- *   where a span needs to be explicitly marked as successful.  On a span that
- *   is not recording the call returns OTELC_RET_OK without touching the status.
+ *   where a span needs to be explicitly marked as successful.  A NULL <desc>
+ *   leaves the description empty.  On a span that is not recording the call
+ *   returns OTELC_RET_OK without touching the status.
  *
  * RETURN VALUE
  *   Returns OTELC_RET_OK on success, or OTELC_RET_ERROR in case of an error.
@@ -375,7 +376,8 @@ static int otel_span_inject_http_headers(const struct otelc_span *span, struct o
  *   null.  The optional <ts_steady> argument sets the end time of the span.
  *   <status> is used to set the status of the span and its setting can be
  *   avoided if OTELC_SPAN_STATUS_IGNORE is used as the argument.  <desc> is
- *   used as a text description that can be set for the span status.
+ *   used as a text description that can be set for the span status; a NULL
+ *   <desc> leaves the description empty, as set_status does.
  *
  * RETURN VALUE
  *   This function does not return a value.
@@ -406,11 +408,8 @@ static void otel_span_end_with_options(struct otelc_span **span, const struct ti
 		if (!OTEL_NULL(ts_steady))
 			end_options.end_steady_time = otel_steady_timestamp(timespec_to_duration(ts_steady));
 
-		if (OTELC_IN_RANGE(status, OTELC_SPAN_STATUS_UNSET, OTELC_SPAN_STATUS_ERROR)) {
-			static constexpr const char *description[] = { "Status UNSET", "Status OK", "Status ERROR" };
-
-			handle->span->SetStatus(OTEL_CAST_STATIC(otel_trace::StatusCode, status), otel_nostd::string_view{OTEL_NULL(desc) ? description[status] : desc});
-		}
+		if (OTELC_IN_RANGE(status, OTELC_SPAN_STATUS_UNSET, OTELC_SPAN_STATUS_ERROR))
+			handle->span->SetStatus(OTEL_CAST_STATIC(otel_trace::StatusCode, status), otel_nostd::string_view{OTEL_NULL(desc) ? "" : desc});
 		else
 			OTELC_DBG(OTEL, "span status not set: %d", status);
 
@@ -1121,15 +1120,15 @@ static int otel_span_add_one_event(const struct otelc_span *span, otel_attribute
  *   span      - span instance
  *   name      - name of the event being added
  *   ts_system - time of the event being added
- *   key       - attribute key for the event being added
- *   value     - attribute value for the event being added
+ *   key       - attribute key for the event being added, or NULL for an event without attributes
+ *   value     - attribute value for the event being added, ignored when key is NULL
  *   ...       - additional attribute key-value pairs, terminated by a NULL key
  *
  * DESCRIPTION
  *   Adds an event to the span.  An event can be customized with a timestamp
  *   and a set of attributes, which are key-value pairs providing additional
- *   information.  On a span that is not recording the pairs are only counted
- *   and no event is added.
+ *   information; a NULL key adds the event without attributes.  On a span
+ *   that is not recording the pairs are only counted and no event is added.
  *
  * RETURN VALUE
  *   Returns the number of attributes that the added event contains,
@@ -1148,9 +1147,9 @@ static int otel_span_add_event_var(const struct otelc_span *span, const char *na
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
 	else if (OTEL_NULL(name))
 		OTEL_SPAN_RETURN_INT(OTEL_ERROR_MSG_INVALID_EVENT_NAME);
-	else if (!OTELC_STR_IS_VALID(key))
+	else if (!OTEL_NULL(key) && (*key == '\0'))
 		OTEL_SPAN_RETURN_INT("Invalid event key");
-	else if (OTEL_NULL(value))
+	else if (!OTEL_NULL(key) && OTEL_NULL(value))
 		OTEL_SPAN_RETURN_INT("Invalid event value");
 
 	OTEL_LOCK_SPAN_HANDLE(_INT, span);
@@ -1172,7 +1171,7 @@ static int otel_span_add_event_var(const struct otelc_span *span, const char *na
 			value = va_arg(ap, decltype(value));
 	}
 
-	if (is_recording && (retval > 0))
+	if (is_recording)
 		handle->span->AddEvent(otel_nostd::string_view{name}, timestamp, attr);
 
 	OTELC_RETURN_INT(retval);
@@ -1190,14 +1189,14 @@ static int otel_span_add_event_var(const struct otelc_span *span, const char *na
  *   span      - span instance
  *   name      - name of the event being added
  *   ts_system - time of the event being added
- *   kv        - key-value pair of the attribute being set
+ *   kv        - key-value pair of the attribute being set, or NULL for an event without attributes
  *   ...       - additional key-value pairs, terminated by NULL
  *
  * DESCRIPTION
  *   Adds an event to the span.  An event can be customized with a timestamp
  *   and a set of attributes, which are key-value pairs providing additional
- *   information.  On a span that is not recording the pairs are only counted
- *   and no event is added.
+ *   information; a NULL kv adds the event without attributes.  On a span
+ *   that is not recording the pairs are only counted and no event is added.
  *
  * RETURN VALUE
  *   Returns the number of attributes that the added event contains,
@@ -1216,8 +1215,6 @@ static int otel_span_add_event_kv_var(const struct otelc_span *span, const char 
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
 	else if (OTEL_NULL(name))
 		OTEL_SPAN_RETURN_INT(OTEL_ERROR_MSG_INVALID_EVENT_NAME);
-	else if (OTEL_NULL(kv))
-		OTEL_SPAN_RETURN_INT(OTEL_ERROR_MSG_INVALID_EVENT_KV);
 
 	OTEL_LOCK_SPAN_HANDLE(_INT, span);
 
@@ -1236,7 +1233,7 @@ static int otel_span_add_event_kv_var(const struct otelc_span *span, const char 
 		kv = va_arg(ap, decltype(kv));
 	}
 
-	if (is_recording && (retval > 0))
+	if (is_recording)
 		handle->span->AddEvent(otel_nostd::string_view{name}, timestamp, attr);
 
 	OTELC_RETURN_INT(retval);
@@ -1254,14 +1251,15 @@ static int otel_span_add_event_kv_var(const struct otelc_span *span, const char 
  *   span      - span instance
  *   name      - name of the event being added
  *   ts_system - time of the event being added
- *   kv        - an array of key-value pairs of attributes to be set
- *   kv_len    - size of key-value pair array
+ *   kv        - an array of key-value pairs of attributes to be set, or NULL when kv_len is 0
+ *   kv_len    - size of key-value pair array, or 0 for an event without attributes
  *
  * DESCRIPTION
  *   Adds an event to the span.  An event can be customized with a timestamp
  *   and a set of attributes, which are key-value pairs providing additional
- *   information.  On a span that is not recording the pairs are only counted
- *   and no event is added.
+ *   information; a kv_len of zero adds the event without attributes.  On a
+ *   span that is not recording the pairs are only counted and no event is
+ *   added.
  *
  * RETURN VALUE
  *   Returns the number of attributes that the added event contains,
@@ -1279,10 +1277,8 @@ static int otel_span_add_event_kv_n(const struct otelc_span *span, const char *n
 		OTELC_RETURN_INT(OTELC_RET_ERROR);
 	else if (OTEL_NULL(name))
 		OTEL_SPAN_RETURN_INT(OTEL_ERROR_MSG_INVALID_EVENT_NAME);
-	else if (OTEL_NULL(kv))
+	else if (OTEL_NULL(kv) && (kv_len > 0))
 		OTEL_SPAN_RETURN_INT(OTEL_ERROR_MSG_INVALID_EVENT_KV);
-	else if (kv_len == 0)
-		OTEL_SPAN_RETURN_INT(OTEL_ERROR_MSG_INVALID_EVENT_KV " array size");
 
 	OTEL_LOCK_SPAN_HANDLE(_INT, span);
 
@@ -1304,8 +1300,7 @@ static int otel_span_add_event_kv_n(const struct otelc_span *span, const char *n
 		if (otel_span_add_one_event(span, attr, kv[retval].key, &(kv[retval].value)) == OTELC_RET_ERROR)
 			OTEL_SPAN_RETURN_INT(OTEL_ERROR_MSG_SET_EVENT_ATTR);
 
-	if (retval > 0)
-		handle->span->AddEvent(otel_nostd::string_view{name}, timestamp, attr);
+	handle->span->AddEvent(otel_nostd::string_view{name}, timestamp, attr);
 
 	OTELC_RETURN_INT(retval);
 }
