@@ -674,9 +674,10 @@ char *yaml_read(const char *file, char **err)
 	if (OTEL_NULL(file))
 		OTEL_ERR_RETURN_PTR(OTEL_ERROR_MSG_YAML_FILE_NAME);
 
+	/* A failed yaml_open() has already populated *err. */
 	auto fyd = yaml_open(file, err);
 	if (OTEL_NULL(fyd))
-		OTEL_ERR_RETURN_PTR(OTEL_ERROR_MSG_YAML_OPEN_FILE, file);
+		OTELC_RETURN_PTR(nullptr);
 
 	OTEL_DEFER(yaml_close(&fyd));
 
