@@ -146,8 +146,12 @@ has the following effects:
 
   * Parent span lookup: when start_span_with_options() is called without an
     explicit parent_span or parent_context, the current context is obtained
-    from RuntimeContext::GetCurrent() instead of constructing an empty context.
-    New spans automatically become children of the currently active span.
+    from RuntimeContext::GetCurrent() and the new span becomes a child of the
+    span that is active at that moment.  Such a call therefore starts a root
+    span only while no other span is active.  A span stays active until it is
+    ended, so a span started next to one that the sampler left out inherits
+    that decision, and the caller that wants a root span has to end the active
+    one first.
 
   * Carrier extraction: extract_text_map() and extract_http_headers() use
     RuntimeContext::GetCurrent() as the base context for propagator extraction
@@ -158,9 +162,13 @@ has the following effects:
     exemplar correlation with the active span.
 
 When undefined, no scope is stored and RuntimeContext is not used.  An empty
-otel_context::Context{} is substituted in all three cases above.  Parent-child
-relationships must be established explicitly by passing parent_span or
-parent_context to start_span_with_options().
+otel_context::Context{} is substituted in the extraction and the metric case,
+while a span started without a parent keeps the invalid span context that the
+start options carry by default.  The SDK then falls back to the span that is
+current in its own runtime context, which this build never sets, so the span
+is a root unless the host application itself activates spans on that thread.
+Parent-child relationships must be established explicitly by passing parent_span
+or parent_context to start_span_with_options().
 
 This macro is undefined by default because the wrapper library's primary use
 case (the HAProxy OTel filter) manages parent-child relationships explicitly

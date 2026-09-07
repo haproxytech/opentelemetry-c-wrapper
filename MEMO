@@ -1157,9 +1157,11 @@ Span creation (otel_tracer_start_span_with_options):
       pointer from its handle; no propagation Context is built for that.
     - If parent_context is provided, pass the Context of its handle and take
       the baggage it carries.
-    - Otherwise, the options keep their invalid span context and the span is
-      a root (RuntimeContext::GetCurrent() is used when runtime context is
-      enabled).
+    - Otherwise, the options keep their invalid span context and the SDK falls
+      back to the span current in its own runtime context, which the wrapper
+      never sets in this build, so the span is a root unless the host itself
+      activates spans on that thread.  With runtime context enabled, the parent
+      is RuntimeContext::GetCurrent() instead.
 
   After StartSpan succeeds, the result is wrapped in an
   otel_span_handle that bundles:
@@ -1484,7 +1486,8 @@ Value recording:
       otel_meter_instrument_value_type.
     - Allow int64 -> uint64 coercion for uint64 instruments if the value is
       non-negative.
-    - Obtain context: either empty Context{} or RuntimeContext::GetCurrent().
+    - Obtain context: either empty Context{} or RuntimeContext::GetCurrent()
+      (the latter with OTELC_USE_RUNTIME_CONTEXT).
     - Dispatch to Add() (counters/updown) or Record() (histograms/gauges) with
       value, optional attributes map, and context.
     - Observable instruments are no-ops (values come from callbacks).
