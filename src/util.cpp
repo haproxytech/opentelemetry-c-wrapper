@@ -471,13 +471,15 @@ void otelc_log_set_level(otelc_log_level_t level)
  *
  * ARGUMENTS
  *   sec  - number of seconds to sleep
- *   nsec - number of additional nanoseconds to sleep
+ *   nsec - number of additional nanoseconds to sleep, from zero to below one second
  *
  * DESCRIPTION
  *   Suspends the execution of the calling thread for the specified duration,
  *   given by sec seconds plus nsec nanoseconds.  This function is useful for
  *   implementing delays or throttling in multithreaded or timing-sensitive
- *   operations.
+ *   operations.  The nsec value must lie from zero to below one second; any
+ *   other value fails the underlying call and the function returns without
+ *   sleeping.
  *
  * RETURN VALUE
  *   This function does not return a value.
@@ -1820,7 +1822,8 @@ const char *otel_strerror(int errnum)
  *   statistics about the OpenTelemetry C wrapper library.  Span and context
  *   counters always reflect the process-wide handle maps used by all tracers.
  *   Instrument and view counters are read from the supplied meter instance
- *   and are reported as empty when meter is NULL.
+ *   and are reported as empty when meter is NULL.  A buffer shorter than 64
+ *   bytes is left untouched.
  *
  * RETURN VALUE
  *   This function does not return a value.
