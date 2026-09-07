@@ -803,6 +803,16 @@ static void test_tracers_unsampled_across_instances(const struct otelc_ctx *ctx_
 				result = TEST_FAIL;
 		}
 
+		/*
+		 * Both spans end here, before the spans that are started
+		 * without a parent: a build that keeps the runtime context
+		 * would otherwise give those the sampled-out span as parent.
+		 */
+		if (_nNULL(span_b))
+			OTELC_OPSR(span_b, end);
+		if (_nNULL(span_a))
+			OTELC_OPSR(span_a, end);
+
 		/* A span without a parent is sampled by both instances. */
 		sampled_a = OTELC_OPS(tracer_a, start_span, "multi-span-sampled-a");
 		sampled_b = OTELC_OPS(tracer_b, start_span, "multi-span-sampled-b");
