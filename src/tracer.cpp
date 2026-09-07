@@ -228,7 +228,7 @@ static int otel_tracer_handle_init(void)
  */
 static struct otelc_span *otel_tracer_start_span_with_options(struct otelc_tracer *tracer, const char *operation_name, const struct otelc_span *parent_span, const struct otelc_span_context *parent_context, const struct timespec *ts_steady, const struct timespec *ts_system, otelc_span_kind_t kind, const struct otelc_span_link *links, size_t links_len)
 {
-	otel_nostd::shared_ptr<otel_context::Context>  parent_maybe{};
+	otel_nostd::shared_ptr<otel_baggage::Baggage>  baggage{};
 	otel_trace::StartSpanOptions                   span_options{};
 	struct otelc_span                             *retptr = nullptr;
 
@@ -283,17 +283,23 @@ static struct otelc_span *otel_tracer_start_span_with_options(struct otelc_trace
 		OTEL_TRACER_RETURN_PTR("Invalid span kind: %d", kind);
 	span_options.kind = span_kind_map[kind];
 
-	/* Resolve the parent context from a span, span context, or runtime. */
+	/*
+	 * Resolve the parent from a span, a span context or the runtime.  A
+	 * parent span hands over its span context and its baggage pointer, so
+	 * no propagation Context is built here.  Without a parent the options
+	 * keep their invalid span context and the new span is a root.
+	 */
 	if (!OTEL_NULL(parent_span)) {
 		OTEL_LOCK_TRACER(span, parent_span->idx);
 
 		const auto handle = OTEL_SPAN_HANDLE(parent_span);
 		if (OTEL_NULL(handle))
 			OTEL_TRACER_RETURN_PTR("Invalid parent span");
-
-		parent_maybe = handle->context;
-		if (OTEL_NULL(parent_maybe))
+		else if (OTEL_NULL(handle->span))
 			OTEL_TRACER_RETURN_PTR(OTEL_ERROR_MSG_PARENT_SPAN_CTX);
+
+		span_options.parent = handle->span->GetContext();
+		baggage             = handle->baggage;
 	}
 	else if (!OTEL_NULL(parent_context)) {
 		OTEL_LOCK_TRACER(span_context, parent_context->idx);
@@ -301,21 +307,20 @@ static struct otelc_span *otel_tracer_start_span_with_options(struct otelc_trace
 		const auto handle = OTEL_SPAN_CONTEXT_HANDLE(parent_context);
 		if (OTEL_NULL(handle))
 			OTEL_TRACER_RETURN_PTR("Invalid parent span context");
-
-		parent_maybe = handle->context;
-		if (OTEL_NULL(parent_maybe))
+		else if (OTEL_NULL(handle->context))
 			OTEL_TRACER_RETURN_PTR(OTEL_ERROR_MSG_PARENT_SPAN_CTX);
-	} else {
-#ifdef OTELC_USE_RUNTIME_CONTEXT
-		parent_maybe = otel::make_shared_nothrow<otel_context::Context>(otel_context::RuntimeContext::GetCurrent());
-#else
-		parent_maybe = otel::make_shared_nothrow<otel_context::Context>(otel_context::Context{});
-#endif
-		if (OTEL_NULL(parent_maybe))
-			OTEL_TRACER_RETURN_PTR("Unable to get current context");
-	}
 
-	span_options.parent = *parent_maybe;
+		span_options.parent = *(handle->context);
+		baggage             = otel_baggage::GetBaggage(*(handle->context));
+	}
+#ifdef OTELC_USE_RUNTIME_CONTEXT
+	else {
+		const auto rt_context = otel_context::RuntimeContext::GetCurrent();
+
+		span_options.parent = rt_context;
+		baggage             = otel_baggage::GetBaggage(rt_context);
+	}
+#endif
 
 	/***
 	 * Build the links vector before allocating the span so that link
@@ -413,24 +418,13 @@ static struct otelc_span *otel_tracer_start_span_with_options(struct otelc_trace
 		}
 #endif
 
-		/* Create a new context with the span attached to the parent. */
-		auto context = otel::make_shared_nothrow<otel_context::Context>(otel_trace::SetSpan(*parent_maybe, span_maybe));
-		if (OTEL_NULL(context)) {
-			span_maybe->End(otel_trace::EndSpanOptions{});
-
-			OTEL_LOCK_TRACER(span, retptr->idx);
-			otel_nolock_span_destroy(&retptr);
-
-			OTEL_TRACER_RETURN_PTR(OTEL_ERROR_MSG_ENOMEM("span context"));
-		}
-
 		auto span_end = span_maybe;
 
-		/* Allocate the span handle, bundling scope, span, and context. */
+		/* Allocate the span handle bundling scope, span and baggage. */
 #ifdef OTELC_USE_RUNTIME_CONTEXT
-		const auto span_handle = new(std::nothrow) otel_span_handle{std::move(scope), std::move(span_maybe), std::move(context)};
+		const auto span_handle = new(std::nothrow) otel_span_handle{std::move(scope), std::move(span_maybe), std::move(baggage)};
 #else
-		const auto span_handle = new(std::nothrow) otel_span_handle{std::move(span_maybe), std::move(context)};
+		const auto span_handle = new(std::nothrow) otel_span_handle{std::move(span_maybe), std::move(baggage)};
 #endif
 		if (OTEL_NULL(span_handle)) {
 			span_end->End(otel_trace::EndSpanOptions{});

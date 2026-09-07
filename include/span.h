@@ -23,6 +23,8 @@
 #define OTEL_SPAN_RETURN_PTR(f, ...)       OTEL_RETURN_PTR(span, f, ##__VA_ARGS__)
 
 #define OTEL_SPAN_HANDLE(a)                otel_map_find(OTEL_HANDLE(otel_span, get_shard((a)->idx).map), (a)->idx)
+/* The span baggage, or the SDK default (empty) baggage when none is set. */
+#define OTEL_SPAN_BAGGAGE(h)               (OTEL_NULL((h)->baggage) ? otel_baggage::Baggage::GetDefault() : (h)->baggage)
 #define OTEL_SPAN_CONTEXT_HANDLE(a)        otel_map_find(OTEL_HANDLE(otel_span_context, get_shard((a)->idx).map), (a)->idx)
 
 #define OTEL_DBG_SPAN()                    OTEL_DBG_HANDLE(OTEL, "otel_span", otel_span)
@@ -52,14 +54,14 @@ struct T {
 	otel_nostd::shared_ptr<otel_trace::Scope>     scope;   /* RAII scope controlling the span's active lifetime. */
 #endif
 	otel_nostd::shared_ptr<otel_trace::Span>      span;    /* Span associated with this handle. */
-	otel_nostd::shared_ptr<otel_context::Context> context; /* Context propagated with this span. */
+	otel_nostd::shared_ptr<otel_baggage::Baggage> baggage; /* Baggage propagated with this span (may be null). */
 
 #ifdef OTELC_USE_RUNTIME_CONTEXT
-	T(otel_nostd::shared_ptr<otel_trace::Scope> scope_, otel_nostd::shared_ptr<otel_trace::Span> span_, otel_nostd::shared_ptr<otel_context::Context> context_) noexcept
-		: scope(std::move(scope_)), span(std::move(span_)), context(std::move(context_))
+	T(otel_nostd::shared_ptr<otel_trace::Scope> scope_, otel_nostd::shared_ptr<otel_trace::Span> span_, otel_nostd::shared_ptr<otel_baggage::Baggage> baggage_) noexcept
+		: scope(std::move(scope_)), span(std::move(span_)), baggage(std::move(baggage_))
 #else
-	T(otel_nostd::shared_ptr<otel_trace::Span> span_, otel_nostd::shared_ptr<otel_context::Context> context_) noexcept
-		: span(std::move(span_)), context(std::move(context_))
+	T(otel_nostd::shared_ptr<otel_trace::Span> span_, otel_nostd::shared_ptr<otel_baggage::Baggage> baggage_) noexcept
+		: span(std::move(span_)), baggage(std::move(baggage_))
 #endif
 	{
 		OTELCPP_FUNC("", OTELC_STRINGIFY(T));
@@ -76,7 +78,7 @@ struct T {
 		 * deletion of the allocated memory pointed to by shared
 		 * pointers.
 		 */
-		context = nullptr;
+		baggage = nullptr;
 		span    = nullptr;
 #ifdef OTELC_USE_RUNTIME_CONTEXT
 		scope   = nullptr;
@@ -169,32 +171,24 @@ struct T {
 	}
 
 /***
- * Updates the baggage context after modifying baggage entries, then returns
- * from the calling function.  This is a macro because it must call
- * OTEL_SPAN_RETURN_INT, which returns from the caller on error.
+ * Stores the modified baggage in the span handle, then returns from the
+ * calling function.  This is a macro because it must call OTELC_RETURN_INT,
+ * which returns from the caller.
  *
- * SetBaggage() produces a new Context that does not carry the span token, so
- * SetSpan() is called to re-associate the original span with the new Context.
- * Without this step, child spans that reference this span as a parent receive
- * a Context with no valid SpanContext, which causes a SIGSEGV in
- * ParentBasedSampler::ShouldSample().
+ * The handle keeps the baggage apart from the span: a child span inherits
+ * the baggage pointer, and the propagation Context that carries both is
+ * built only when a carrier is injected.
  */
-#define OTEL_SPAN_UPDATE_BAGGAGE(arg_handle, arg_baggage, arg_retval)                          \
-	OTEL_DBG_BAGGAGE(arg_baggage);                                                         \
-	                                                                                       \
-	if ((arg_retval) <= 0)                                                                 \
-		OTELC_RETURN_INT(arg_retval);                                                  \
-	                                                                                       \
-	auto c1_ = otel_baggage::SetBaggage(*((arg_handle)->context), std::move(arg_baggage)); \
-	auto c2_ = otel_trace::SetSpan(c1_, otel_trace::GetSpan(*((arg_handle)->context)));    \
-	auto c3_ = otel::make_shared_nothrow<otel_context::Context>(std::move(c2_));           \
-	if (OTEL_NULL(c3_))                                                                    \
-		OTEL_SPAN_RETURN_INT(OTEL_ERROR_MSG_ENOMEM("baggage context"));                \
-	                                                                                       \
-	(arg_handle)->context = std::move(c3_);                                                \
-	                                                                                       \
-	OTELC_DBG(OTEL, "new span baggage context set");                                       \
-	                                                                                       \
+#define OTEL_SPAN_UPDATE_BAGGAGE(arg_handle, arg_baggage, arg_retval) \
+	OTEL_DBG_BAGGAGE(arg_baggage);                                \
+	                                                              \
+	if ((arg_retval) <= 0)                                        \
+		OTELC_RETURN_INT(arg_retval);                         \
+	                                                              \
+	(arg_handle)->baggage = std::move(arg_baggage);               \
+	                                                              \
+	OTELC_DBG(OTEL, "new span baggage set");                      \
+	                                                              \
 	OTELC_RETURN_INT(arg_retval);
 
 

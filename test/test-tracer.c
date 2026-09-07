@@ -255,7 +255,9 @@ static void test_span_kinds(struct otelc_tracer *tracer)
  *
  * DESCRIPTION
  *   Verifies that a child span can be created with a parent span specified via
- *   start_span_with_options().  Both spans are ended in reverse order.
+ *   start_span_with_options(), that the baggage set on the parent before that
+ *   reaches the child, and that both spans share the trace id while keeping
+ *   distinct span ids.  Both spans are ended in reverse order.
  *
  * RETURN VALUE
  *   This function does not return a value.
@@ -264,18 +266,39 @@ static void test_span_parent_child(struct otelc_tracer *tracer)
 {
 	struct otelc_span *parent, *child;
 	struct timespec    ts_steady, ts_system;
-	int                retval = TEST_FAIL;
+	uint8_t            sid_parent[OTELC_SPAN_ID_SIZE], sid_child[OTELC_SPAN_ID_SIZE], flags;
+	uint8_t            tid_parent[OTELC_TRACE_ID_SIZE], tid_child[OTELC_TRACE_ID_SIZE];
+	char              *value;
+	int                rc, retval = TEST_FAIL;
 
 	(void)clock_gettime(CLOCK_MONOTONIC, &ts_steady);
 	(void)clock_gettime(CLOCK_REALTIME, &ts_system);
 
 	parent = OTELC_OPS(tracer, start_span_with_options, "parent span", NULL, NULL, &ts_steady, &ts_system, OTELC_SPAN_KIND_SERVER, NULL, 0);
 	if (_nNULL(parent)) {
-		child = OTELC_OPS(tracer, start_span_with_options, "child span", parent, NULL, &ts_steady, &ts_system, OTELC_SPAN_KIND_INTERNAL, NULL, 0);
-		if (_nNULL(child)) {
-			OTELC_OPSR(child, end);
+		/* Set before the child, which inherits it. */
+		rc = OTELC_OPS(parent, set_baggage_var, "parent_key", "parent_value", NULL);
+		if (rc >= 0) {
+			child = OTELC_OPS(tracer, start_span_with_options, "child span", parent, NULL, &ts_steady, &ts_system, OTELC_SPAN_KIND_INTERNAL, NULL, 0);
+			if (_nNULL(child)) {
+				retval = TEST_PASS;
 
-			retval = TEST_PASS;
+				/* The parent baggage reached the child. */
+				value = OTELC_OPS(child, get_baggage, "parent_key");
+				if (_NULL(value) || (strcmp(value, "parent_value") != 0))
+					retval = TEST_FAIL;
+
+				OTELC_SFREE(value);
+
+				/* The same trace, but not the same span. */
+				if ((OTELC_OPS(parent, get_id, sid_parent, sizeof(sid_parent), tid_parent, sizeof(tid_parent), &flags) != OTELC_RET_OK)
+				    || (OTELC_OPS(child, get_id, sid_child, sizeof(sid_child), tid_child, sizeof(tid_child), &flags) != OTELC_RET_OK)
+				    || (memcmp(tid_parent, tid_child, OTELC_TRACE_ID_SIZE) != 0)
+				    || (memcmp(sid_parent, sid_child, OTELC_SPAN_ID_SIZE) == 0))
+					retval = TEST_FAIL;
+
+				OTELC_OPSR(child, end);
+			}
 		}
 
 		OTELC_OPSR(parent, end);
@@ -1673,6 +1696,59 @@ static void test_span_set_baggage_single(struct otelc_tracer *tracer)
 
 /***
  * NAME
+ *   test_span_baggage_empty - tests baggage lookup on a span without baggage
+ *
+ * SYNOPSIS
+ *   static void test_span_baggage_empty(struct otelc_tracer *tracer)
+ *
+ * ARGUMENTS
+ *   tracer - tracer instance
+ *
+ * DESCRIPTION
+ *   Verifies that get_baggage() returns NULL and get_baggage_var() returns an
+ *   empty text map on a span that never had baggage set.
+ *
+ * RETURN VALUE
+ *   This function does not return a value.
+ */
+static void test_span_baggage_empty(struct otelc_tracer *tracer)
+{
+	struct otelc_span     *span;
+	struct otelc_text_map *baggage;
+	char                  *value;
+	int                    retval = TEST_FAIL;
+
+	span = OTELC_OPS(tracer, start_span, "baggage empty span");
+	if (_nNULL(span)) {
+		retval = TEST_PASS;
+
+		/* Nothing was set, so nothing is found. */
+		value = OTELC_OPS(span, get_baggage, "missing_key");
+		if (_nNULL(value)) {
+			retval = TEST_FAIL;
+
+			OTELC_SFREE(value);
+		}
+
+		baggage = OTELC_OPS(span, get_baggage_var, "missing_key_1", "missing_key_2", NULL);
+		if (_NULL(baggage)) {
+			retval = TEST_FAIL;
+		} else {
+			if (baggage->count != 0)
+				retval = TEST_FAIL;
+
+			otelc_text_map_destroy(&baggage);
+		}
+
+		OTELC_OPSR(span, end);
+	}
+
+	test_report("span baggage empty", retval);
+}
+
+
+/***
+ * NAME
  *   test_span_invalid_handle - tests operations on a span with a corrupted idx
  *
  * SYNOPSIS
@@ -2188,6 +2264,7 @@ int main(int argc, char **argv)
 	test_span_baggage(tracer);
 	test_span_baggage_kv(tracer);
 	test_span_set_baggage_single(tracer);
+	test_span_baggage_empty(tracer);
 	test_span_baggage_propagation(tracer);
 
 	/***
@@ -2228,7 +2305,7 @@ int main(int argc, char **argv)
 	OTELC_LOG(stdout, "");
 	OTELC_LOG(stdout, "[handle statistics]");
 
-	if (otelc_statistics_check(NULL, 0, 0, 76, 0, 76, 76) != 0)
+	if (otelc_statistics_check(NULL, 0, 0, 77, 0, 77, 77) != 0)
 		retval = TEST_FAIL;
 	if (otelc_statistics_check(NULL, 1, 0, 16, 0, 16, 16) != 0)
 		retval = TEST_FAIL;

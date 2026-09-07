@@ -1153,15 +1153,20 @@ Span creation (otel_tracer_start_span_with_options):
     OTELC_SPAN_KIND_CONSUMER    -> SpanKind::kConsumer
 
   Parent resolution follows a priority order:
-    - If parent_span is provided, extract context from its handle.
-    - If parent_context is provided, extract context from its handle.
-    - Otherwise, use RuntimeContext::GetCurrent() (or empty Context when runtime
-      context is disabled).
+    - If parent_span is provided, take the span context and the baggage
+      pointer from its handle; no propagation Context is built for that.
+    - If parent_context is provided, pass the Context of its handle and take
+      the baggage it carries.
+    - Otherwise, the options keep their invalid span context and the span is
+      a root (RuntimeContext::GetCurrent() is used when runtime context is
+      enabled).
 
   After StartSpan succeeds, the result is wrapped in an
   otel_span_handle that bundles:
     - otel_nostd::shared_ptr<otel_trace::Span>      (the span)
-    - otel_nostd::shared_ptr<otel_context::Context> (propagation ctx)
+    - otel_nostd::shared_ptr<otel_baggage::Baggage> (the baggage, null when
+      none is set; the propagation Context that carries the span and the
+      baggage is built only when a carrier is injected)
     - otel_nostd::shared_ptr<otel_trace::Scope>     (RAII activation, only when
       OTELC_USE_RUNTIME_CONTEXT is defined)
 
@@ -1220,14 +1225,41 @@ Value dispatch (otelc_value_visit):
 
 Baggage propagation:
 
-  Baggage is managed through the span's stored Context object:
+  Baggage is kept in the span handle as a shared Baggage pointer:
 
-    auto baggage = otel_baggage::GetBaggage(*(handle->context));
+    auto baggage = OTEL_SPAN_BAGGAGE(handle);
     baggage = baggage->Set(key, value);
-    // ... update context with new baggage via SetBaggage()
+    // ... store the new baggage in the handle via OTEL_SPAN_UPDATE_BAGGAGE()
 
-  The get/set operations use the Baggage API (GetValue, Set, ToHeader) and
-  rebuild the Context immutably on each modification.
+  The get/set operations use the Baggage API (GetValue, Set, ToHeader); the
+  Baggage object is immutable and replaced on each modification.  A child span
+  copies the parent's pointer, and the propagation Context that carries the
+  span and the baggage is built only when a carrier is injected.
+
+Measured behavior:
+
+  Keeping the baggage instead of a propagation Context in the span handle saves
+  the Context allocation on every span start and its rebuild on every baggage
+  change.  The figures below are passes per second of test/otel-c-wrapper-test
+  with the speed_test context (batch processor, ostream exporter to /dev/null),
+  a single instance, ten second runs and a fixed random seed, comparing release
+  builds of the commit and of its parent, alternated per worker group over three
+  repetitions, on a Linux system, kernel 7.0.0-111030-tuxedo, processor AMD
+  Ryzen 7 8845HS (8 cores, 16 hardware threads).  One pass is a full round of
+  the worker state machine of test/test.c: root, child, propagated and linked
+  spans, baggage updates and lookups, carrier injection and extraction.
+
+    Workers   Before    After   Change
+  -------------------------------------
+          1    43606    46268    +6.1%
+          4   160396   168973    +5.3%
+         16   324268   342045    +5.5%
+         64   344712   363229    +5.4%
+
+  Every run of the new build stayed above every run of the old one at the same
+  worker count, with the spread inside a group under one percent.  The gain is
+  about the same across the worker range: the saved work is per span and runs
+  on the worker thread, outside the processor queue that the workers share.
 
 Context propagation (inject/extract):
 

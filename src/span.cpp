@@ -247,15 +247,21 @@ static int otel_span_inject_carrier(const struct otelc_span *span, W *carrier, c
 		OTEL_SPAN_RETURN_INT(OTEL_ERROR_MSG_NO_PROPAGATOR);
 	/* Snapshot the propagator reference for the duration of the call. */
 	auto propagator = impl->propagator;
-	propagator->Inject(otel_carrier, *(handle->context));
+
+	/* The propagation Context is built only here, from span and baggage. */
+	auto empty_ctx = otel_context::Context{};
+	auto context   = otel_trace::SetSpan(empty_ctx, handle->span);
+	if (!OTEL_NULL(handle->baggage))
+		context = otel_baggage::SetBaggage(context, handle->baggage);
+
+	propagator->Inject(otel_carrier, context);
 
 #ifndef OTELC_USE_COMPOSITE_PROPAGATOR
 	/* Without a composite propagator, baggage is injected separately. */
-	const auto baggage = otel_baggage::GetBaggage(*(handle->context));
-	if (!OTEL_NULL(baggage)) {
-		OTEL_DBG_BAGGAGE(baggage);
+	if (!OTEL_NULL(handle->baggage)) {
+		OTEL_DBG_BAGGAGE(handle->baggage);
 
-		const auto header = baggage->ToHeader();
+		const auto header = handle->baggage->ToHeader();
 		if (header.size() > 0)
 			otel_carrier.Set(otel_baggage::kBaggageHeader, header);
 	}
@@ -524,7 +530,7 @@ static int otel_span_set_baggage_var(const struct otelc_span *span, const char *
 
 	OTEL_LOCK_SPAN_HANDLE(_INT, span);
 
-	auto baggage = otel_baggage::GetBaggage(*(handle->context));
+	auto baggage = OTEL_SPAN_BAGGAGE(handle);
 
 	/* Iterate over the variadic key-value pairs and set each in baggage. */
 	OTEL_VA_AUTO(ap, value);
@@ -583,7 +589,7 @@ static int otel_span_set_baggage_kv_var(const struct otelc_span *span, const str
 
 	OTEL_LOCK_SPAN_HANDLE(_INT, span);
 
-	auto baggage = otel_baggage::GetBaggage(*(handle->context));
+	auto baggage = OTEL_SPAN_BAGGAGE(handle);
 
 	/* Iterate over the variadic kv pairs and set each in baggage. */
 	OTEL_VA_AUTO(ap, kv);
@@ -655,7 +661,7 @@ static int otel_span_set_baggage_kv_n(const struct otelc_span *span, const struc
 
 	OTEL_LOCK_SPAN_HANDLE(_INT, span);
 
-	auto baggage = otel_baggage::GetBaggage(*(handle->context));
+	auto baggage = OTEL_SPAN_BAGGAGE(handle);
 
 	/* Iterate over the kv array and set each entry in baggage. */
 	for (retval = 0; retval < OTEL_CAST_STATIC(int, kv_len); retval++)
@@ -719,7 +725,7 @@ static int otel_span_set_baggage(const struct otelc_span *span, const char *key,
 
 	OTEL_LOCK_SPAN_HANDLE(_INT, span);
 
-	auto baggage = otel_baggage::GetBaggage(*(handle->context));
+	auto baggage = OTEL_SPAN_BAGGAGE(handle);
 	baggage      = baggage->Set(key, value);
 
 	OTEL_SPAN_UPDATE_BAGGAGE(handle, baggage, 1);
@@ -761,7 +767,7 @@ static char *otel_span_get_baggage(const struct otelc_span *span, const char *ke
 
 	OTEL_LOCK_SPAN_HANDLE(_PTR, span);
 
-	const auto baggage = otel_baggage::GetBaggage(*(handle->context));
+	const auto baggage = OTEL_SPAN_BAGGAGE(handle);
 	OTEL_DBG_BAGGAGE(baggage);
 
 	if (baggage->GetValue(key, value)) {
@@ -830,7 +836,7 @@ static struct otelc_text_map *otel_span_get_baggage_var(const struct otelc_span 
 		OTEL_SPAN_RETURN_PTR(OTEL_ERROR_MSG_INVALID_SPAN);
 	}
 
-	const auto baggage = otel_baggage::GetBaggage(*(handle->context));
+	const auto baggage = OTEL_SPAN_BAGGAGE(handle);
 	OTEL_DBG_BAGGAGE(baggage);
 
 	/* Look up each requested key in the baggage and add matches to the map. */
