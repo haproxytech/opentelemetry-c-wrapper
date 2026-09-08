@@ -9,8 +9,8 @@
 # are recorded as the new baseline instead.  See README-speed_check.
 #
 #   Usage: ./speed-check.sh [-b baseline] [-c test-cfg] [-g groups] [-h]
-#                           [-i instances] [-R] [-r runtime_ms] [-s min_scale]
-#                           [-T tolerance_pct] [-t test-program]
+#                           [-i instances] [-l] [-R] [-r runtime_ms]
+#                           [-s min_scale] [-T tolerance_pct] [-t test-program]
 #
           SH_DIR="$(realpath "$(dirname "${0}")")"
          SH_DATE="$(date +%Y%m%d-%H%M%S)"
@@ -19,7 +19,7 @@
       SH_VARIANT="release"
        SH_RETVAL="0"
           SH_CTX="speed_test"
-    SH_USAGE_MSG="usage: $(basename "${0}") [-b baseline] [-c test-cfg] [-g groups] [-h] [-i instances] [-R] [-r runtime_ms] [-s min_scale] [-T tolerance_pct] [-t test-program]"
+    SH_USAGE_MSG="usage: $(basename "${0}") [-b baseline] [-c test-cfg] [-g groups] [-h] [-i instances] [-l] [-R] [-r runtime_ms] [-s min_scale] [-T tolerance_pct] [-t test-program]"
 
      SH_ARG_TEST=
      SH_ARG_BASE="${SH_DIR}/_speed_baseline"
@@ -29,7 +29,8 @@ SH_ARG_INSTANCES="1 2 4"
   SH_ARG_RUNTIME="10000"
     SH_ARG_SCALE="1.2"
       SH_ARG_TOL="15"
-   SH_ARG_RECORD=
+      SH_OPT_LOG=
+   SH_OPT_RECORD=
 
 
 sh_measure()
@@ -58,14 +59,15 @@ sh_log()
 }
 
 
-while getopts b:c:g:hi:Rr:s:T:t: c; do
+while getopts b:c:g:hi:lRr:s:T:t: c; do
 	case "${c}" in
 	  b)	SH_ARG_BASE="$(realpath "${OPTARG}")" || exit 64 ;;
 	  c)	SH_ARG_CFG="$(realpath "${OPTARG}")" || exit 64 ;;
 	  g)	SH_ARG_GROUPS="${OPTARG}" ;;
 	  h)	echo "${SH_USAGE_MSG}"; exit 0 ;;
 	  i)	SH_ARG_INSTANCES="${OPTARG}" ;;
-	  R)	SH_ARG_RECORD="yes" ;;
+	  l)	SH_OPT_LOG="true" ;;
+	  R)	SH_OPT_RECORD="true" ;;
 	  r)	SH_ARG_RUNTIME="${OPTARG}" ;;
 	  s)	SH_ARG_SCALE="${OPTARG}" ;;
 	  T)	SH_ARG_TOL="${OPTARG}" ;;
@@ -91,7 +93,7 @@ test -x "${SH_ARG_TEST}" || { echo "ERROR: test program missing, build the test 
 
 SH_VERSION="$("${SH_ARG_TEST}" -V 2>/dev/null | awk '$3 == "[build" { sub(/^v/, "", $2); sub(/]$/, "", $4); printf "%s-%s\n", $2, $4; exit }')"
 
-if test -n "${SH_ARG_RECORD}" && test -e "${SH_ARG_BASE}"; then
+if test "${SH_OPT_RECORD}" = "true" -a -e "${SH_ARG_BASE}"; then
 	mv "${SH_ARG_BASE}" "${SH_ARG_BASE}-old-${SH_DATE}" || exit 73
 fi
 
@@ -139,7 +141,7 @@ for _loop_instances in ${SH_ARG_INSTANCES}; do
 		}
 
 		_var_rate="$(sh_measure "${_loop_instances}" "${_loop_threads}")"
-		sh_log "${SH_ARG_BASE}-${SH_DATE}" "${_loop_instances}" "${_loop_threads}" "${_var_rate}"
+		test "${SH_OPT_LOG}" != "true" || sh_log "${SH_ARG_BASE}-${SH_DATE}" "${_loop_instances}" "${_loop_threads}" "${_var_rate}"
 		test -n "${_var_first_rate}" || _var_first_rate="${_var_rate}"
 		_var_last_rate="${_var_rate}"
 

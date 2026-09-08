@@ -26,8 +26,8 @@ the baseline is stale.
 ------------------------------------------------------------------------------
 
   % ./speed-check.sh [-b baseline] [-c test-cfg] [-g groups] [-h]
-                     [-i instances] [-R] [-r runtime_ms] [-s min_scale]
-                     [-T tolerance_pct] [-t test-program]
+                     [-i instances] [-l] [-R] [-r runtime_ms]
+                     [-s min_scale] [-T tolerance_pct] [-t test-program]
 
 The first run, or any run with -R, records the baseline; later runs compare
 against it.  The default settings measure the 1, 2 and 4 instance counts in
@@ -46,10 +46,10 @@ pattern of scripts/distclean removes: after a distclean the next run records a
 fresh baseline instead of comparing.  A re-record with -R keeps the previous
 baseline under a dated -old suffix instead of overwriting it, and a comparison
 run writes the rates it measured to a dated file next to the baseline, in the
-baseline format, so an interesting run can later serve as a baseline via -b.
-Exit codes follow sysexits.h: 70 for a detected regression, 78 for a baseline
-that does not cover the request, 73 for a baseline rotation that failed, 69
-for a missing test program, and 64 for a usage error.
+baseline format, only when -l is given, so an interesting run can later serve as
+a baseline via -b.  Exit codes follow sysexits.h: 70 for a detected regression,
+78 for a baseline that does not cover the request, 73 for a baseline rotation
+that failed, 69 for a missing test program, and 64 for a usage error.
 
 
 3. Interpretation
