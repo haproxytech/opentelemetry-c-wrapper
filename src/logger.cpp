@@ -112,10 +112,10 @@ static otel_logs::Severity otel_logger_severity(otelc_log_severity_t severity)
  *   Queries the underlying logger to determine whether it is enabled for the
  *   given severity level.  Callers can use this check to skip expensive log
  *   message construction when the logger would discard the record anyway.
- *   Returns false when the wrapper-level gate is cleared via
+ *   Returns false when the wrapper-level flag is cleared via
  *   otel_logger_set_enabled(), even if the underlying SDK logger would
  *   otherwise accept the severity.  A logger that has not been started yet
- *   is reported as an error whatever the gate holds.
+ *   is reported as an error whatever the flag holds.
  *
  * RETURN VALUE
  *   Returns true if the logger is enabled for the given severity, false if it
@@ -152,21 +152,21 @@ static int otel_logger_enabled(struct otelc_logger *logger, otelc_log_severity_t
 
 /***
  * NAME
- *   otel_logger_set_enabled - toggles the wrapper-level gate at runtime
+ *   otel_logger_set_enabled - toggles the wrapper-level flag at runtime
  *
  * SYNOPSIS
  *   static int otel_logger_set_enabled(struct otelc_logger *logger, bool enabled)
  *
  * ARGUMENTS
  *   logger  - logger instance
- *   enabled - new state of the wrapper-level gate
+ *   enabled - new state of the wrapper-level flag
  *
  * DESCRIPTION
- *   Sets the wrapper-level gate that controls whether new log records may be
- *   emitted.  When the gate is cleared, log, log_span, log_body and
+ *   Sets the wrapper-level flag that controls whether new log records may be
+ *   emitted.  When the flag is cleared, log, log_span, log_body and
  *   log_body_span emit nothing and return 0; log_span and log_body_span still
- *   read the span identifiers from the given span before the gate check.
- *   Records emitted before the gate was cleared continue to be exported by
+ *   read the span identifiers from the given span before the flag check.
+ *   Records emitted before the flag was cleared continue to be exported by
  *   the SDK as normal.
  *
  * RETURN VALUE
@@ -405,7 +405,7 @@ static int otel_logger_record_create(struct otelc_logger *logger, otel_logs::Log
  *
  * RETURN VALUE
  *   Returns the number of characters written to the buffer when the log was
- *   emitted, 0 if the severity level is not enabled or the wrapper-level gate
+ *   emitted, 0 if the severity level is not enabled or the wrapper-level flag
  *   is cleared (set_enabled), or a negative value on error (OTELC_RET_ERROR).
  *   An emitted record whose formatted body is empty also returns 0, which is
  *   indistinguishable from the disabled cases.
@@ -484,7 +484,7 @@ static int otel_logger_log_v(struct otelc_logger *logger, otelc_log_severity_t s
  *
  * RETURN VALUE
  *   Returns the number of characters written to the buffer when the log was
- *   emitted, 0 if the severity level is not enabled or the wrapper-level gate
+ *   emitted, 0 if the severity level is not enabled or the wrapper-level flag
  *   is cleared (set_enabled), or a negative value on error (OTELC_RET_ERROR).
  *   An emitted record whose formatted body is empty also returns 0, which is
  *   indistinguishable from the disabled cases.
@@ -572,7 +572,7 @@ static void otel_logger_span_extract(const struct otelc_span *span, uint8_t *spa
  *
  * RETURN VALUE
  *   Returns the number of characters written to the buffer when the log was
- *   emitted, 0 if the severity level is not enabled or the wrapper-level gate
+ *   emitted, 0 if the severity level is not enabled or the wrapper-level flag
  *   is cleared (set_enabled), or a negative value on error (OTELC_RET_ERROR).
  *   An emitted record whose formatted body is empty also returns 0, which is
  *   indistinguishable from the disabled cases.
@@ -627,7 +627,7 @@ static int otel_logger_log_span(struct otelc_logger *logger, otelc_log_severity_
  *   otel_logger_log_v(), which formats a printf-style string, this function
  *   passes the otelc_value body directly to SetBody(), preserving the native
  *   type.  A body of type OTELC_VALUE_NULL is emitted as an empty string.  A
- *   record that the severity threshold or the cleared wrapper-level gate
+ *   record that the severity threshold or the cleared wrapper-level flag
  *   suppresses is reported like an emitted one; the enabled operation tells
  *   the two cases apart beforehand.
  *
@@ -701,7 +701,7 @@ static int otel_logger_log_body(struct otelc_logger *logger, otelc_log_severity_
  *   printf-style string, this function passes the otelc_value directly to
  *   SetBody(), preserving the native type.  A body of type OTELC_VALUE_NULL
  *   is emitted as an empty string.  A record that the severity threshold or
- *   the cleared wrapper-level gate suppresses is reported like an emitted one;
+ *   the cleared wrapper-level flag suppresses is reported like an emitted one;
  *   the enabled operation tells the two cases apart beforehand.
  *
  * RETURN VALUE

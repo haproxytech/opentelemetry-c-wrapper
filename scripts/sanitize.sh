@@ -14,7 +14,8 @@
 # the sanitizer cannot see the synchronization inside them, so every handoff
 # between the wrapper and an SDK worker thread, and every SDK object the wrapper
 # only constructs, is reported as a race.  Its findings are worth reading one by
-# one, but they are not a gate until the SDK itself is built with the sanitizer.
+# one, but they cannot decide the outcome until the SDK itself is built with the
+# sanitizer.
 #
 # The test-memory_dbg program is not run: its double free cases depend on the
 # glibc allocator, which the sanitizers replace, and its oversized allocation

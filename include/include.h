@@ -43,7 +43,7 @@
 /*
  * Non-zero when the ryml library compiled against is at least maj.min.
  * ryml 0.11.0 replaced the single Callbacks error member with the split
- * basic/parse/visit callbacks, so their use sites are gated on this.
+ * basic/parse/visit callbacks, so their use sites depend on this.
  */
 #  define RYML_VERSION_GE(maj, min)       ((RYML_VERSION_MAJOR > (maj)) || ((RYML_VERSION_MAJOR == (maj)) && (RYML_VERSION_MINOR >= (min))))
 #endif
@@ -132,7 +132,7 @@
 
 /***
  * The composite/composable samplers arrived in opentelemetry-cpp 1.28.0 and
- * their headers are absent in older SDKs, so they are gated on the SDK
+ * their headers are absent in older SDKs, so they depend on the SDK
  * version.  This block follows the include above because that is what defines
  * OTELCPP_VERSION_GE().
  */

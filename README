@@ -628,7 +628,7 @@ internal handle map, and a span records the tracer it belongs to as well.
 The three signal instances share a common layout.  Every one of them carries
 an 'err' member holding the text of the last error the instance recorded, a
 'scope_name' member with the instrumentation scope name read from the YAML
-configuration, an 'enabled' gate that suppresses the work of the instance while
+configuration, an 'enabled' flag that suppresses the work of the instance while
 it is false, a 'flush_timeout' budget in milliseconds for the provider flush
 performed by the destroy operation (a zero budget, or a flush that runs out of
 it, shuts the exporters down instead, dropping the queued telemetry), a 'ctx'

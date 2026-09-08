@@ -162,10 +162,10 @@ struct otelc_tracer_ops {
 	 *   Queries the underlying tracer to determine whether it is enabled.
 	 *   Callers can use this check to skip expensive span setup when the
 	 *   tracer would discard the data anyway.  Returns false when the
-	 *   wrapper-level gate is cleared via set_enabled(), even if the
+	 *   wrapper-level flag is cleared via set_enabled(), even if the
 	 *   underlying SDK tracer would otherwise be enabled.  A tracer that
 	 *   has not been started yet is reported as an error whatever the
-	 *   gate holds.
+	 *   flag holds.
 	 *
 	 * RETURN VALUE
 	 *   Returns true if the tracer is enabled, false if it is not,
@@ -176,21 +176,21 @@ struct otelc_tracer_ops {
 
 	/***
 	 * NAME
-	 *   set_enabled - toggles the wrapper-level gate at runtime
+	 *   set_enabled - toggles the wrapper-level flag at runtime
 	 *
 	 * SYNOPSIS
 	 *   int (*set_enabled)(struct otelc_tracer *tracer, bool enabled)
 	 *
 	 * ARGUMENTS
 	 *   tracer  - tracer instance
-	 *   enabled - new state of the wrapper-level gate
+	 *   enabled - new state of the wrapper-level flag
 	 *
 	 * DESCRIPTION
-	 *   Sets the wrapper-level gate that controls whether new spans may
-	 *   be created.  When the gate is cleared, start_span,
+	 *   Sets the wrapper-level flag that controls whether new spans may
+	 *   be created.  When the flag is cleared, start_span,
 	 *   start_span_with_options, extract_text_map and extract_http_headers
 	 *   become no-ops and return nullptr.  Spans that were created before
-	 *   the gate was cleared continue to function normally and reach the
+	 *   the flag was cleared continue to function normally and reach the
 	 *   SDK on end().
 	 *
 	 * RETURN VALUE
@@ -355,7 +355,7 @@ struct otelc_tracer {
 	char                          *err;         /* Character array containing the last library error. */
 	char                          *scope_name;  /* Tracer instrumentation scope name. */
 	char                          *yaml_prefix; /* Resolved YAML path of the tracer signal configuration. */
-	bool                           enabled;     /* Wrapper-level gate; when false, new spans are not created. */
+	bool                           enabled;     /* Wrapper-level flag; when false, new spans are not created. */
 	int                            flush_timeout; /* Destroy-time provider flush budget in milliseconds; zero drops pending telemetry. */
 	const struct otelc_tracer_ops *ops;         /* Pointer to the operations vtable. */
 	const struct otelc_ctx        *ctx;         /* Owning library context; provides the YAML configuration. */
