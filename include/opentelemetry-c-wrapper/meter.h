@@ -338,8 +338,8 @@ struct otelc_meter_ops {
 	 *   meter would discard the data anyway.  The OpenTelemetry C++ SDK
 	 *   does not yet provide a Meter::Enabled() method, so this function
 	 *   returns true whenever the meter is valid and the wrapper-level
-	 *   gate set via set_enabled() is not cleared.  A meter that has not
-	 *   been started yet is reported as an error whatever the gate holds.
+	 *   flag set via set_enabled() is not cleared.  A meter that has not
+	 *   been started yet is reported as an error whatever the flag holds.
 	 *
 	 * RETURN VALUE
 	 *   Returns true if the meter is enabled, false if it is not,
@@ -350,20 +350,20 @@ struct otelc_meter_ops {
 
 	/***
 	 * NAME
-	 *   set_enabled - toggles the wrapper-level gate at runtime
+	 *   set_enabled - toggles the wrapper-level flag at runtime
 	 *
 	 * SYNOPSIS
 	 *   int (*set_enabled)(struct otelc_meter *meter, bool enabled)
 	 *
 	 * ARGUMENTS
 	 *   meter   - meter instance
-	 *   enabled - new state of the wrapper-level gate
+	 *   enabled - new state of the wrapper-level flag
 	 *
 	 * DESCRIPTION
-	 *   Sets the wrapper-level gate that controls whether new instruments
-	 *   and views may be registered.  When the gate is cleared,
+	 *   Sets the wrapper-level flag that controls whether new instruments
+	 *   and views may be registered.  When the flag is cleared,
 	 *   create_instrument and add_view become no-ops and return
-	 *   OTELC_RET_ERROR.  Instruments registered before the gate was
+	 *   OTELC_RET_ERROR.  Instruments registered before the flag was
 	 *   cleared continue to record values normally.
 	 *
 	 * RETURN VALUE
@@ -526,7 +526,7 @@ struct otelc_meter {
 	char                         *err;         /* Character array containing the last library error. */
 	char                         *scope_name;  /* Meter instrumentation scope name. */
 	char                         *yaml_prefix; /* Resolved YAML path of the meter signal configuration. */
-	bool                          enabled;     /* Wrapper-level gate; when false, new instruments/views are not created. */
+	bool                          enabled;     /* Wrapper-level flag; when false, new instruments/views are not created. */
 	int                           flush_timeout; /* Destroy-time provider flush budget in milliseconds; zero drops pending telemetry. */
 	const struct otelc_meter_ops *ops;         /* Pointer to the operations vtable. */
 	const struct otelc_ctx       *ctx;         /* Owning library context; provides the YAML configuration. */

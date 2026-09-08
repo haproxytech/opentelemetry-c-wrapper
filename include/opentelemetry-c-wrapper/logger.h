@@ -78,10 +78,10 @@ struct otelc_logger_ops {
 	 *   Queries the underlying logger to determine whether it is enabled
 	 *   for the given severity level.  Callers can use this check to skip
 	 *   expensive log message construction when the logger would discard
-	 *   the record anyway.  Returns false when the wrapper-level gate is
+	 *   the record anyway.  Returns false when the wrapper-level flag is
 	 *   cleared via set_enabled(), even if the underlying SDK logger would
 	 *   otherwise accept the severity.  A logger that has not been started
-	 *   yet is reported as an error whatever the gate holds.
+	 *   yet is reported as an error whatever the flag holds.
 	 *
 	 * RETURN VALUE
 	 *   Returns true if the logger is enabled for the given severity,
@@ -92,21 +92,21 @@ struct otelc_logger_ops {
 
 	/***
 	 * NAME
-	 *   set_enabled - toggles the wrapper-level gate at runtime
+	 *   set_enabled - toggles the wrapper-level flag at runtime
 	 *
 	 * SYNOPSIS
 	 *   int (*set_enabled)(struct otelc_logger *logger, bool enabled)
 	 *
 	 * ARGUMENTS
 	 *   logger  - logger instance
-	 *   enabled - new state of the wrapper-level gate
+	 *   enabled - new state of the wrapper-level flag
 	 *
 	 * DESCRIPTION
-	 *   Sets the wrapper-level gate that controls whether new log records
-	 *   may be emitted.  When the gate is cleared, log, log_span, log_body
+	 *   Sets the wrapper-level flag that controls whether new log records
+	 *   may be emitted.  When the flag is cleared, log, log_span, log_body
 	 *   and log_body_span emit nothing and return 0; log_span and
 	 *   log_body_span still read the span identifiers from the given span
-	 *   before the gate check.  Records emitted before the gate was
+	 *   before the flag check.  Records emitted before the flag was
 	 *   cleared continue to be exported by the SDK as normal.
 	 *
 	 * RETURN VALUE
@@ -203,7 +203,7 @@ struct otelc_logger_ops {
 	 * RETURN VALUE
 	 *   Returns the number of characters written to the buffer when the
 	 *   log was emitted, 0 if the severity level is not enabled or the
-	 *   wrapper-level gate is cleared (set_enabled), or a negative value on
+	 *   wrapper-level flag is cleared (set_enabled), or a negative value on
 	 *   error (OTELC_RET_ERROR).  An emitted record whose formatted body is
 	 *   empty also returns 0, which is indistinguishable from the disabled
 	 *   cases.
@@ -243,7 +243,7 @@ struct otelc_logger_ops {
 	 * RETURN VALUE
 	 *   Returns the number of characters written to the buffer when the
 	 *   log was emitted, 0 if the severity level is not enabled or the
-	 *   wrapper-level gate is cleared (set_enabled), or a negative value on
+	 *   wrapper-level flag is cleared (set_enabled), or a negative value on
 	 *   error (OTELC_RET_ERROR).  An emitted record whose formatted body is
 	 *   empty also returns 0, which is indistinguishable from the disabled
 	 *   cases.
@@ -281,7 +281,7 @@ struct otelc_logger_ops {
 	 *   passes the otelc_value body directly to SetBody(), preserving the
 	 *   native type.  A body of type OTELC_VALUE_NULL is emitted as an
 	 *   empty string.  A record that the severity threshold or the cleared
-	 *   wrapper-level gate suppresses is reported like an emitted one; the
+	 *   wrapper-level flag suppresses is reported like an emitted one; the
 	 *   enabled operation tells the two cases apart beforehand.
 	 *
 	 * RETURN VALUE
@@ -318,7 +318,7 @@ struct otelc_logger_ops {
 	 *   passes the otelc_value directly to SetBody(), preserving the native
 	 *   type.  A body of type OTELC_VALUE_NULL is emitted as an empty
 	 *   string.  A record that the severity threshold or the cleared
-	 *   wrapper-level gate suppresses is reported like an emitted one; the
+	 *   wrapper-level flag suppresses is reported like an emitted one; the
 	 *   enabled operation tells the two cases apart beforehand.
 	 *
 	 * RETURN VALUE
@@ -452,7 +452,7 @@ struct otelc_logger {
 	char                          *scope_name;   /* Logger instrumentation scope name. */
 	char                          *yaml_prefix;  /* Resolved YAML path of the logger signal configuration. */
 	otelc_log_severity_t           min_severity; /* Minimum allowed log severity level. */
-	bool                           enabled;      /* Wrapper-level gate; when false, log emission is suppressed. */
+	bool                           enabled;      /* Wrapper-level flag; when false, log emission is suppressed. */
 	int                            flush_timeout; /* Destroy-time provider flush budget in milliseconds; zero drops pending telemetry. */
 	const struct otelc_logger_ops *ops;          /* Pointer to the operations vtable. */
 	const struct otelc_ctx        *ctx;          /* Owning library context; provides the YAML configuration. */

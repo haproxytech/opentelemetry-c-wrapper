@@ -1356,9 +1356,9 @@ static int otel_meter_start(struct otelc_meter *meter)
  *   can use this check to skip expensive metric setup when the meter would
  *   discard the data anyway.  The OpenTelemetry C++ SDK does not yet provide
  *   a Meter::Enabled() method, so this function returns true whenever the
- *   meter is valid and the wrapper-level gate set via
+ *   meter is valid and the wrapper-level flag set via
  *   otel_meter_set_enabled() is not cleared.  A meter that has not been
- *   started yet is reported as an error whatever the gate holds.
+ *   started yet is reported as an error whatever the flag holds.
  *
  * RETURN VALUE
  *   Returns true if the meter is enabled, false if it is not,
@@ -1381,20 +1381,20 @@ static int otel_meter_enabled(struct otelc_meter *meter)
 
 /***
  * NAME
- *   otel_meter_set_enabled - toggles the wrapper-level gate at runtime
+ *   otel_meter_set_enabled - toggles the wrapper-level flag at runtime
  *
  * SYNOPSIS
  *   static int otel_meter_set_enabled(struct otelc_meter *meter, bool enabled)
  *
  * ARGUMENTS
  *   meter   - meter instance
- *   enabled - new state of the wrapper-level gate
+ *   enabled - new state of the wrapper-level flag
  *
  * DESCRIPTION
- *   Sets the wrapper-level gate that controls whether new instruments and
- *   views may be registered.  When the gate is cleared, create_instrument
+ *   Sets the wrapper-level flag that controls whether new instruments and
+ *   views may be registered.  When the flag is cleared, create_instrument
  *   and add_view become no-ops and return OTELC_RET_ERROR.  Instruments
- *   registered before the gate was cleared continue to record values
+ *   registered before the flag was cleared continue to record values
  *   normally.
  *
  * RETURN VALUE

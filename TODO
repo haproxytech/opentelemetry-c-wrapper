@@ -28,7 +28,7 @@ Implemented:
   - Periodic exporting metric reader.
   - Multiple metric readers/exporters via YAML list configuration
     (MeterProvider with AddMetricReader() for each exporter-reader pair).
-  - Enabled check (returns true when the meter is valid and the runtime gate
+  - Enabled check (returns true when the meter is valid and the runtime flag
     is set; the C++ SDK does not yet provide Meter::Enabled()).
   - Exporters: OTLP (HTTP/gRPC/File), OStream, In-Memory.
 - Logs:
@@ -43,7 +43,7 @@ Implemented:
   - Resource attribute detection and configuration.
   - Multiple library contexts in one process, each with its own
     configuration document and named signal entries.
-  - Runtime enable/disable gate on every signal, through the set_enabled
+  - Runtime enable/disable flag on every signal, through the set_enabled
     operation, reflected in the matching enabled probe.
   - Export-pipeline status through otelc_pipeline_status_get(): drop and
     export counters, batch queue depth and capacity per signal.

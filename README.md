@@ -392,7 +392,7 @@ carry no telemetry state of their own:
   extracted from a carrier.
 
 Each signal instance carries an `err` member with the text of the last error it
-recorded, a `scope_name` member, an `enabled` gate, a `flush_timeout` budget,
+recorded, a `scope_name` member, an `enabled` flag, a `flush_timeout` budget,
 a `ctx` back-pointer and the `ops` pointer.  The `err` string belongs to the
 instance and is released with it; the strings returned through an `err` argument
 belong to the caller and go to `OTELC_SFREE()`.  The library context itself is

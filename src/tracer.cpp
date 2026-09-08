@@ -906,10 +906,10 @@ static struct otelc_span_context *otel_tracer_extract_http_headers(struct otelc_
  * DESCRIPTION
  *   Queries the underlying tracer to determine whether it is enabled.  Callers
  *   can use this check to skip expensive span setup when the tracer would
- *   discard the data anyway.  Returns false when the wrapper-level gate is
+ *   discard the data anyway.  Returns false when the wrapper-level flag is
  *   cleared via otel_tracer_set_enabled(), even if the underlying SDK tracer
  *   would otherwise be enabled.  A tracer that has not been started yet is
- *   reported as an error whatever the gate holds.
+ *   reported as an error whatever the flag holds.
  *
  * RETURN VALUE
  *   Returns true if the tracer is enabled, false if it is not,
@@ -946,20 +946,20 @@ static int otel_tracer_enabled(struct otelc_tracer *tracer)
 
 /***
  * NAME
- *   otel_tracer_set_enabled - toggles the wrapper-level gate at runtime
+ *   otel_tracer_set_enabled - toggles the wrapper-level flag at runtime
  *
  * SYNOPSIS
  *   static int otel_tracer_set_enabled(struct otelc_tracer *tracer, bool enabled)
  *
  * ARGUMENTS
  *   tracer  - tracer instance
- *   enabled - new state of the wrapper-level gate
+ *   enabled - new state of the wrapper-level flag
  *
  * DESCRIPTION
- *   Sets the wrapper-level gate that controls whether new spans may be
- *   created.  When the gate is cleared, start_span, start_span_with_options,
+ *   Sets the wrapper-level flag that controls whether new spans may be
+ *   created.  When the flag is cleared, start_span, start_span_with_options,
  *   extract_text_map and extract_http_headers become no-ops and return
- *   nullptr.  Spans that were created before the gate was cleared continue to
+ *   nullptr.  Spans that were created before the flag was cleared continue to
  *   function normally and reach the SDK on end().
  *
  * RETURN VALUE
