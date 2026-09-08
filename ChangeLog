@@ -6,6 +6,181 @@ commits, with a few directly related commits folded into a single bullet, and
 the git log keeps the full descriptions.
 
 
+Version 3.4.0 (2026-09-08)
+--------------------------
+
+Minor release on the 3.x line: the tracer create and destroy calls may overlap
+freely now that the shared handle maps change under one mutex, a meter restart
+registers its recorded views again, every file-backed ostream exporter owns
+its stream so a repeated start works and an instance may write several files,
+the destroy-time flush is bounded by the configured budget, and the generated
+header otel_cpp.h publishes one OTELC_HAVE_EXPORTER_<NAME> macro per exporter
+type.  A span keeps its baggage alone and assembles the propagation context
+only when a carrier is injected, which spares every span an allocation it rarely
+needed, and a span that is not recording skips the work of its setters.  The
+build follows opentelemetry-cpp 1.28.0 with its ryml 0.11 callbacks, and the
+test suites grew failure path and exported value checks.  A span event may be
+added without attributes, and an otlp_file exporter block that relies on the
+defaults starts.  Since no exported interface changed, only the library revision
+rose to 9:1:0, and the soname and the existing binaries stay compatible.
+
+  * VERSION: Bumped package version to 3.4.0; library version 9:1:0.
+  * BUG/MEDIUM: yaml: Adapted the error callback to ryml 0.11.0 and newer; the
+    ryml 0.15.2 bundled with opentelemetry-cpp 1.28.0 no longer has the m_error
+    callback member, so a RYML_VERSION_GE() check selects a handler for the
+    split callbacks on the new API and keeps the old one for ryml 0.10.0 and
+    older, closing the build failure reported in the GitHub issue 2.
+  * BUILD: Aligned the dependency scripts with opentelemetry-cpp 1.28.0 and
+    completed the offline build of the monorepo tree; the install scripts follow
+    the versions the SDK pins, a stale ryml left in the prefix can no longer
+    override the pinned one, a tree carrying the .monorepo marker is built with
+    no network access, and the protobuf and prometheus-cpp submodules are
+    initialized.
+  * MINOR: span: Skipped the setter work on a span that is not recording; the
+    attribute, event, status, link and exception setters check the recording
+    state once under the span lock and return early, since the SDK discards the
+    result anyway, while the reported pair counts and the baggage are kept.
+  * MINOR: test: Added a case for the operations on a sampled-out span; a remote
+    parent with the sampled flag cleared makes the parent_based sampler answer
+    with its always_off delegate, and the case checks what the setters report,
+    what the baggage keeps and which trace the identifiers carry.
+  * MINOR: test: Added cases for a span shared by two instances; a span started
+    on one instance serves as the parent of a span started on the other, once
+    recording and once sampled out, and the exporter files show which spans each
+    instance carries.
+  * MINOR: Replaced the per-span propagation context with its baggage; the span
+    handle keeps its baggage alone, a child span takes the span context and the
+    baggage of its parent, and the propagation context is assembled where it is
+    used, in the carrier injection, so a span no longer pays for an object it
+    needed only when a carrier was injected.
+  * MINOR: test: Ended the sampled-out spans before the parentless ones; the
+    multi-instance sampled-out case started the parentless spans before it had
+    ended the sampled-out spans, so a runtime-context build made them children
+    of the open span and the sampler dropped them, and the case now holds in
+    every build.
+  * DOC: Described what a span started without a parent becomes; the guide, the
+    public header and the MEMO now say that a runtime-context build makes such a
+    span a child of the span active at that moment, so it inherits the sampling
+    decision and is a root span only while no other span is open.
+  * DOC: Added the operation semantics section to the README; it classifies
+    every mutating and lifecycle operation by what a repeated invocation does.
+  * MINOR: Exposed the debug levels and their mask in every build; the whole
+    OTELC_DBG_LEVEL_* enum and OTELC_DBG_LEVEL_MASK moved out of the block that
+    OTELC_DBG_MEM guards, so a build without the debug ABI checks a configured
+    level against the mask, and the library ABI is unchanged in both variants.
+  * BUILD: Made the bundle honour its lib-type for every library it builds and
+    added OpenSSL as an alternative to AWS-LC; the lib-type now reaches every
+    install script, one SSL library serves the whole bundle with zlib built
+    alongside, a failed step ends the bundle, the OpenSSL row sits commented out
+    under the AWS-LC row for a quick swap, and test-multi is linked with the C++
+    driver like the other C test programs.
+  * BUG/MINOR: Kept the debug allocator from crashing on a double free; glibc
+    reuses the header bytes of a freed block for its free lists, so a record
+    pointer read from a header is now checked against the tracking table and a
+    pointer without the magic is looked up by its base, and the new test-memory
+    program drives the allocator through the public macros in the debug build.
+  * MINOR: Tightened the context init, validate and shutdown entry points; a
+    context name containing '%' is rejected before the document is opened, an
+    empty name is treated like a NULL one, and otelc_lib_shutdown() restores the
+    default shard count, so a later otelc_init() can apply a new value of the
+    handle_map_shards key.
+  * MEDIUM: tracer: Closed the create and destroy race on the handle maps; the
+    tracer count and the allocation and teardown of the shared span maps change
+    under one mutex, so create and destroy calls may overlap freely, the note
+    asking callers to serialise them is gone, and a thread-local build gets its
+    maps at the create too.
+  * MINOR: Made the setters use atomic access to the members they change; the
+    enabled flag, the flush budget and the logger severity threshold go through
+    the new OTEL_ATOMIC_LOAD() and OTEL_ATOMIC_STORE() macros, which closes a
+    data race between a setter and the other operations on the same instance.
+  * MEDIUM: Bounded the destroy-time flush by the configured budget; destroy now
+    shuts the exporters down when the provider flush does not complete within
+    the budget, so a stalled exporter can no longer hold the teardown past it,
+    and a build that installs a single processor no longer keeps the exporters
+    of the processors it ignores, which destroy and a restart reached after they
+    were released.
+  * MEDIUM: exporter: Gave each file-backed ostream exporter its own stream; the
+    new wrapper exporters own the file they write to, so an instance may hold
+    several file-backed ostream exporters and a repeated start no longer fails
+    on a stream the previous pipeline still held.
+  * BUG/MINOR: Kept a scalar readers key from leaving an error behind; the start
+    operations ask for the length of the exporters or readers key only when it
+    is a sequence, so a meter with a scalar readers key next to an exporters
+    sequence no longer records a stale message in the instance.
+  * MINOR: tracer: Rejected bad text map entries and aligned the docs; the plain
+    text map extraction now refuses an entry without a key or a value, and the
+    tracer descriptions, the README and the MEMO were aligned with the code.
+  * BUILD: Published the exporter availability through the generated header;
+    otel_cpp.h defines one OTELC_HAVE_EXPORTER_<NAME> macro per exporter type
+    with the value 1 or 0 in both build systems, so a program learns at compile
+    time which exporters the library was built with instead of at start().
+  * TEST: Extended the tracer, meter and logger suites and skipped the tests
+    that need a missing exporter; the suites cover NULL contexts, unstarted
+    instances, invalid arguments, the enable switch, the flush budget with its
+    zero-budget destroy and a restart whose exporter file is read back, and a
+    suite skips itself, counted in the summary line, when the build lacks the
+    exporters its configuration entries write through.
+  * MEDIUM: meter: Registered the recorded views again on a restart; every view
+    handle records the full specification and start() registers each one with
+    the new provider, so a view added before a restart reaches the new pipeline
+    instead of being answered with its old id.
+  * MINOR: meter: Reworked the argument checks and aligned the docs; a known
+    observable instrument is returned again whatever the descriptor says, an
+    unknown instrument index in the callback registration gets the same message
+    everywhere, and the meter descriptions, the README and the MEMO were aligned
+    with the code.
+  * MINOR: logger: Dropped the start mutex and aligned the docs; the global
+    mutex that serialised every logger's start() is gone, an invalid severity is
+    recorded once and refused by the start as well, and a body record suppressed
+    by the threshold is documented to report like an emitted one.
+  * DOC: Made the processor notes on the export timeout precise; the SDK defines
+    the member but its batch processors never read it, and the wrapper sets it
+    so an SDK that starts to honour it picks the value up.
+  * BUILD: Ran the compiler checks before the option macros; a plain ./configure
+    now gives the C++ compiler the default -g -O2 like the C compiler, and the
+    --enable-debug option replaces the default flags with -g -O0 and appends
+    them to the flags given to configure.
+  * DOC: Named the limits of otelc_close_cfg() and the legacy layout fallback;
+    the descriptions say that no signal instance can be created or started again
+    once the document is closed, and the README.md lifecycle step names the
+    legacy layout as the last fallback.
+  * MINOR: tracer: Checked the link handles and noted the restart span loss; the
+    link resolution of start_span_with_options checks the handle members like
+    the parent path, and the start descriptions say that a span still open at a
+    repeated start is dropped when it ends.
+  * DOC: meter: Cited the create operation and stated the descriptor lifetime;
+    the operation descriptions of the public header refer to create_instrument
+    instead of an internal function, and the observable callback descriptor says
+    how long it must stay valid.
+  * DOC: logger: Aligned the start and severity descriptions with the code; the
+    source start description asks for the drained operations like the header,
+    set_min_severity says that the logger must be started, and the MEMO startup
+    step lists the exporter list.
+  * MINOR: yaml: Passed the yaml_open() error message through yaml_read(); the
+    helper no longer replaces a parse or duplicate key message with a generic
+    one, and the MEMO covers the split error callbacks of rapidyaml 0.11.
+  * MINOR: span: Allowed events without attributes and aligned the status text;
+    every add_event variant takes an empty attribute list, end_with_options with
+    a NULL description leaves it empty as set_status does, and README 5.3 ties
+    the leftover span rule to the loss of the handle maps.
+  * BUG/MINOR: exporter: Accepted an otlp_file block with only its type key; the
+    OTLP file option setter took a block without optional keys for a missing
+    node and failed the start, a missing processors reference is reported as
+    such, and the README marks the mandatory signal keys.
+  * DOC: util: Stated the statistics buffer minimum and the nsleep range; the
+    descriptions of otelc_statistics() and otelc_nsleep() name the buffer size
+    below which nothing is written and the nanosecond range the sleep accepts.
+  * TEST: Made speed-check.sh write its dated rate file only with -l; every
+    comparison run used to leave the rates it measured in a dated file next to
+    the baseline, which now happens only when the new option asks for it, while
+    the baseline record is written as before.
+  * DOC: Renamed the wrapper-level gate to a flag in the descriptions; the
+    enabled state of the tracer, the meter and the logger is called a flag
+    wherever it is described, the compile-time notes of include.h say that their
+    use sites depend on the SDK feature, and the README files, the MEMO, the
+    TODO and the sanitizer script follow.
+
+
 Version 3.3.0 (2026-08-17)
 --------------------------
 
