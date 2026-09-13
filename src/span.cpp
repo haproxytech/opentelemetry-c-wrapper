@@ -1533,7 +1533,7 @@ void otel_nolock_span_destroy(struct otelc_span **span)
 	}
 
 	OTEL_HANDLE(otel_span, destroy_cnt++);
-	OTEL_DBG_SPAN();
+	OTEL_DBG_SPAN_SHARD((*span)->idx);
 
 	OTEL_EXT_FREE_CLEAR(*span);
 
@@ -2179,7 +2179,7 @@ void otel_nolock_span_context_destroy(struct otelc_span_context **context)
 	}
 
 	OTEL_HANDLE(otel_span_context, destroy_cnt++);
-	OTEL_DBG_SPAN_CONTEXT();
+	OTEL_DBG_SPAN_CONTEXT_SHARD((*context)->idx);
 
 	OTEL_EXT_FREE_CLEAR(*context);
 
@@ -2392,7 +2392,7 @@ struct otelc_span_context *otelc_span_context_create(const uint8_t *trace_id, si
 		OTEL_ERR_RETURN_PTR, OTEL_ERROR_MSG_ADD_SPAN_CTX ": duplicate id", OTEL_ERROR_MSG_ADD_SPAN_CTX
 	);
 
-	OTEL_DBG_SPAN_CONTEXT();
+	OTEL_DBG_SPAN_CONTEXT_SHARD(retptr->idx);
 
 	OTELC_RETURN_PTR(retptr);
 }

@@ -716,7 +716,7 @@ static int otel_span_context_add(struct otelc_tracer *tracer, struct otelc_span_
 		OTEL_TRACER_RETURN_INT, OTEL_ERROR_MSG_ADD_SPAN_CTX ": duplicate id", OTEL_ERROR_MSG_ADD_SPAN_CTX
 	);
 
-	OTEL_DBG_SPAN_CONTEXT();
+	OTEL_DBG_SPAN_CONTEXT_SHARD((*span_context)->idx);
 
 	OTELC_RETURN_INT(OTELC_RET_OK);
 }

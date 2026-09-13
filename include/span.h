@@ -27,8 +27,11 @@
 #define OTEL_SPAN_BAGGAGE(h)               (OTEL_NULL((h)->baggage) ? otel_baggage::Baggage::GetDefault() : (h)->baggage)
 #define OTEL_SPAN_CONTEXT_HANDLE(a)        otel_map_find(OTEL_HANDLE(otel_span_context, get_shard((a)->idx).map), (a)->idx)
 
+/* The _SHARD forms are for a caller holding the shard lock of the given id. */
 #define OTEL_DBG_SPAN()                    OTEL_DBG_HANDLE(OTEL, "otel_span", otel_span)
+#define OTEL_DBG_SPAN_SHARD(k)             OTEL_DBG_HANDLE_SHARD(OTEL, "otel_span", otel_span, (k))
 #define OTEL_DBG_SPAN_CONTEXT()            OTEL_DBG_HANDLE(OTEL, "otel_span_context", otel_span_context)
+#define OTEL_DBG_SPAN_CONTEXT_SHARD(k)     OTEL_DBG_HANDLE_SHARD(OTEL, "otel_span_context", otel_span_context, (k))
 
 #define OTEL_ERROR_MSG_INVALID_SPAN            "Invalid span"
 #define OTEL_ERROR_MSG_INVALID_SPAN_CTX        "Invalid span context"

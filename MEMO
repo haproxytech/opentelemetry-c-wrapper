@@ -2189,6 +2189,17 @@ Lock acquisition patterns:
   in a subsequent block.  At no point are two shard locks held simultaneously.
   No deadlock is possible.
 
+  Handle map dump -- the statistics line that the debug build writes reads the
+  element count and the bucket count of a map, which a concurrent insert may
+  change, and so OTEL_DBG_HANDLE() samples every shard under its own mutex.  A
+  caller holding one of those mutexes would deadlock on it and writes the line
+  with OTEL_DBG_HANDLE_SHARD(), which reads only the shard it holds and reports
+  that shard's index next to the numbers.  In otel_span_inject_carrier the span
+  context dump is the one site that takes a second shard lock: it runs under
+  the span shard lock and samples the span context shards one at a time.  No
+  path takes a span lock while holding a span context lock, so the span before
+  span context order holds there as well.
+
   Manual locking -- otel_span_get_baggage_var uses OTEL_LOCK_TRACER directly
   instead of OTEL_LOCK_SPAN_HANDLE because it needs custom error handling
   (destroying the text map before returning on failure).

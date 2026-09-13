@@ -46,9 +46,19 @@ extern std::atomic<size_t> otel_handle_map_shards;
 #  define OTEL_HANDLE(h,m)           ((h)->m)
 #endif
 #define OTEL_HANDLE_FMT(h)           h "{ < %zu/%zu/%zu > %" PRId64 " %zu %" PRId64 " %" PRId64 " %" PRId64 " }"
+#define OTEL_HANDLE_SHARD_FMT(h)     h "[shard %zu]{ < %zu/%zu/%zu > %" PRId64 " %zu %" PRId64 " %" PRId64 " %" PRId64 " }"
 #define OTEL_HANDLE_ARGS(p)          OTEL_HANDLE((p), total_map_size()), OTEL_HANDLE((p), max_bucket_count()), OTEL_HANDLE((p), shards.size()), OTEL_HANDLE((p), id).load(), OTEL_HANDLE((p), peak_size).load(), OTEL_HANDLE((p), alloc_fail_cnt).load(), OTEL_HANDLE((p), erase_cnt).load(), OTEL_HANDLE((p), destroy_cnt).load()
-#define OTEL_HANDLE_ARGS_NOLOCK(p)   OTEL_HANDLE((p), total_map_size_nolock()), OTEL_HANDLE((p), max_bucket_count_nolock()), OTEL_HANDLE((p), shards.size()), OTEL_HANDLE((p), id).load(), OTEL_HANDLE((p), peak_size).load(), OTEL_HANDLE((p), alloc_fail_cnt).load(), OTEL_HANDLE((p), erase_cnt).load(), OTEL_HANDLE((p), destroy_cnt).load()
-#define OTEL_DBG_HANDLE(l,h,p)       OTELC_DBG(_##l, OTEL_HANDLE_FMT(h), OTEL_HANDLE_ARGS_NOLOCK(p))
+#define OTEL_HANDLE_SHARD_ARGS(p,k)  OTEL_HANDLE((p), get_shard_index(k)), OTEL_HANDLE((p), shard_map_size_nolock(k)), OTEL_HANDLE((p), shard_bucket_count_nolock(k)), OTEL_HANDLE((p), shards.size()), OTEL_HANDLE((p), id).load(), OTEL_HANDLE((p), peak_size).load(), OTEL_HANDLE((p), alloc_fail_cnt).load(), OTEL_HANDLE((p), erase_cnt).load(), OTEL_HANDLE((p), destroy_cnt).load()
+
+/***
+ * Debug dump of a handle map.  OTEL_DBG_HANDLE() samples every shard under its
+ * own mutex and is for callers that hold none of them.  OTEL_DBG_HANDLE_SHARD()
+ * is for a caller that holds the shard lock of key <k> and would deadlock on
+ * the locking form; it reports the numbers of that shard alone, prefixed with
+ * the shard index, since the other shards may change while it runs.
+ */
+#define OTEL_DBG_HANDLE(l,h,p)       OTELC_DBG(_##l, OTEL_HANDLE_FMT(h), OTEL_HANDLE_ARGS(p))
+#define OTEL_DBG_HANDLE_SHARD(l,h,p,k)  OTELC_DBG(_##l, OTEL_HANDLE_SHARD_FMT(h), OTEL_HANDLE_SHARD_ARGS(p, (k)))
 #define OTEL_HANDLE_PEAK_SIZE(h,s)                                                                                                      \
 	do {                                                                                                                            \
 		size_t peak_size = OTEL_HANDLE(h, peak_size).load();                                                                    \
@@ -452,8 +462,8 @@ struct otel_handle {
 
 	/***
 	 * Returns the total number of elements across all shards without
-	 * taking the shard mutexes.  Only for callers that already hold the
-	 * shard lock, like the debug logging inside a locked section.
+	 * taking the shard mutexes.  Holding one shard lock does not cover
+	 * the other shards, so only a map with a single shard may use this.
 	 */
 	size_t total_map_size_nolock() const noexcept
 	{
@@ -467,8 +477,8 @@ struct otel_handle {
 
 	/***
 	 * Returns the maximum bucket count among all shards without taking
-	 * the shard mutexes.  Only for callers that already hold the shard
-	 * lock, like the debug logging inside a locked section.
+	 * the shard mutexes.  Holding one shard lock does not cover the other
+	 * shards, so only a map with a single shard may use this.
 	 */
 	size_t max_bucket_count_nolock() const noexcept
 	{
@@ -478,6 +488,26 @@ struct otel_handle {
 			retval = std::max(retval, it.map.bucket_count());
 
 		return retval;
+	}
+
+	/***
+	 * Returns the number of elements in the shard of the given key without
+	 * taking its mutex.  Only for a caller that already holds that shard
+	 * lock, like the debug logging inside a locked section.
+	 */
+	size_t shard_map_size_nolock(int64_t key) const noexcept
+	{
+		return shards[get_shard_index(key)].map.size();
+	}
+
+	/***
+	 * Returns the bucket count of the shard of the given key without
+	 * taking its mutex.  Only for a caller that already holds that shard
+	 * lock, like the debug logging inside a locked section.
+	 */
+	size_t shard_bucket_count_nolock(int64_t key) const noexcept
+	{
+		return shards[get_shard_index(key)].map.bucket_count();
 	}
 
 	/***
