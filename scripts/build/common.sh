@@ -173,7 +173,7 @@ case "${ID}" in
 		SH_CMAKE_ARGS="${SH_CMAKE_ARGS} -DCMAKE_C_COMPILER=gcc-10 -DCMAKE_CXX_COMPILER=g++-10"
 	;;
 
-  rhel | almalinux | centos | ol | rocky)
+  rhel | almalinux | centos | ol | rocky | navix)
 	SH_SYS_LIBDIR="/usr/lib64"
 	SH_LIBDIR_EXT="64"
 	test -e /opt/rh/gcc-toolset-10/root/bin/gcc && \

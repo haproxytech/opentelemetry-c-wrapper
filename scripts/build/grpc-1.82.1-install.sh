@@ -7,7 +7,7 @@ SH_PKG_URL="https://github.com/grpc/grpc/archive/refs/tags/v1.82.1.tar.gz"
 . "$(realpath "$(dirname "${0}")")/common.sh"
 
 case "${ID}" in
-  opensuse-leap | sles | rhel | almalinux | centos | ol | rocky)
+  opensuse-leap | sles | rhel | almalinux | centos | ol | rocky | navix)
 	SH_CMAKE_ARGS="${SH_CMAKE_ARGS} -DgRPC_INSTALL_LIBDIR=lib${SH_LIBDIR_EXT} -DgRPC_INSTALL_CMAKEDIR=lib${SH_LIBDIR_EXT}/cmake/grpc"
 	;;
 esac

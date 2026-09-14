@@ -99,7 +99,7 @@ sh_system_update ()
 		zypper install -y ${_var_pkg_common} ${_var_pkg_rhel} keyutils-devel krb5-devel libopenssl-devel libpsl-devel libzstd-devel lzma-sdk-devel
 		;;
 
-	  rhel | almalinux | centos | ol | rocky)
+	  rhel | almalinux | centos | ol | rocky | navix)
 		yum upgrade -y
 
 		yum install -y ${_var_pkg_common} ${_var_pkg_rhel} keyutils-libs-devel openssl-devel xz-devel
