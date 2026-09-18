@@ -685,6 +685,8 @@ for details.
 - [`test/README-speed_check`](test/README-speed_check) -- throughput regression
   checking.
 - [`ChangeLog`](ChangeLog) -- release notes, grouped by package version.
+- [`SECURITY.md`](SECURITY.md) -- supported versions, the scope of the policy
+  and the way a vulnerability is reported.
 - [`TODO`](TODO) -- implemented features and planned enhancements.
 
 ## License
