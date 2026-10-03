@@ -12,7 +12,7 @@ It was developed by [HAProxy Technologies](https://www.haproxy.com/) for use in
 the [HAProxy OTel filter](https://github.com/haproxytech/haproxy-opentelemetry),
 but is suitable for any C application that needs to export telemetry data.  The
 build pins the underlying OTel C++ client to
-[1.28.0](https://github.com/open-telemetry/opentelemetry-cpp/releases/tag/v1.28.0)
+[1.29.0](https://github.com/open-telemetry/opentelemetry-cpp/releases/tag/v1.29.0)
 because the patch set it applies to the SDK is prepared for exactly that
 release, as the [Build Instructions](#build-instructions) explain; the wrapper
 itself also compiles against an older client, with the parts that require the
@@ -66,7 +66,7 @@ By default, libraries are installed under `/opt`.  A sequential alternative
 **Important:** Use the provided build scripts rather than relying on
 system-installed dependency packages, which are likely outdated or compiled
 with options incompatible with the OTel C wrapper.  The version of the OTel
-C++ SDK used is set to 1.28.0 because the `*-opentelemetry-cpp-1.28.0.patch`
+C++ SDK used is set to 1.29.0 because the `*-opentelemetry-cpp-1.29.0.patch`
 set in `scripts/build/` is prepared for exactly that SDK release.  Besides build
 adjustments, the patches extend the SDK exporters with methods that the wrapper
 requires: `MaybeSpawnBackgroundThread()` pre-spawns the exporter's background
@@ -79,11 +79,11 @@ porting the patch set.
 If none of the attached `build-*.sh` scripts is used, the opentelemetry-cpp
 patches in `scripts/build/` must be applied to the OpenTelemetry C++ source
 tree before compilation and the same CMake configuration options found in the
-`scripts/build/opentelemetry-cpp-1.28.0-install.sh` script must be used.
+`scripts/build/opentelemetry-cpp-1.29.0-install.sh` script must be used.
 
 In particular, the wrapper requires an OTel C++ SDK built with ABI version 2
-(`-DWITH_ABI_VERSION_2=ON`); the wrapper build verifies this at configuration
-time.
+(`-DOTELCPP_WITH_ABI_VERSION_2=ON`); the wrapper build verifies this setting at
+configuration time.
 
 ### Building the Wrapper Library
 

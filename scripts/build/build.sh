@@ -24,11 +24,11 @@ SH_DIR="$(realpath "$(dirname "${0}")")"
 "${SH_DIR}/re2-2025-08-05-install.sh"
 "${SH_DIR}/protobuf-35.1-install.sh"
 "${SH_DIR}/json-3.12.0-install.sh"
-"${SH_DIR}/googletest-1.17.0-install.sh"
-"${SH_DIR}/benchmark-1.9.4-install.sh"
-"${SH_DIR}/grpc-1.82.1-install.sh"
-#"${SH_DIR}/rapidyaml-0.15.2-src-install.sh"
-"${SH_DIR}/opentelemetry-cpp-1.28.0-install.sh"
+"${SH_DIR}/googletest-1.18.0-install.sh"
+"${SH_DIR}/benchmark-1.9.5-install.sh"
+"${SH_DIR}/grpc-1.83.1-install.sh"
+#"${SH_DIR}/rapidyaml.v0.16.0-install.sh"
+"${SH_DIR}/opentelemetry-cpp-1.29.0-install.sh"
 
 # libfyaml is no longer needed because opentelemetry-cpp already provides ryml.
 #

@@ -96,7 +96,7 @@ Out of scope:
 
 ## Dependencies
 
-The library is built against the OpenTelemetry C++ SDK pinned to 1.28.0 with
+The library is built against the OpenTelemetry C++ SDK pinned to 1.29.0 with
 the patch set from `scripts/build/` applied, and that build pulls in protobuf,
 gRPC, Abseil, c-ares, curl, and AWS-LC or OpenSSL.  The configuration is parsed
 by rapidyaml, or by libfyaml when the build asks for it.

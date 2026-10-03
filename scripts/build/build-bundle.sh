@@ -33,7 +33,7 @@ fi
 "${SH_DIR}/aws-lc-AWS-LC-FIPS-3.0.0-install.sh" || exit ${SH_EX_SOFTWARE}
 #"${SH_DIR}/openssl-3.5.8-install.sh" || exit ${SH_EX_SOFTWARE}
 "${SH_DIR}/curl-curl-8_21_0-install.sh" || exit ${SH_EX_SOFTWARE}
-"${SH_DIR}/opentelemetry-cpp-1.28.0-install.sh" || exit ${SH_EX_SOFTWARE}
+"${SH_DIR}/opentelemetry-cpp-1.29.0-install.sh" || exit ${SH_EX_SOFTWARE}
 
 # libfyaml is no longer needed because opentelemetry-cpp already provides ryml.
 #

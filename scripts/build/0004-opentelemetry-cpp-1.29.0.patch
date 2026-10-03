@@ -1,7 +1,7 @@
-From cda95203cba3f53ee3960196c13f92e222d0d805 Mon Sep 17 00:00:00 2001
+From baec2e533a43fef2e6ba31bff3c4764f9ad71357 Mon Sep 17 00:00:00 2001
 From: Miroslav Zagorac <mzagorac@haproxy.com>
 Date: Wed, 15 Apr 2026 21:17:35 +0200
-Subject: [PATCH 4/6] Add MaybeSpawnBackgroundThread() to OTLP File exporters
+Subject: [PATCH 4/7] Add MaybeSpawnBackgroundThread() to OTLP File exporters
 
 The file system backend's background flush thread is started lazily on the
 first Export() call via the private SpawnBackgroundWorkThread() method.
@@ -26,7 +26,7 @@ no-op since it has no background thread.
  9 files changed, 57 insertions(+)
 
 diff --git a/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_file_client.h b/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_file_client.h
-index 55385b8d..d432d5c3 100644
+index 55385b8..d432d5c 100644
 --- a/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_file_client.h
 +++ b/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_file_client.h
 @@ -68,6 +68,12 @@ class OtlpFileClient
@@ -43,7 +43,7 @@ index 55385b8d..d432d5c3 100644
     * Get options of current OTLP file client.
     * @return options of current OTLP file client.
 diff --git a/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_file_client_options.h b/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_file_client_options.h
-index 1b72d953..13460f0c 100644
+index 1b72d95..13460f0 100644
 --- a/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_file_client_options.h
 +++ b/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_file_client_options.h
 @@ -80,6 +80,8 @@ class OtlpFileAppender
@@ -56,7 +56,7 @@ index 1b72d953..13460f0c 100644
  
  using OtlpFileClientBackendOptions =
 diff --git a/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_file_exporter.h b/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_file_exporter.h
-index cc25ca66..3d1bb89d 100644
+index cc25ca6..3d1bb89 100644
 --- a/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_file_exporter.h
 +++ b/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_file_exporter.h
 @@ -74,6 +74,12 @@ class OPENTELEMETRY_EXPORT OtlpFileExporter final : public opentelemetry::sdk::t
@@ -73,7 +73,7 @@ index cc25ca66..3d1bb89d 100644
    // The configuration options associated with this exporter.
    OtlpFileExporterOptions options_;
 diff --git a/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_file_log_record_exporter.h b/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_file_log_record_exporter.h
-index 3584a8b8..5ad004d6 100644
+index 3584a8b..5ad004d 100644
 --- a/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_file_log_record_exporter.h
 +++ b/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_file_log_record_exporter.h
 @@ -81,6 +81,12 @@ class OtlpFileLogRecordExporter final : public opentelemetry::sdk::logs::LogReco
@@ -90,7 +90,7 @@ index 3584a8b8..5ad004d6 100644
    // Configuration options for the exporter
    OtlpFileLogRecordExporterOptions options_;
 diff --git a/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_file_metric_exporter.h b/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_file_metric_exporter.h
-index 73ae412f..e3968328 100644
+index 73ae412..e396832 100644
 --- a/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_file_metric_exporter.h
 +++ b/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_file_metric_exporter.h
 @@ -65,6 +65,12 @@ class OtlpFileMetricExporter final : public opentelemetry::sdk::metrics::PushMet
@@ -107,10 +107,10 @@ index 73ae412f..e3968328 100644
    friend class OtlpFileMetricExporterTestPeer;
  
 diff --git a/exporters/otlp/src/otlp_file_client.cc b/exporters/otlp/src/otlp_file_client.cc
-index f7c757fe..c9712da9 100644
+index 2bc24b3..e65dfea 100644
 --- a/exporters/otlp/src/otlp_file_client.cc
 +++ b/exporters/otlp/src/otlp_file_client.cc
-@@ -1140,6 +1140,12 @@ class OPENTELEMETRY_LOCAL_SYMBOL OtlpFileSystemBackend : public OtlpFileAppender
+@@ -1146,6 +1146,12 @@ class OPENTELEMETRY_LOCAL_SYMBOL OtlpFileSystemBackend : public OtlpFileAppender
      return result;
    }
  
@@ -123,7 +123,7 @@ index f7c757fe..c9712da9 100644
  private:
    void Initialize()
    {
-@@ -1677,6 +1683,16 @@ opentelemetry::sdk::common::ExportResult OtlpFileClient::Export(
+@@ -1695,6 +1701,16 @@ opentelemetry::sdk::common::ExportResult OtlpFileClient::Export(
    return ::opentelemetry::sdk::common::ExportResult::kFailure;
  }
  
@@ -141,7 +141,7 @@ index f7c757fe..c9712da9 100644
  {
    if (backend_)
 diff --git a/exporters/otlp/src/otlp_file_exporter.cc b/exporters/otlp/src/otlp_file_exporter.cc
-index 862dbed9..a83e4ed7 100644
+index 862dbed..a83e4ed 100644
 --- a/exporters/otlp/src/otlp_file_exporter.cc
 +++ b/exporters/otlp/src/otlp_file_exporter.cc
 @@ -107,6 +107,11 @@ bool OtlpFileExporter::Shutdown(std::chrono::microseconds timeout) noexcept
@@ -157,7 +157,7 @@ index 862dbed9..a83e4ed7 100644
  }  // namespace exporter
  OPENTELEMETRY_END_NAMESPACE
 diff --git a/exporters/otlp/src/otlp_file_log_record_exporter.cc b/exporters/otlp/src/otlp_file_log_record_exporter.cc
-index d40c66e2..5483c2a2 100644
+index d40c66e..5483c2a 100644
 --- a/exporters/otlp/src/otlp_file_log_record_exporter.cc
 +++ b/exporters/otlp/src/otlp_file_log_record_exporter.cc
 @@ -110,6 +110,11 @@ bool OtlpFileLogRecordExporter::Shutdown(std::chrono::microseconds timeout) noex
@@ -173,7 +173,7 @@ index d40c66e2..5483c2a2 100644
  }  // namespace exporter
  OPENTELEMETRY_END_NAMESPACE
 diff --git a/exporters/otlp/src/otlp_file_metric_exporter.cc b/exporters/otlp/src/otlp_file_metric_exporter.cc
-index dfd59210..2abcefe2 100644
+index dfd5921..2abcefe 100644
 --- a/exporters/otlp/src/otlp_file_metric_exporter.cc
 +++ b/exporters/otlp/src/otlp_file_metric_exporter.cc
 @@ -116,6 +116,11 @@ bool OtlpFileMetricExporter::Shutdown(std::chrono::microseconds timeout) noexcep
@@ -188,6 +188,3 @@ index dfd59210..2abcefe2 100644
  }  // namespace otlp
  }  // namespace exporter
  OPENTELEMETRY_END_NAMESPACE
--- 
-2.43.0
-

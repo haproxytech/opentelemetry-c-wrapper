@@ -1,0 +1,29 @@
+From 7b1e0d4c9a3f52e6b8c1d0a4f9e27c6b3a8d51e0 Mon Sep 17 00:00:00 2001
+From: Miroslav Zagorac <mzagorac@haproxy.com>
+Date: Thu, 8 Oct 2026 23:40:00 +0200
+Subject: [PATCH 7/7] Add missing <cstdint> include to predicate_factory.h
+
+The PredicateType enumeration in predicate_factory.h uses uint8_t as its
+underlying type without including the header that declares it, so it
+depended on a transitive include from elsewhere in the translation unit.
+The libstdc++ of GCC 15 removed the include of stdint.h from <memory>,
+which made the header fail to compile on Ubuntu 26.04.
+
+Added the missing <cstdint> include, matching what upstream did on the
+main branch after the 1.29.0 release.
+---
+ sdk/include/opentelemetry/sdk/metrics/view/predicate_factory.h | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/sdk/include/opentelemetry/sdk/metrics/view/predicate_factory.h b/sdk/include/opentelemetry/sdk/metrics/view/predicate_factory.h
+index ca7dd4b..501b69b 100644
+--- a/sdk/include/opentelemetry/sdk/metrics/view/predicate_factory.h
++++ b/sdk/include/opentelemetry/sdk/metrics/view/predicate_factory.h
+@@ -3,6 +3,7 @@
+ 
+ #pragma once
+ 
++#include <cstdint>
+ #include <memory>
+ 
+ #include "opentelemetry/nostd/string_view.h"

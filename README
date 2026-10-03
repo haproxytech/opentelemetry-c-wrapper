@@ -60,8 +60,8 @@ own repository at https://github.com/haproxytech/haproxy-opentelemetry .
 
 The wrapper sits on the official OTel C++ client, whose source repository is at
 https://github.com/open-telemetry/opentelemetry-cpp .  The build pins the client
-to release 1.28.0, which the client project documents on its release page at
-https://github.com/open-telemetry/opentelemetry-cpp/releases/tag/v1.28.0 ,
+to release 1.29.0, which the client project documents on its release page at
+https://github.com/open-telemetry/opentelemetry-cpp/releases/tag/v1.29.0 ,
 because the patch set that it applies to the client sources is prepared for
 exactly that release; section 2.2 gives the reasons.  The wrapper itself also
 compiles against an older client, with the parts that require the newer SDK
@@ -166,7 +166,7 @@ following two scripts:
 It is strongly recommended to use the provided build scripts rather than relying
 on system-installed dependency packages, which are likely outdated or compiled
 with options incompatible with the OTel C wrapper.  The version of the OTel
-C++ client used is set to 1.28.0 because the *-opentelemetry-cpp-1.28.0.patch
+C++ client used is set to 1.29.0 because the *-opentelemetry-cpp-1.29.0.patch
 set in scripts/build/ is prepared for exactly that SDK release.  Besides build
 adjustments, the patches extend the SDK exporters with methods that the wrapper
 requires: MaybeSpawnBackgroundThread() pre-spawns the exporter's background
@@ -179,7 +179,7 @@ porting the patch set.
 If none of the attached build-*.sh scripts is used, then the opentelemetry-cpp
 patches in scripts/build/ must be applied to the OpenTelemetry C++ source tree
 before the compilation and the same CMake configuration options found in the
-scripts/build/opentelemetry-cpp-1.28.0-install.sh script must be used.
+scripts/build/opentelemetry-cpp-1.29.0-install.sh script must be used.
 
 Whichever script is used, the result should be the same.  However, the use of
 the build-bundle.sh script is recommended for this task.  It builds AWS-LC first
@@ -297,9 +297,9 @@ and --with-rapidyaml together, fails at configuration time.
     https://github.com/pantoniou/libfyaml
 
 The OTel C wrapper requires the OTel C++ client to be built with ABI version 2
-enabled (CMake option -DWITH_ABI_VERSION_2=ON, which the provided installation
-scripts already set).  Both the autotools and CMake builds check the ABI version
-at configuration time and fail if it is not 2.
+enabled (the CMake option -DOTELCPP_WITH_ABI_VERSION_2=ON, which the provided
+installation scripts already set).  Both the autotools and CMake builds check
+the ABI version at configuration time and fail if it is not 2.
 
 Once the OTel C++ client is installed, the OTel C wrapper library can be
 compiled and installed.  In this example, we will install two versions of the
@@ -1476,7 +1476,7 @@ environment attributes for duplicate keys.
 The OTel C++ SDK itself adds identification attributes to every resource it
 creates, so telemetry.sdk.language, telemetry.sdk.name and telemetry.sdk.version
 are always present, with the values "cpp", "opentelemetry" and the version of
-the OTel C++ client the wrapper is built with ("1.28.0").  Listing those keys
+the OTel C++ client the wrapper is built with ("1.29.0").  Listing those keys
 in the resources sequence overrides the SDK values like any other attribute:
 
   providers:
