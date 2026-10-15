@@ -96,6 +96,10 @@ make -j8
 make install
 ```
 
+Autotools preserves the existing `PKG_CONFIG_PATH` when searching for dependency
+libraries under the selected prefix, including `lib64/pkgconfig` and the FreeBSD
+`libdata/pkgconfig` location.
+
 To build the debug variant (enables detailed internal logging):
 
 ```sh

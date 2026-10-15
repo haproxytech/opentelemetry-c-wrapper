@@ -356,28 +356,42 @@ AC_DEFUN([AX_INIT_PKGCONFIG], [
 dnl
 dnl
 AC_DEFUN([AX_PATH_PKGCONFIG], [
-	_pc_prefix="${ac_default_prefix}"
+	_pc_prefix="${prefix}"
+	AS_IF(
+		[test "${_pc_prefix}" = "NONE"],
+		[_pc_prefix="${ac_default_prefix}"]
+	)
 
 	PKG_CONFIG_PATH="${PKG_CONFIG_PATH_SAVE}"
 
 	# Do not replace $n with ${n} here, as these refer to the m4 arguments
 	# of the AX_PATH_PKGCONFIG function.
 	#
-	AS_IF([test "$1" = "yes" -o "$1" = "check"], [], [_pc_prefix="$1"])
+	AS_IF(
+		[test "$1" = "yes" -o "$1" = "check"],
+		[],
+		[_pc_prefix="$1"]
+	)
 
 	for _loop_path in \
 		${_pc_prefix}/lib \
 		${_pc_prefix}/lib/i386-linux-gnu \
 		${_pc_prefix}/lib/x86_64-linux-gnu \
+		${_pc_prefix}/libdata \
 		${_pc_prefix}/amd64 \
 		${_pc_prefix}/lib32 \
 		${_pc_prefix}/lib64 \
-		${_pc_prefix}/share \
-		${prefix}/lib
+		${_pc_prefix}/share
 	do
 		AS_IF(
 			[test -d "${_loop_path}/pkgconfig"],
-			[PKG_CONFIG_PATH="${PKG_CONFIG_PATH}${PKG_CONFIG_PATH:+:}${_loop_path}/pkgconfig"],
+			[
+				AS_CASE(
+					[:${PKG_CONFIG_PATH}:],
+					[*:"${_loop_path}/pkgconfig":*], [],
+					[PKG_CONFIG_PATH="${PKG_CONFIG_PATH}${PKG_CONFIG_PATH:+:}${_loop_path}/pkgconfig"]
+				)
+			],
 			[]
 		)
 	done
@@ -640,6 +654,8 @@ _am_cache_test ()
 ])
 
 AC_DEFUN([AX_SHOW_CONFIG], [
+	eval "exec_prefix=${exec_prefix}"
+	eval "datarootdir=${datarootdir}"
 	eval "bindir=${bindir}"
 	eval "datadir=${datadir}"
 	eval "sysconfdir=${sysconfdir}"
