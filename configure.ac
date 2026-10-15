@@ -54,13 +54,15 @@ AX_ENABLE_THREADS
 dnl
 dnl Misc
 dnl
-AC_ARG_WITH([libfyaml],
+AC_ARG_WITH(
+	[libfyaml],
 	[AS_HELP_STRING([--with-libfyaml@<:@=DIR@:>@], [use libfyaml library @<:@default=no@:>@])],
 	[],
 	[with_libfyaml=no]
 )
 
-AC_ARG_WITH([rapidyaml],
+AC_ARG_WITH(
+	[rapidyaml],
 	[AS_HELP_STRING([--with-rapidyaml@<:@=DIR@:>@], [use rapidyaml library @<:@default=check@:>@])],
 	[],
 	[with_rapidyaml=check]
@@ -185,7 +187,12 @@ AC_CONFIG_FILES([include/opentelemetry-c-wrapper/version.h include/opentelemetry
 AC_CONFIG_FILES([opentelemetry-c-wrapper.pc opentelemetry-c-wrapper_dbg.pc])
 AC_OUTPUT
 
-AX_SHOW_CONFIG
+AX_SHOW_CONFIG(
+	[${THREADS_CPPFLAGS} ${OPENTELEMETRY_CPPFLAGS} ${LIBFYAML_CPPFLAGS} ${RAPIDYAML_CPPFLAGS} ${CPPFLAGS}],
+	[${THREADS_CFLAGS} ${OPENTELEMETRY_CFLAGS} ${LIBFYAML_CFLAGS} ${CFLAGS}],
+	[${OPENTELEMETRY_CXXFLAGS} ${RAPIDYAML_CXXFLAGS} ${CXXFLAGS}],
+	[${THREADS_LDFLAGS} ${OPENTELEMETRY_LDFLAGS} ${LIBFYAML_LDFLAGS} ${RAPIDYAML_LDFLAGS} ${OPENTELEMETRY_SYSLDFLAGS} ${LDFLAGS}],
+	[${THREADS_LIBS} ${OPENTELEMETRY_LIBS} ${LIBFYAML_LIBS} ${RAPIDYAML_LIBS} ${OPENTELEMETRY_SYSLIBS} ${LIBS}])
 
 
 AH_TOP([

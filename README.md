@@ -100,6 +100,10 @@ Autotools preserves the existing `PKG_CONFIG_PATH` when searching for dependency
 libraries under the selected prefix, including `lib64/pkgconfig` and the FreeBSD
 `libdata/pkgconfig` location.
 
+The configure summary lists the library's user and dependency flags in build
+order, including the OpenTelemetry SDK and its system libraries.  It reports
+configured flag groups, not complete compiler or linker commands.
+
 To build the debug variant (enables detailed internal logging):
 
 ```sh
@@ -120,6 +124,11 @@ make install
 ```
 
 Add `-DENABLE_DEBUG=ON` for the debug variant.
+
+CMake reports compiler and linker flags for the configured build types, along
+with dependency include directories and the library target's definitions and
+link dependencies.  Static builds show archiver flags rather than linker flags.
+Target dependencies keep their CMake names instead of using Autotools flags.
 
 **Static library build:**
 

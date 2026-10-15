@@ -220,10 +220,18 @@ AC_DEFUN([AX_PROG_CXX_SET], [
 			)
 		],
 		[c++], [
-			AS_CASE([${host_os}], [*freebsd1?.*], [_var_cxxflags="-Wno-extern-c-compat"], [])
+			AS_CASE(
+				[${host_os}],
+				[*freebsd1?.*], [_var_cxxflags="-Wno-extern-c-compat"],
+				[]
+			)
 		],
 		[CC], [
-			AS_CASE([${host_os}], [*solaris*], [_var_cxxflags=], [])
+			AS_CASE(
+				[${host_os}],
+				[*solaris*], [_var_cxxflags=],
+				[]
+			)
 		],
 		[]
 	)
@@ -629,19 +637,19 @@ AC_DEFUN([AX_ENABLE_HARDENING], [
 ])
 
 AC_DEFUN([AX_VARIABLE_SET], [
-_am_cache_test ()
-{
-	_c=
+	_am_cache_test ()
+	{
+		_c=
 
-	AS_IF(
-		[test -n "${2}"],
-		[
-			for _c in ${2}; do test "${_c}" = "${3}" && return 1; done
-			eval "${1}=\"${2} ${3}\""
-		],
-		[eval "${1}=\"${3}\""]
-	)
-}
+		AS_IF(
+			[test -n "${2}"],
+			[
+				for _c in ${2}; do test "${_c}" = "${3}" && return 1; done
+				eval "${1}=\"${2} ${3}\""
+			],
+			[eval "${1}=\"${3}\""]
+		)
+	}
 
 	# Do not replace $n with ${n} here, as these refer to the m4 arguments
 	# of the AX_VARIABLE_SET function.
@@ -653,6 +661,7 @@ _am_cache_test ()
 	$1=${_am_var_resolved}
 ])
 
+dnl Flag arguments: CPPFLAGS, CFLAGS, CXXFLAGS, LDFLAGS, LIBS.
 AC_DEFUN([AX_SHOW_CONFIG], [
 	eval "exec_prefix=${exec_prefix}"
 	eval "datarootdir=${datarootdir}"
@@ -669,12 +678,12 @@ AC_DEFUN([AX_SHOW_CONFIG], [
 	echo "  host operating system   : ${host}"
 	echo "  source code location    : ${srcdir}"
 	echo "  C compiler              : ${CC}"
-	echo "  C++ compiler            : ${CXX}"
-	echo "  preprocessor flags      : ${CPPFLAGS}"
-	echo "  C compiler flags        : ${CFLAGS}"
-	echo "  C++ compiler flags      : ${CXXFLAGS}"
-	echo "  linker flags            : ${LDFLAGS}"
-	echo "  libraries               : ${LIBS}"
+	m4_ifval([$3], [echo "  C++ compiler            : ${CXX}"])
+	echo "  preprocessor flags      : $1"
+	echo "  C compiler flags        : $2"
+	m4_ifval([$3], [echo "  C++ compiler flags      : $3"])
+	echo "  linker flags            : $4"
+	echo "  libraries               : $5"
 	echo "  configure options       : ${ac_configure_args}"
 	echo "  binary install path     : ${bindir}"
 	echo "  data install path       : ${datadir}"
