@@ -96,6 +96,7 @@ AC_SUBST([LIBTOOL_DEPS])
 dnl Checks for header files.
 dnl
 AC_CHECK_HEADERS([fcntl.h inttypes.h malloc.h sched.h stdint.h stdlib.h string.h strings.h sys/time.h unistd.h])
+AC_CHECK_HEADER_STDBOOL
 
 dnl Checks for typedefs, structures, and compiler characteristics.
 dnl
@@ -124,7 +125,10 @@ AC_FUNC_REALLOC
 AC_FUNC_STRERROR_R
 AC_FUNC_STRNLEN
 AC_FUNC_STRTOD
-AC_CHECK_FUNCS([clock_gettime gettimeofday mallinfo mallinfo2 memset strcasecmp strdup strndup strrchr strstr strtol])
+AC_CHECK_FUNCS([clock_gettime gettimeofday])
+AC_CHECK_FUNCS([mallinfo mallinfo2 memset])
+AC_CHECK_FUNCS([strcasecmp strchr strdup strerror strndup strrchr strspn strstr])
+AC_CHECK_FUNCS([strtol strtoul strtoull])
 
 dnl Set the compiler flags
 dnl
