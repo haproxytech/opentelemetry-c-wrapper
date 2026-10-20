@@ -38,9 +38,20 @@ AC_DEFUN([AX_VARIABLES_SET], [
 	LIBS="${LIBS} ${SET_LIBS}"
 ])
 
+dnl Check for the autoconf-archive macro used by the compiler flag checks.
+dnl
+AC_DEFUN([AX_CHECK_COMPILE_FLAG_REQUIRED], [
+	m4_ifndef(
+		[AX_CHECK_COMPILE_FLAG],
+		[m4_fatal([AX_CHECK_COMPILE_FLAG is required. Install autoconf-archive.])]
+	)
+])
+
 dnl Check which options the C compiler supports.
 dnl
 AC_DEFUN([AX_PROG_CC_SET], [
+	AX_CHECK_COMPILE_FLAG_REQUIRED
+
 	_var_cflags=
 	_var_tmp_cflags=
 	_loop_cflags=
@@ -149,6 +160,8 @@ AC_DEFUN([AX_PROG_CC_SET], [
 dnl Check which options the C++ compiler supports.
 dnl
 AC_DEFUN([AX_PROG_CXX_SET], [
+	AX_CHECK_COMPILE_FLAG_REQUIRED
+
 	_var_cxxflags=
 	_loop_cxxflags=
 	_var_tmp_cxxflags=

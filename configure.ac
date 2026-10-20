@@ -29,11 +29,6 @@ dnl Set the compiler, preprocessor, and file extensions.
 dnl
 AC_LANG([C])
 
-m4_ifndef(
-	[AX_CHECK_COMPILE_FLAG],
-	[m4_fatal([AX_CHECK_COMPILE_FLAG is required. Install autoconf-archive.])]
-)
-
 dnl The compiler checks must precede the option macros: those save and
 dnl restore the flag variables, and a restored variable exists even when
 dnl it is empty, which keeps AC_PROG_CXX from applying its default flags.
