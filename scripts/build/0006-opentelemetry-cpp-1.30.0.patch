@@ -1,7 +1,7 @@
-From 4ac9d673c96efb15d222075fc2dc9ebd2b8c0534 Mon Sep 17 00:00:00 2001
+From 22af69b7059564b53624b3e1cc4ff513583bb591 Mon Sep 17 00:00:00 2001
 From: Miroslav Zagorac <mzagorac@haproxy.com>
 Date: Thu, 16 Apr 2026 07:25:46 +0200
-Subject: [PATCH 6/7] Exposed SetBackgroundWaitFor() through OTLP/HTTP
+Subject: [PATCH 6/6] Exposed SetBackgroundWaitFor() through OTLP/HTTP
 
 Added a virtual SetBackgroundWaitFor() method to the base HttpClient
 interface, allowing the curl background thread idle timeout to be
@@ -103,10 +103,10 @@ index dcc41a4..5a7cc01 100644
    // Configuration options for the exporter
    OtlpHttpMetricExporterOptions options_;
 diff --git a/exporters/otlp/src/otlp_http_client.cc b/exporters/otlp/src/otlp_http_client.cc
-index af9b1c4..864e3cb 100644
+index 5e28687..c12d645 100644
 --- a/exporters/otlp/src/otlp_http_client.cc
 +++ b/exporters/otlp/src/otlp_http_client.cc
-@@ -1128,6 +1128,11 @@ bool OtlpHttpClient::cleanupGCSessions() noexcept
+@@ -1106,6 +1106,11 @@ bool OtlpHttpClient::cleanupGCSessions() noexcept
    return !gc_sessions_.empty();
  }
  
@@ -167,10 +167,10 @@ index e55edb6..16d4654 100644
  }  // namespace exporter
  OPENTELEMETRY_END_NAMESPACE
 diff --git a/ext/include/opentelemetry/ext/http/client/curl/http_client_curl.h b/ext/include/opentelemetry/ext/http/client/curl/http_client_curl.h
-index 57a5e2c..4124f38 100644
+index d9a145c..1361c7f 100644
 --- a/ext/include/opentelemetry/ext/http/client/curl/http_client_curl.h
 +++ b/ext/include/opentelemetry/ext/http/client/curl/http_client_curl.h
-@@ -352,7 +352,7 @@ class HttpClient : public opentelemetry::ext::http::client::HttpClient
+@@ -370,7 +370,7 @@ class HttpClient : public opentelemetry::ext::http::client::HttpClient
    void ScheduleAbortSession(uint64_t session_id);
    void ScheduleRemoveSession(uint64_t session_id, HttpCurlEasyResource &&resource);
  
@@ -180,10 +180,10 @@ index 57a5e2c..4124f38 100644
    void WaitBackgroundThreadExit();
  
 diff --git a/ext/include/opentelemetry/ext/http/client/http_client.h b/ext/include/opentelemetry/ext/http/client/http_client.h
-index 5b5f5d0..f7e677b 100644
+index c0d5bcf..5295c83 100644
 --- a/ext/include/opentelemetry/ext/http/client/http_client.h
 +++ b/ext/include/opentelemetry/ext/http/client/http_client.h
-@@ -415,6 +415,8 @@ class HttpClient
+@@ -418,6 +418,8 @@ class HttpClient
  
    virtual bool MaybeSpawnBackgroundThread() noexcept { return false; }
  
@@ -193,10 +193,10 @@ index 5b5f5d0..f7e677b 100644
  };
  
 diff --git a/ext/src/http/client/curl/http_client_curl.cc b/ext/src/http/client/curl/http_client_curl.cc
-index c7ddea4..95a2f58 100644
+index 520f1f0..b97bef3 100644
 --- a/ext/src/http/client/curl/http_client_curl.cc
 +++ b/ext/src/http/client/curl/http_client_curl.cc
-@@ -588,7 +588,7 @@ bool HttpClient::MaybeSpawnBackgroundThread() noexcept
+@@ -601,7 +601,7 @@ bool HttpClient::MaybeSpawnBackgroundThread() noexcept
              wait_for = std::chrono::milliseconds::zero();
            }
  
@@ -205,7 +205,7 @@ index c7ddea4..95a2f58 100644
            {
              need_wait_more = true;
              continue;
-@@ -694,7 +694,7 @@ void HttpClient::ScheduleRemoveSession(uint64_t session_id, HttpCurlEasyResource
+@@ -709,7 +709,7 @@ void HttpClient::ScheduleRemoveSession(uint64_t session_id, HttpCurlEasyResource
    wakeupBackgroundThread();
  }
  

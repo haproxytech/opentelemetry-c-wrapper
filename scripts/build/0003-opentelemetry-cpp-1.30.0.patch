@@ -1,7 +1,7 @@
-From 453c8d3ee164bbf590f672db9892ba248bbefc71 Mon Sep 17 00:00:00 2001
+From a5482ed321c27db39d6498c55e9f64ba46acffdf Mon Sep 17 00:00:00 2001
 From: Miroslav Zagorac <mzagorac@haproxy.com>
 Date: Wed, 15 Apr 2026 21:16:57 +0200
-Subject: [PATCH 3/7] Add MaybeSpawnBackgroundThread() to Elasticsearch
+Subject: [PATCH 3/6] Add MaybeSpawnBackgroundThread() to Elasticsearch
 
 The Elasticsearch log exporter uses the same async curl HttpClient as the
 OTLP HTTP exporters, so its background thread is also started lazily on

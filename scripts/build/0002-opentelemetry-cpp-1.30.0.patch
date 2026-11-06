@@ -1,7 +1,7 @@
-From 29fbc63a3f297c815eca46c55a130debf2fb9941 Mon Sep 17 00:00:00 2001
+From 1463cdb04e71afcf3a33e25d1af645186ecb09da Mon Sep 17 00:00:00 2001
 From: Miroslav Zagorac <mzagorac@haproxy.com>
 Date: Wed, 15 Apr 2026 21:16:01 +0200
-Subject: [PATCH 2/7] Add MaybeSpawnBackgroundThread() to OTLP HTTP exporters
+Subject: [PATCH 2/6] Add MaybeSpawnBackgroundThread() to OTLP HTTP exporters
 
 The curl HTTP client's background thread is started lazily on the first
 call to Session::SendRequest().  This delays thread creation until the
@@ -95,10 +95,10 @@ index d8a25f9..dcc41a4 100644
    // Configuration options for the exporter
    OtlpHttpMetricExporterOptions options_;
 diff --git a/exporters/otlp/src/otlp_http_client.cc b/exporters/otlp/src/otlp_http_client.cc
-index ee902e9..af9b1c4 100644
+index 7a09e37..5e28687 100644
 --- a/exporters/otlp/src/otlp_http_client.cc
 +++ b/exporters/otlp/src/otlp_http_client.cc
-@@ -834,6 +834,11 @@ sdk::common::ExportResult OtlpHttpClient::Export(
+@@ -812,6 +812,11 @@ sdk::common::ExportResult OtlpHttpClient::Export(
    return opentelemetry::sdk::common::ExportResult::kSuccess;
  }
  
@@ -159,10 +159,10 @@ index 782fc20..e55edb6 100644
  }  // namespace exporter
  OPENTELEMETRY_END_NAMESPACE
 diff --git a/ext/include/opentelemetry/ext/http/client/curl/http_client_curl.h b/ext/include/opentelemetry/ext/http/client/curl/http_client_curl.h
-index 9a09fac..57a5e2c 100644
+index 02e288e..d9a145c 100644
 --- a/ext/include/opentelemetry/ext/http/client/curl/http_client_curl.h
 +++ b/ext/include/opentelemetry/ext/http/client/curl/http_client_curl.h
-@@ -346,7 +346,7 @@ class HttpClient : public opentelemetry::ext::http::client::HttpClient
+@@ -364,7 +364,7 @@ class HttpClient : public opentelemetry::ext::http::client::HttpClient
    inline CURLM *GetMultiHandle() noexcept { return multi_handle_; }
  
    // return true if create background thread, false is already exist background thread
@@ -172,10 +172,10 @@ index 9a09fac..57a5e2c 100644
    void ScheduleAddSession(uint64_t session_id);
    void ScheduleAbortSession(uint64_t session_id);
 diff --git a/ext/include/opentelemetry/ext/http/client/http_client.h b/ext/include/opentelemetry/ext/http/client/http_client.h
-index b477292..5b5f5d0 100644
+index 09be365..c0d5bcf 100644
 --- a/ext/include/opentelemetry/ext/http/client/http_client.h
 +++ b/ext/include/opentelemetry/ext/http/client/http_client.h
-@@ -413,6 +413,8 @@ class HttpClient
+@@ -416,6 +416,8 @@ class HttpClient
  
    virtual void SetMaxSessionsPerConnection(std::size_t max_requests_per_connection) noexcept = 0;
  
@@ -185,10 +185,10 @@ index b477292..5b5f5d0 100644
  };
  
 diff --git a/ext/src/http/client/curl/http_client_curl.cc b/ext/src/http/client/curl/http_client_curl.cc
-index d900c74..c7ddea4 100644
+index 0f69256..520f1f0 100644
 --- a/ext/src/http/client/curl/http_client_curl.cc
 +++ b/ext/src/http/client/curl/http_client_curl.cc
-@@ -451,7 +451,7 @@ bool HttpClient::InternalCancelAllSessions() noexcept
+@@ -466,7 +466,7 @@ bool HttpClient::InternalCancelAllSessions() noexcept
    return true;
  }
  

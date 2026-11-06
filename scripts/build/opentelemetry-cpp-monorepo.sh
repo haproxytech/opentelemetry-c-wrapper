@@ -2,7 +2,7 @@
 #
 # opentelemetry-cpp-monorepo.sh by Miroslav Zagorac <mzagorac@haproxy.com>
 #
-# Assembles a self-contained opentelemetry-cpp 1.29.0 source tree along with
+# Assembles a self-contained opentelemetry-cpp 1.30.0 source tree along with
 # the curated set of pinned third-party C/C++ dependencies it expects to find
 # at build time.  Each dependency is cloned from GitHub into the layout that
 # the upstream build system expects, with a local main/master branch checked
@@ -16,7 +16,7 @@
 #
    SH_ARG_DIR="${1:+${1}/}"
 SH_OPT_REMOTE="${2:-}"
-  SH_REPO_DIR="opentelemetry-cpp-1.29.0"
+  SH_REPO_DIR="opentelemetry-cpp-1.30.0"
   SH_GIT_OPTS="-c advice.detachedHead=false clone --single-branch --depth 1 --branch"
        SH_PWD=
   SH_TAG_REPO="
@@ -54,9 +54,9 @@ sh_get ()
 }
 
 
-git ${SH_GIT_OPTS} v1.29.0 https://github.com/open-telemetry/opentelemetry-cpp.git "${SH_ARG_DIR}${SH_REPO_DIR}"
+git ${SH_GIT_OPTS} v1.30.0 https://github.com/open-telemetry/opentelemetry-cpp.git "${SH_ARG_DIR}${SH_REPO_DIR}"
 cd "${SH_ARG_DIR}${SH_REPO_DIR}" || exit
-git checkout -b main v1.29.0
+git checkout -b main v1.30.0
 test -n "${SH_OPT_REMOTE}" || git remote remove origin
 
 SH_PWD="${PWD}"

@@ -1,7 +1,7 @@
-From baec2e533a43fef2e6ba31bff3c4764f9ad71357 Mon Sep 17 00:00:00 2001
+From 6f045ae2fa2b0817f079dbae3786fec9ab4c9a77 Mon Sep 17 00:00:00 2001
 From: Miroslav Zagorac <mzagorac@haproxy.com>
 Date: Wed, 15 Apr 2026 21:17:35 +0200
-Subject: [PATCH 4/7] Add MaybeSpawnBackgroundThread() to OTLP File exporters
+Subject: [PATCH 4/6] Add MaybeSpawnBackgroundThread() to OTLP File exporters
 
 The file system backend's background flush thread is started lazily on the
 first Export() call via the private SpawnBackgroundWorkThread() method.
@@ -107,10 +107,10 @@ index 73ae412..e396832 100644
    friend class OtlpFileMetricExporterTestPeer;
  
 diff --git a/exporters/otlp/src/otlp_file_client.cc b/exporters/otlp/src/otlp_file_client.cc
-index 2bc24b3..e65dfea 100644
+index f37e4a3..806ac2a 100644
 --- a/exporters/otlp/src/otlp_file_client.cc
 +++ b/exporters/otlp/src/otlp_file_client.cc
-@@ -1146,6 +1146,12 @@ class OPENTELEMETRY_LOCAL_SYMBOL OtlpFileSystemBackend : public OtlpFileAppender
+@@ -1124,6 +1124,12 @@ class OPENTELEMETRY_LOCAL_SYMBOL OtlpFileSystemBackend : public OtlpFileAppender
      return result;
    }
  
@@ -123,7 +123,7 @@ index 2bc24b3..e65dfea 100644
  private:
    void Initialize()
    {
-@@ -1695,6 +1701,16 @@ opentelemetry::sdk::common::ExportResult OtlpFileClient::Export(
+@@ -1673,6 +1679,16 @@ opentelemetry::sdk::common::ExportResult OtlpFileClient::Export(
    return ::opentelemetry::sdk::common::ExportResult::kFailure;
  }
  

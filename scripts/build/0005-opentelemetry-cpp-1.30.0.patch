@@ -1,7 +1,7 @@
-From 3a265433fb73ff2e0c4a0ed11289a1d9c21a2455 Mon Sep 17 00:00:00 2001
+From ed26e89145408674a7ae85d6ad2f7fcd444b337d Mon Sep 17 00:00:00 2001
 From: Miroslav Zagorac <mzagorac@haproxy.com>
 Date: Wed, 15 Apr 2026 21:18:21 +0200
-Subject: [PATCH 5/7] Add MaybeSpawnBackgroundThread() to OTLP gRPC exporters
+Subject: [PATCH 5/6] Add MaybeSpawnBackgroundThread() to OTLP gRPC exporters
 
 The gRPC channel stays in IDLE state until the first RPC is issued,
 deferring DNS resolution, TCP handshake, TLS negotiation and HTTP/2
@@ -25,7 +25,7 @@ construction.
  8 files changed, 71 insertions(+)
 
 diff --git a/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_grpc_client.h b/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_grpc_client.h
-index 5ce6e1e..c9ebf27 100644
+index 29044a3..79d9574 100644
 --- a/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_grpc_client.h
 +++ b/exporters/otlp/include/opentelemetry/exporters/otlp/otlp_grpc_client.h
 @@ -248,6 +248,13 @@ class OtlpGrpcClient
@@ -97,10 +97,10 @@ index c49ab71..c9153a8 100644
     * Get the Client object
     *
 diff --git a/exporters/otlp/src/otlp_grpc_client.cc b/exporters/otlp/src/otlp_grpc_client.cc
-index bbaa438..a13d70d 100644
+index cd8f4a3..1e25ef2 100644
 --- a/exporters/otlp/src/otlp_grpc_client.cc
 +++ b/exporters/otlp/src/otlp_grpc_client.cc
-@@ -724,6 +724,19 @@ bool OtlpGrpcClient::IsShutdown() const noexcept
+@@ -719,6 +719,19 @@ bool OtlpGrpcClient::IsShutdown() const noexcept
    return is_shutdown_.load(std::memory_order_acquire);
  }
  
