@@ -1091,6 +1091,9 @@ OTLP gRPC exporter (otlp_grpc)
 
 Sends telemetry data to a collector over gRPC.
 
+Client key and certificate settings are always available with SDK 1.30.0 or
+later.  Older SDK versions require ENABLE_OTLP_GRPC_SSL_MTLS_PREVIEW.
+
   type (string, mandatory)
       Must be "otlp_grpc".
 
@@ -1110,17 +1113,16 @@ Sends telemetry data to a collector over gRPC.
       CA certificate content provided as an inline string.
 
   ssl_client_key_path (string, default: "")
-      Path to the client private key.  Requires the SDK MTLS build flag
-      (ENABLE_OTLP_GRPC_SSL_MTLS_PREVIEW).
+      Path to the client private key.
 
   ssl_client_key_string (string, default: "")
-      Client private key as an inline string.  Requires the SDK MTLS build flag.
+      Client private key as an inline string.
 
   ssl_client_cert_path (string, default: "")
-      Path to the client certificate.  Requires the SDK MTLS build flag.
+      Path to the client certificate.
 
   ssl_client_cert_string (string, default: "")
-      Client certificate as an inline string.  Requires the SDK MTLS build flag.
+      Client certificate as an inline string.
 
   timeout (integer, default: 10, range: 1-60)
       Request timeout in seconds.

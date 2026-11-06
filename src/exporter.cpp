@@ -138,7 +138,7 @@ static int otel_exporter_set_otlp_grpc_options(const struct otelc_ctx *ctx, cons
 {
 	char    thread_name[OTEL_YAML_BUFSIZ] = "";
 	char    ssl_credentials_cacert_path[OTEL_YAML_BUFSIZ] = "", ssl_credentials_cacert_as_string[OTEL_YAML_BUFSIZ] = "", user_agent[OTEL_YAML_BUFSIZ] = "", compression[OTEL_YAML_BUFSIZ] = "";
-#ifdef ENABLE_OTLP_GRPC_SSL_MTLS_PREVIEW
+#if OTELCPP_VERSION_GE(1, 30) || defined(ENABLE_OTLP_GRPC_SSL_MTLS_PREVIEW)
 	char    ssl_client_key_path[OTEL_YAML_BUFSIZ] = "", ssl_client_key_string[OTEL_YAML_BUFSIZ] = "";
 	char    ssl_client_cert_path[OTEL_YAML_BUFSIZ] = "", ssl_client_cert_string[OTEL_YAML_BUFSIZ] = "";
 #endif
@@ -165,7 +165,7 @@ static int otel_exporter_set_otlp_grpc_options(const struct otelc_ctx *ctx, cons
 	                   OTEL_YAML_ARG_BOOL(0, EXPORTERS, use_ssl_credentials),
 	                   OTEL_YAML_ARG_STR(0, EXPORTERS, ssl_credentials_cacert_path),
 	                   OTEL_YAML_ARG_STR(0, EXPORTERS, ssl_credentials_cacert_as_string),
-#ifdef ENABLE_OTLP_GRPC_SSL_MTLS_PREVIEW
+#if OTELCPP_VERSION_GE(1, 30) || defined(ENABLE_OTLP_GRPC_SSL_MTLS_PREVIEW)
 	                   OTEL_YAML_ARG_STR(0, EXPORTERS, ssl_client_key_path),
 	                   OTEL_YAML_ARG_STR(0, EXPORTERS, ssl_client_key_string),
 	                   OTEL_YAML_ARG_STR(0, EXPORTERS, ssl_client_cert_path),
@@ -186,7 +186,7 @@ static int otel_exporter_set_otlp_grpc_options(const struct otelc_ctx *ctx, cons
 	options.use_ssl_credentials              = use_ssl_credentials;
 	options.ssl_credentials_cacert_path      = ssl_credentials_cacert_path;
 	options.ssl_credentials_cacert_as_string = ssl_credentials_cacert_as_string;
-#ifdef ENABLE_OTLP_GRPC_SSL_MTLS_PREVIEW
+#if OTELCPP_VERSION_GE(1, 30) || defined(ENABLE_OTLP_GRPC_SSL_MTLS_PREVIEW)
 	options.ssl_client_key_path              = ssl_client_key_path;
 	options.ssl_client_key_string            = ssl_client_key_string;
 	options.ssl_client_cert_path             = ssl_client_cert_path;
